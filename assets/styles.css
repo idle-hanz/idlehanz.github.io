@@ -1,0 +1,18 @@
+/* assets/styles.css - Shared across the site */
+body { background-color: #111; color: #ddd; font-family: 'Georgia', serif; margin: 0; padding: 0; line-height: 1.6; }
+header { background: #000; padding: 2em; text-align: center; border-bottom: 2px solid #333; }
+header h1 { font-size: 2.5em; margin: 0; color: #fff; }
+nav { text-align: center; margin: 1em 0; }
+nav a { color: #aaa; margin: 0 1em; text-decoration: none; }
+nav a:hover { color: #fff; }
+section { max-width: 1200px; margin: 2em auto; padding: 1em; }
+.project-tiles { display: flex; flex-wrap: wrap; justify-content: center; }
+.tile { width: 300px; margin: 1em; background: #222; padding: 1em; text-align: center; border: 1px solid #333; }
+.tile img { width: 100%; height: auto; }
+.collapsible { cursor: pointer; padding: 1em; background: #333; margin: 0.5em 0; }
+.content { display: none; padding: 1em; }
+.active + .content { display: block; }
+pre { white-space: pre-wrap; font-family: monospace; background: #111; padding: 1em; border: 1px solid #444; }
+.gallery { display: flex; flex-wrap: wrap; justify-content: center; }
+.gallery img { width: 300px; margin: 1em; border: 1px solid #444; }
+footer { text-align: center; padding: 1em; background: #000; color: #aaa; }
