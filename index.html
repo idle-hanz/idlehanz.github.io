@@ -46,5 +46,15 @@
     </footer>
 
     <script src="assets/scripts.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.collapsible').forEach(item => {
+            item.addEventListener('click', () => {
+                item.classList.toggle('active');
+            });
+        });
+    });
+</script>
 </body>
 </html>
+
