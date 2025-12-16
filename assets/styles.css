@@ -151,16 +151,49 @@ footer {
     transform: rotate(0deg);
 }
 
+/* Improved readability for chapter text */
 .content {
     display: none;
-    padding: 2.5em;
+    padding: 3em 4em; /* More generous padding */
     background: #131313;
     border: 1px solid #333;
     border-top: none;
     border-radius: 0 0 6px 6px;
-    font-size: 1.1em;
-    line-height: 1.9;
+    font-size: 1.15em;
+    line-height: 2; /* Increased from 1.9 — gives beautiful spacing */
     color: #ddd;
+    max-width: 900px; /* Limits width for comfortable reading */
+    margin: 0 auto; /* Centers the text block */
+}
+
+.content p {
+    margin-bottom: 1.8em; /* More space between paragraphs */
+    text-align: justify; /* Optional: justified text for book feel — remove if you prefer left-aligned */
+    hyphens: auto; /* Smooth word breaks on narrow screens */
+}
+
+.content blockquote {
+    margin: 2.5em 0;
+    padding-left: 2em;
+    border-left: 5px solid #555;
+    font-style: italic;
+    color: #ccc;
+    font-size: 1.1em;
+}
+
+.content ul, .content ol {
+    margin: 2em 0;
+    padding-left: 2em;
+}
+
+.content li {
+    margin-bottom: 0.8em;
+}
+
+/* Optional: Subtle first-line indent (classic book style) */
+.content p:not(:first-of-type) {
+    text-indent: 2em;
+    margin-top: 0;
 }
 
 .active + .content {
@@ -172,4 +205,5 @@ footer {
     from { opacity: 0; }
     to { opacity: 1; }
 }
+
 
