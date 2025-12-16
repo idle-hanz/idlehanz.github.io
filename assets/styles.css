@@ -169,18 +169,76 @@ footer {
 
 /* Hero section */
 #hero {
-    height: 80vh;
-    min-height: 600px;
-    background-image: url('../images/hero.jpg'); /* Your uploaded hero */
+    position: relative;
+    height: 100vh;                /* Full viewport height */
+    background-image: url('assets/images/hero.jpg');  /* Your uploaded image */
     background-size: cover;
     background-position: center;
-    background-attachment: fixed;
+    background-attachment: fixed; /* Parallax effect on scroll */
     display: flex;
-    flex-direction: column;
-    justify-content: center;
     align-items: center;
+    justify-content: center;
     text-align: center;
+    overflow: hidden;
+}
+.hero-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.65);  /* Dark overlay – adjust opacity if text needs more/less contrast */
+    z-index: 1;
+}
+
+.hero-content {
     position: relative;
+    z-index: 2;
+    color: #fff;
+    padding: 2em;
+}
+
+.hero-content h1 {
+    font-family: 'Cinzel', serif;
+    font-size: 5.5em;
+    margin: 0 0 0.2em;
+    text-shadow: 0 0 20px #000;
+    letter-spacing: 0.05em;
+}
+
+.hero-content p {
+    font-size: 1.8em;
+    margin: 0.5em 0;
+    text-shadow: 0 0 10px #000;
+}
+
+.tagline {
+    font-size: 1.4em !important;
+    font-style: italic;
+    opacity: 0.9;
+}
+
+.enter-btn {
+    display: inline-block;
+    margin-top: 2em;
+    padding: 1em 2.5em;
+    background: rgba(30, 30, 30, 0.8);
+    border: 2px solid #555;
+    color: #fff;
+    font-size: 1.3em;
+    text-decoration: none;
+    border-radius: 6px;
+    transition: all 0.4s;
+    text-shadow: 0 0 10px #000;
+}
+
+.enter-btn:hover {
+    background: rgba(80, 80, 80, 0.8);
+    border-color: #888;
+    transform: scale(1.05);
+}
+
+/* If you keep project tiles below */
+.projects {
+    padding: 4em 2em;
+    background: #111; /* Or transparent to blend with subtle site background */
 }
 
 #hero::before {
@@ -190,10 +248,6 @@ footer {
     background: rgba(0,0,0,0.6); /* Dark overlay so text is readable */
 }
 
-#hero-content {
-    position: relative;
-    z-index: 1;
-}
 
 #hero h1 {
     font-family: 'Cinzel', serif;
@@ -238,3 +292,4 @@ footer {
 .lyrics p {
     margin: 2em 0;
 }
+
