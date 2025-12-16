@@ -117,4 +117,59 @@ footer {
     color: #666;
     font-size: 0.9em;
 }
+/* Enhanced Collapsibles for Book Chapters */
+.collapsible {
+    cursor: pointer;
+    padding: 1.8em 1.5em;
+    background: #1a1a1a;
+    margin: 1.2em 0;
+    border-left: 5px solid #444;
+    border-radius: 6px;
+    font-family: 'Cinzel', serif;
+    font-size: 1.5em;
+    color: #eee;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.collapsible:hover {
+    background: #222;
+    border-left-color: #666;
+    box-shadow: 0 0 15px rgba(0,0,0,0.8);
+}
+
+.collapsible::before {
+    content: "▶";
+    position: absolute;
+    right: 1.5em;
+    font-size: 1.2em;
+    transition: transform 0.3s;
+}
+
+.active::before {
+    content: "▼";
+    transform: rotate(0deg);
+}
+
+.content {
+    display: none;
+    padding: 2.5em;
+    background: #131313;
+    border: 1px solid #333;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    font-size: 1.1em;
+    line-height: 1.9;
+    color: #ddd;
+}
+
+.active + .content {
+    display: block;
+    animation: fadeIn 0.5s;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
 
