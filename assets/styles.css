@@ -200,10 +200,37 @@ footer {
     display: block;
     animation: fadeIn 0.5s;
 }
+/* Styled Brief Summary - same readable format as chapters */
+#brief-summary {
+    max-width: 900px;      /* Matches chapter content width */
+    margin: 4em auto;      /* Centers and adds top/bottom space */
+    padding: 3em 4em;
+    background: #131313;   /* Dark card like opened chapters */
+    border: 1px solid #333;
+    border-radius: 8px;
+    font-size: 1.15em;
+    line-height: 2;
+    color: #ddd;
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+}
 
+#brief-summary p {
+    margin-bottom: 1.8em;
+    text-align: justify;   /* Remove if you prefer left-aligned */
+}
+
+#brief-summary h2 {
+    text-align: center;
+    font-family: 'Cinzel', serif;
+    font-size: 2.2em;
+    margin-bottom: 1.5em;
+    color: #fff;
+    text-shadow: 0 0 10px #000;
+}
 @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
 }
+
 
 
