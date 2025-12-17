@@ -2,13 +2,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
 
 body {
-    background-color: #0a0a0a;
-    /*background-image: url('assets/images/hero.jpg'); /* Replace later with real glyph tile if wanted */
-    /*background-image: url('https://raw.githubusercontent.com/idlehanz/idlehanz.github.io/main/assets/images/hero.jpg');
-    background: red url('assets/images/hero.jpg') no-repeat center/cover; /* Temporary test */
-    background-repeat: repeat;
-    background-attachment: fixed;
-    background-size: 200px;
+    background-color: #0a0a0a; /* Solid dark fallback */
     color: #e0e0e0;
     font-family: 'Crimson Text', serif;
     margin: 0;
@@ -21,7 +15,7 @@ body {
     position: relative;
     height: 100vh;
     min-height: 600px;
-    background-image: url('assets/images/hero.jpg'); /* ← Make sure this matches your exact filename */
+    background-image: url('assets/images/hero.jpg');
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
@@ -35,7 +29,7 @@ body {
 .hero-overlay {
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0, 0, 0, 0.4); /* Adjust 0.65 → lower for lighter, higher for darker */
+    background: rgba(0, 0, 0, 0.5); /* Reduced from 0.65 — serpent details show through better */
     z-index: 1;
 }
 
@@ -233,6 +227,7 @@ footer {
     from { opacity: 0; }
     to { opacity: 1; }
 }
+
 
 
 
