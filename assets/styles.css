@@ -15,10 +15,10 @@ body {
     position: relative;
     height: 100vh;
     min-height: 600px;
-    /*background-image: url('assets/images/hero.jpg');*/
-    background-image: url('https://raw.githubusercontent.com/idlehanz/idlehanz.github.io/main/assets/images/hero.jpg');
+    background-image: url('assets/images/hero.jpg');  /* Relative path — correct for live site */
     background-size: cover;
-    background-position: center;
+    background-position: center center;  /* Centers the serpent head/face */
+    background-repeat: no-repeat;
     background-attachment: fixed;
     display: flex;
     align-items: center;
@@ -28,10 +28,7 @@ body {
 }
 
 .hero-overlay {
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0, 0, 0, 0.5); /* Reduced from 0.65 — serpent details show through better */
-    z-index: 1;
+    background: rgba(0, 0, 0, 0.45);  /* Slightly lighter — ominous but details show */
 }
 
 .hero-content {
