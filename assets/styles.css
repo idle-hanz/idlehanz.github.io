@@ -15,11 +15,11 @@ body {
     position: relative;
     height: 100vh;
     min-height: 600px;
-    background-image: url('assets/images/hero.jpg');  /* Relative path — correct for live site */
-    background-size: cover;
-    background-position: center center;  /* Centers the serpent head/face */
-    background-repeat: no-repeat;
-    background-attachment: fixed;
+    background-image: url('https://raw.githubusercontent.com/idle-hanz/idlehanz.github.io/main/assets/images/hero.jpg'); /* Or background.jpg if that's the glyph one */
+    background-size: cover !important;
+    background-position: center center !important;
+    background-repeat: no-repeat !important;
+    background-attachment: fixed !important;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -33,7 +33,7 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.45);  /* Slightly lighter — ominous but details show */
+    background: rgba(95, 71, 71, 0.35) !important; /* Balanced — serpent visible, text readable */
     z-index: 1;
 }
 
