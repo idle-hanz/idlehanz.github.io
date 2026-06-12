@@ -62,7 +62,7 @@ a:hover, .enter-btn:hover {
     height: 56vh;
     min-height: 420px;
     padding-top: 70px; /* space for fixed site-nav */
-    background-image: url("/assets/images/background.jpg");
+    background-image: url("/assets/images/hero.jpg");
     background-size: cover !important;
     background-position: center 52%;
     background-repeat: no-repeat !important;
