@@ -62,7 +62,7 @@ a:hover, .enter-btn:hover {
     height: 56vh;
     min-height: 420px;
     padding-top: 70px; /* space for fixed site-nav */
-    background-image: url("/assets/images/hero.jpg");
+    background-image: url("/assets/images/background.jpg");
     background-size: cover !important;
     background-position: center 52%;
     background-repeat: no-repeat !important;
@@ -165,7 +165,7 @@ a:hover, .enter-btn:hover {
 /* Two Paths Section - Balanced Music vs Book */
 .two-paths {
     padding: 0.5rem 1rem 1.5rem;
-    background-image: url('/assets/images/hero.jpg');
+    background-image: url('/assets/images/background.jpg');
     background-size: cover;
     background-position: center 52%;
     background-attachment: fixed;
@@ -1068,7 +1068,7 @@ a:hover, .enter-btn:hover {
 /* Meditation page visual treatment */
 .meditation-page {
     padding-top: 5rem; /* space for fixed meditation-nav */
-    background-image: url('/assets/images/hero.jpg');
+    background-image: url('/assets/images/background.jpg');
     background-size: cover;
     background-position: center center;
     background-repeat: no-repeat;
