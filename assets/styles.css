@@ -1611,7 +1611,7 @@ main, .content, .meditation-body {
 .art-bg {
     background:
         linear-gradient(rgba(15, 12, 8, 0.78), rgba(15, 12, 8, 0.85)),
-        url('/assets/images/background.jpg');
+        url('/assets/images/Background.jpg');
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
@@ -1979,7 +1979,7 @@ main, .content, .meditation-body {
    =================================== */
 .song-page {
     background: linear-gradient(rgba(15, 12, 8, 0.78), rgba(15, 12, 8, 0.85)),
-                url('/assets/images/background.jpg');
+                url('/assets/images/Background.jpg');
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
