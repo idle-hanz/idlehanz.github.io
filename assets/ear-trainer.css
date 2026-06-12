@@ -22,7 +22,7 @@ body.ear-trainer-page {
     background-color: var(--et-bg) !important;
     background-image:
         linear-gradient(rgba(10, 8, 6, 0.92), rgba(10, 8, 6, 0.96)),
-        url('images/face_and_snakes.png');
+        url('images/background.jpg');
     background-size: cover;
     background-position: center 40%;
     background-attachment: fixed;
