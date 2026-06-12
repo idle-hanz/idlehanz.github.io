@@ -3,58 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Idle Hanz - Artist Hub</title>
+    <title>Idle Hanz • Temporary Truths for Our Honest Lies</title>
     <link rel="stylesheet" href="assets/styles.css">
+    <meta name="description" content="A philosophical meditation on human self-deception, the roar of conformity, and the quiet voice that can break the cycle.">
+    <meta property="og:title" content="Idle Hanz • Temporary Truths for Our Honest Lies">
+    <meta property="og:description" content="Philosophical explorations &amp; original music. The Meditation and recorded work by Idle Hanz.">
+    <meta property="og:image" content="/assets/images/face_and_snakes.png">
+    <meta property="og:url" content="https://idlehanz.com">
+    <meta name="twitter:card" content="summary_large_image">
 </head>
-<body>
-    <section id="hero">
-        <div class="hero-overlay"></div> 
-        <div class="hero-content">
-            <h1>Idle Hanz</h1>
-            <p>A Meditation Through Nihilism</p>
-            <p class="tagline"> Return to Eden's Coil</p>
-            <a href="meditation/index.html" class="enter-btn">Enter the Coil</a>
+<body class="home">
+    <!-- Subtle top-left wordmark anchor (recommendation #1) -->
+    <a href="index.html" class="home-anchor">IDLE HANZ</a>
+    <!-- Top Navigation -->
+    <nav class="site-nav">
+        <a href="index.html" class="nav-home">Idle Hanz</a>
+        <div class="nav-links">
+            <a href="meditation/index.html">The Meditation</a>
+            <a href="music/index.html">Music</a>
+            <a href="tools/index.html">Studio Tools</a>
+            <a href="about/index.html">About</a>
         </div>
-    </section>
-
-    <header>
-        <h2>Philosophical Music, Art, and Explorations</h2>
-    </header>
-
-    <nav>
-        <a href="index.html">Home</a>
-        <a href="meditation/index.html">A Meditation Through Nihilism</a>
-        <a href="music/index.html">Other Music</a>
-        <a href="about/index.html">About</a>
     </nav>
 
-    <section class="projects">
-        <div class="project-tiles">
-            <!-- Add your project tiles here later if wanted -->
-            <!-- Example:
-            <a href="meditation/index.html" class="tile">
-                <img src="assets/images/meditation-thumb.jpg" alt="Meditation">
-                <h3>A Meditation Through Nihilism</h3>
-                <p>Philosophical double album and book.</p>
-            </a>
-            -->
+    <!-- Hero -->
+    <section id="hero">
+        <div class="hero-overlay"></div>
+        <div class="hero-content">
+            <div class="hero-upper">
+                <h1>Idle Hanz</h1>
+                <p class="tagline">Philosophical explorations &amp; original music</p>
+            </div>
+
+            <!-- Stacked cards on the right inside hero. Flex .paths-grid ready for future expansion. -->
+            <div class="hero-lower home-cards">
+                <div class="paths-grid">
+                    <!-- Book Path -->
+                    <a href="meditation/index.html" class="path-card book">
+                        <div class="path-content">
+                            <h3>The Meditation</h3>
+                            <p class="path-tagline">Temporary Truths for Our Honest Lies</p>
+                            <p>A philosophical journey into the augmented ape, the roar of the herd, and the quiet that remains.</p>
+                            <span class="path-cta">Enter the Work →</span>
+                        </div>
+                    </a>
+
+                    <!-- Music Path -->
+                    <a href="music/index.html" class="path-card music">
+                        <div class="path-content">
+                            <h3>Music</h3>
+                            <p class="path-tagline">Original Music by Idle Hanz</p>
+                            <p>Recorded music and compositions — separate from the meditation work.</p>
+                            <span class="path-cta">Listen →</span>
+                        </div>
+                    </a>
+
+                    <!-- Studio Tools Path -->
+                    <a href="tools/index.html" class="path-card tools">
+                        <div class="path-content">
+                            <h3>Studio Tools</h3>
+                            <p class="path-tagline">Ear Training for Mixing</p>
+                            <p>Interactive EQ exercises — identify frequencies and fix problems by ear.</p>
+                            <span class="path-cta">Train Your Ears →</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
         </div>
     </section>
 
-    <footer>
-        <p>© 2025 Idle Hanz. Built with Grok.</p>
+    <footer class="site-footer">
+        <p>© Idle Hanz • Philosophical Art &amp; Music • <a href="https://idlehanz.com">idlehanz.com</a></p>
     </footer>
 
     <script src="assets/scripts.js"></script>
-    <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        document.querySelectorAll('.collapsible').forEach(item => {
-            item.addEventListener('click', () => {
-                item.classList.toggle('active');
-            });
-        });
-    });
-</script>
 </body>
 </html>
 

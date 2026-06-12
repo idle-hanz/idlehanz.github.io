@@ -1,0 +1,225 @@
+/* EQ Ear Trainer — styled to match Idle Hanz site */
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
+
+:root {
+    --et-bg: #0a0a0a;
+    --et-card: rgba(15, 12, 8, 0.82);
+    --et-card-inner: rgba(8, 6, 4, 0.65);
+    --et-border: #3a2f22;
+    --et-text: #e0e0e0;
+    --et-muted: #a89f7c;
+    --et-dim: #8a7a5f;
+    --et-accent: #c9a36e;
+    --et-accent-dark: #8b6f4e;
+    --et-accent-light: #e8d9b8;
+    --et-secondary: #9a7b5a;
+    --et-danger: #c45c5c;
+    --et-success: #8fad6e;
+}
+
+body.ear-trainer-page {
+    background-color: var(--et-bg) !important;
+    background-image:
+        linear-gradient(rgba(10, 8, 6, 0.92), rgba(10, 8, 6, 0.96)),
+        url('images/face_and_snakes.png');
+    background-size: cover;
+    background-position: center 40%;
+    background-attachment: fixed;
+    color: var(--et-text) !important;
+    font-family: 'Crimson Text', serif !important;
+    min-height: 100vh;
+}
+
+.ear-trainer-page .font-display,
+.ear-trainer-page h1,
+.ear-trainer-page .text-3xl.font-semibold,
+.ear-trainer-page .text-6xl {
+    font-family: 'Cinzel', serif !important;
+    font-weight: 400 !important;
+    letter-spacing: 0.03em !important;
+}
+
+.ear-trainer-page .text-6xl {
+    color: #d4bea3 !important;
+    text-shadow: 0 2px 16px rgba(0, 0, 0, 0.8);
+}
+
+.ear-trainer-page .text-emerald-400,
+.ear-trainer-page .text-violet-400 {
+    color: var(--et-accent) !important;
+}
+
+.ear-trainer-page .bg-zinc-950,
+.ear-trainer-page nav.bg-zinc-950\/90 {
+    background-color: rgba(0, 0, 0, 0.55) !important;
+}
+
+.ear-trainer-page .bg-zinc-900 {
+    background: var(--et-card) !important;
+}
+
+.ear-trainer-page .bg-zinc-950.border,
+.ear-trainer-page .bg-zinc-800 {
+    background: var(--et-card-inner) !important;
+}
+
+.ear-trainer-page .border-zinc-800,
+.ear-trainer-page .border-zinc-700 {
+    border-color: var(--et-border) !important;
+}
+
+.ear-trainer-page .text-zinc-200,
+.ear-trainer-page .text-zinc-300 {
+    color: var(--et-text) !important;
+}
+
+.ear-trainer-page .text-zinc-400,
+.ear-trainer-page .text-zinc-500 {
+    color: var(--et-muted) !important;
+}
+
+.ear-trainer-page .bg-emerald-500,
+.ear-trainer-page .bg-emerald-600 {
+    background-color: var(--et-accent-dark) !important;
+    color: #fff !important;
+}
+
+.ear-trainer-page .hover\:bg-emerald-600:hover,
+.ear-trainer-page .hover\:bg-emerald-500:hover {
+    background-color: #a08055 !important;
+}
+
+.ear-trainer-page .bg-violet-500,
+.ear-trainer-page .bg-violet-600,
+.ear-trainer-page .hover\:bg-violet-500:hover {
+    background-color: var(--et-secondary) !important;
+}
+
+.ear-trainer-page .bg-rose-600,
+.ear-trainer-page .hover\:bg-rose-500:hover {
+    background-color: #8b4545 !important;
+}
+
+.ear-trainer-page .hover\:bg-zinc-800:hover,
+.ear-trainer-page .hover\:bg-zinc-700:hover {
+    background: rgba(40, 32, 22, 0.85) !important;
+}
+
+.ear-trainer-page .rounded-3xl {
+    border-radius: 12px !important;
+}
+
+.ear-trainer-page .rounded-2xl {
+    border-radius: 8px !important;
+}
+
+.ear-trainer-page nav {
+    border-bottom: 1px solid var(--et-border) !important;
+    backdrop-filter: blur(8px);
+}
+
+.ear-trainer-page .et-nav-brand {
+    font-family: 'Cinzel', serif;
+    color: #d4bea3;
+    text-decoration: none;
+    font-size: 1.05em;
+    letter-spacing: 0.06em;
+}
+
+.ear-trainer-page .et-nav-brand:hover {
+    color: var(--et-accent-light);
+}
+
+.ear-trainer-page .et-nav-link {
+    color: var(--et-muted);
+    text-decoration: none;
+    font-size: 0.95em;
+    transition: color 0.2s ease;
+}
+
+.ear-trainer-page .et-nav-link:hover {
+    color: var(--et-accent-light);
+}
+
+.ear-trainer-page .et-hero-accent {
+    color: var(--et-accent) !important;
+    font-style: italic;
+}
+
+.ear-trainer-page .et-game-panel {
+    border: 1px solid var(--et-border);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.ear-trainer-page .accent-emerald-500,
+.ear-trainer-page input.accent-emerald-500 {
+    accent-color: var(--et-accent) !important;
+}
+
+.ear-trainer-page .accent-violet-500 {
+    accent-color: var(--et-secondary) !important;
+}
+
+.ear-trainer-page button.bg-white {
+    background: var(--et-accent-light) !important;
+    color: #1a1410 !important;
+    font-family: 'Cinzel', serif;
+    letter-spacing: 0.04em;
+}
+
+.ear-trainer-page button.bg-white:hover {
+    background: #fff !important;
+}
+
+.ear-trainer-page #guess-buttons button {
+    border-color: var(--et-border) !important;
+    background: rgba(20, 16, 10, 0.7) !important;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.ear-trainer-page #guess-buttons button:hover {
+    border-color: #664d2e !important;
+    background: rgba(30, 24, 16, 0.85) !important;
+}
+
+.ear-trainer-page .peer-checked\:bg-violet-600 {
+    background-color: var(--et-secondary) !important;
+}
+
+.ear-trainer-page .peer-focus\:ring-emerald-300 {
+    --tw-ring-color: rgba(201, 163, 110, 0.4) !important;
+}
+
+.ear-trainer-page canvas#eq-curve {
+    border-color: var(--et-border) !important;
+}
+
+.ear-trainer-page .et-section-label {
+    font-family: 'Cinzel', serif;
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--et-accent);
+}
+
+.ear-trainer-page .site-footer {
+    margin-top: 2rem;
+    background: rgba(0, 0, 0, 0.55);
+    border-top: 1px solid var(--et-border);
+}
+
+.ear-trainer-page .site-footer a {
+    color: var(--et-accent);
+}
+
+@media (max-width: 768px) {
+    body.ear-trainer-page {
+        background-attachment: scroll;
+    }
+
+    .ear-trainer-page .text-6xl {
+        font-size: 2.4rem !important;
+        line-height: 1.15 !important;
+    }
+}
