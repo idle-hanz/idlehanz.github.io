@@ -22,7 +22,7 @@ body.ear-trainer-page {
     background-color: var(--et-bg) !important;
     background-image:
         linear-gradient(rgba(10, 8, 6, 0.92), rgba(10, 8, 6, 0.96)),
-        url('images/cd66c7e4-9964-41a1-aa48-a5f332e05503.jpg');
+        url('images/Background.jpg');
     background-size: cover;
     background-position: center 40%;
     background-attachment: fixed;
