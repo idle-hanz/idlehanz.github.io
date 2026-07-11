@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guitar Fretboard User Guide • Idle Hanz</title>
+    <meta name="description" content="Full user guide for the Idle Hanz Guitar Fretboard app — chords, scales, progressions, morph, path arps, shape capture, neck zoom, and sessions.">
+    <meta property="og:title" content="Guitar Fretboard User Guide • Idle Hanz">
+    <meta property="og:description" content="How to use the interactive fretboard for chords, scales, progressions, and practice.">
+    <meta property="og:url" content="https://idlehanz.com/tools/fretboard/guide/">
+    <link rel="stylesheet" href="../../../assets/styles.css">
+    <style>
+        .guide-wrap { max-width: 760px; }
+        .guide-toc {
+            background: rgba(15, 12, 8, 0.65);
+            border: 1px solid #3a2f22;
+            border-radius: 10px;
+            padding: 1.25rem 1.5rem;
+            margin: 0 0 2.5rem;
+        }
+        .guide-toc h2 {
+            font-family: 'Cinzel', serif;
+            color: #c9a36e;
+            font-size: 1.1em;
+            margin: 0 0 0.75rem;
+        }
+        .guide-toc ol {
+            margin: 0;
+            padding-left: 1.25rem;
+            color: #c8b8a0;
+            columns: 1;
+        }
+        @media (min-width: 560px) {
+            .guide-toc ol { columns: 2; column-gap: 1.5rem; }
+        }
+        .guide-toc li { margin: 0.35rem 0; break-inside: avoid; }
+        .guide-toc a { text-decoration: none; }
+        .guide-toc a:hover { text-decoration: underline; }
+
+        .art-bg .card h2 {
+            font-family: 'Cinzel', serif;
+            color: #d4bea3;
+            font-size: 1.45em;
+            margin: 0 0 0.75rem;
+            scroll-margin-top: 1.25rem;
+        }
+        .art-bg .card h3 {
+            font-size: 1.1em;
+            margin: 1.25rem 0 0.5rem;
+        }
+        .art-bg .card ul, .art-bg .card ol {
+            color: #c8b8a0;
+            padding-left: 1.25rem;
+            margin: 0.5rem 0 1rem;
+        }
+        .art-bg .card li { margin: 0.35rem 0; }
+        .art-bg kbd {
+            font-family: ui-monospace, Consolas, monospace;
+            font-size: 0.85em;
+            padding: 0.1em 0.4em;
+            border-radius: 4px;
+            border: 1px solid #5a4a38;
+            background: rgba(0,0,0,0.35);
+            color: #e8d9b8;
+        }
+        .guide-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0.75rem 0 1rem;
+            font-size: 0.95em;
+        }
+        .guide-table th, .guide-table td {
+            border: 1px solid #3a2f22;
+            padding: 0.5rem 0.65rem;
+            text-align: left;
+            vertical-align: top;
+            color: #c8b8a0;
+        }
+        .guide-table th {
+            background: rgba(0,0,0,0.35);
+            color: #c9a36e;
+            font-family: 'Cinzel', serif;
+            font-weight: 400;
+        }
+        .guide-callout {
+            border-left: 3px solid #c9a36e;
+            padding: 0.65rem 0 0.65rem 1rem;
+            margin: 1rem 0;
+            background: rgba(0,0,0,0.25);
+            color: #c8b8a0;
+        }
+        .guide-cta {
+            display: inline-block;
+            margin: 0.35rem 0.5rem 0.35rem 0;
+            padding: 0.55rem 1.1rem;
+            border: 1px solid #664d2e;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #e8d9b8 !important;
+            font-family: 'Cinzel', serif;
+            font-size: 0.95em;
+            background: rgba(0,0,0,0.35);
+        }
+        .guide-cta:hover { border-color: #c9a36e; color: #fff !important; }
+        .guide-top {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .guide-top .subhead { margin-bottom: 1.25rem; }
+        .dot {
+            display: inline-block;
+            width: 0.65em;
+            height: 0.65em;
+            border-radius: 999px;
+            vertical-align: middle;
+            margin-right: 0.25em;
+        }
+        .dot-red { background: #EF4444; }
+        .dot-blue { background: #3B82F6; }
+        .dot-amber { background: #F59E0B; }
+    </style>
+</head>
+<body class="art-bg">
+
+    <nav class="site-nav" style="position: static; background: rgba(0,0,0,0.6); border-bottom: 1px solid #3a2f22;">
+        <a href="../../../index.html" style="font-family: 'Cinzel', serif; color: #ddd; text-decoration: none; font-size: 1.05em;">← Idle Hanz</a>
+        <div class="nav-links" style="display:flex;gap:1rem;flex-wrap:wrap;">
+            <a href="../../index.html" style="color:#c9a36e;text-decoration:none;">Studio Tools</a>
+            <a href="../index.html" style="color:#c9a36e;text-decoration:none;">Fretboard app</a>
+        </div>
+    </nav>
+
+    <div class="page-content guide-wrap">
+
+        <div class="guide-top">
+            <h1>Guitar Fretboard</h1>
+            <p class="subhead">Full user guide — chords, scales, progressions, morph, path runs, shape capture, and sessions.</p>
+            <a class="guide-cta" href="../index.html">Open the app →</a>
+            <a class="guide-cta" href="../../index.html">Studio Tools</a>
+        </div>
+
+        <nav class="guide-toc" aria-label="Table of contents">
+            <h2>Contents</h2>
+            <ol>
+                <li><a href="#overview">Overview</a></li>
+                <li><a href="#layout">Layout at a glance</a></li>
+                <li><a href="#legend">Reading the board</a></li>
+                <li><a href="#tuning">Tuning &amp; instrument</a></li>
+                <li><a href="#display">Display options</a></li>
+                <li><a href="#neck">Neck zoom</a></li>
+                <li><a href="#progression">Progression</a></li>
+                <li><a href="#morph">Voice-leading morph</a></li>
+                <li><a href="#scale">Scale &amp; key</a></li>
+                <li><a href="#audio">Audio transport</a></li>
+                <li><a href="#detect">Detect &amp; shape capture</a></li>
+                <li><a href="#path">Path spotlight &amp; arps</a></li>
+                <li><a href="#sessions">Save, load &amp; export</a></li>
+                <li><a href="#keys">Keyboard shortcuts</a></li>
+                <li><a href="#tips">Practice recipes</a></li>
+                <li><a href="#faq">FAQ</a></li>
+            </ol>
+        </nav>
+
+        <!-- OVERVIEW -->
+        <section class="card" id="overview">
+            <h2>1. Overview</h2>
+            <p>
+                The Guitar Fretboard is a free browser tool for guitar and bass. It draws chords and scales on a realistic neck,
+                walks chord progressions, plays soft plucked audio, and helps you study voice leading and shapes.
+            </p>
+            <p>Works offline once loaded (after CDN fonts/CSS cache). Sessions store in your browser’s local storage.</p>
+            <div class="guide-callout">
+                <strong>Quick start:</strong> Open the app → leave the default C–G–Am–F progression → click frets to hear notes →
+                use the red <span class="dot dot-red"></span>current / blue <span class="dot dot-blue"></span>next colours under the board.
+            </div>
+        </section>
+
+        <!-- LAYOUT -->
+        <section class="card" id="layout">
+            <h2>2. Layout at a glance</h2>
+            <table class="guide-table">
+                <thead>
+                    <tr><th>Area</th><th>What it’s for</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><strong>Header</strong></td><td>Session name, save/load, Focus board, Export PNG, dark mode</td></tr>
+                    <tr><td><strong>Left column</strong></td><td>Instrument, tuning presets, display (neck view, scale map, labels)</td></tr>
+                    <tr><td><strong>Centre</strong></td><td>Fretboard canvas, legend, path controls, progression slots</td></tr>
+                    <tr><td><strong>Right column</strong></td><td>Scale/key, audio play/step, DETECT (chord/scale naming)</td></tr>
+                </tbody>
+            </table>
+            <p><strong>Focus board</strong> enlarges the neck and hides side panels. Press <kbd>Esc</kbd> to exit.</p>
+        </section>
+
+        <!-- LEGEND -->
+        <section class="card" id="legend">
+            <h2>3. Reading the board</h2>
+            <table class="guide-table">
+                <thead>
+                    <tr><th>Mark</th><th>Meaning</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><span class="dot dot-red"></span> <strong>Red</strong></td><td><strong>Current</strong> chord (focused progression slot)</td></tr>
+                    <tr><td><span class="dot dot-blue"></span> <strong>Blue</strong></td><td><strong>Next</strong> chord in the progression</td></tr>
+                    <tr><td><strong>Split red|blue</strong></td><td>Note shared by current and next</td></tr>
+                    <tr><td><span class="dot dot-amber"></span> <strong>Amber diamond</strong></td><td>Scale note (when Scale map = Full)</td></tr>
+                    <tr><td><strong>Gold ring</strong></td><td>Root emphasis</td></tr>
+                    <tr><td><strong>White hollow ring</strong></td><td>Shape-capture pin (Shift+click)</td></tr>
+                    <tr><td><strong>Amber number badge</strong></td><td>Arpeggio order on a path (chord mode)</td></tr>
+                    <tr><td><strong>A / B badges</strong></td><td>Path endpoints (drag when lit)</td></tr>
+                </tbody>
+            </table>
+            <p>Thickest string is at the <strong>bottom</strong> of the board (low pitch). Open notes sit left of the nut.</p>
+            <p>With <strong>Interval colours (hybrid)</strong>, marker fill shows chord function (R, 3, b3, 5…); a red/blue outer ring still shows current vs next.</p>
+        </section>
+
+        <!-- TUNING -->
+        <section class="card" id="tuning">
+            <h2>4. Tuning &amp; instrument</h2>
+            <ul>
+                <li><strong>Instrument:</strong> Guitar or Bass.</li>
+                <li><strong>Strings:</strong> Count depends on instrument (e.g. guitar 6–8, bass 4–6).</li>
+                <li><strong>Presets:</strong> Standard, Drop D, Baritone B, and more. The blue highlight matches the <em>actual</em> open tuning, not “first button.”</li>
+                <li><strong>Custom:</strong> Note pickers are low→high left to right (thick/low on the left of the strip). Board top remains high string.</li>
+            </ul>
+            <div class="guide-callout">
+                If you have <strong>shape-capture pins</strong> and change tuning, pins <strong>move frets on the same string</strong> to keep the same sounding notes.
+            </div>
+        </section>
+
+        <!-- DISPLAY -->
+        <section class="card" id="display">
+            <h2>5. Display options</h2>
+            <h3>Board</h3>
+            <ul>
+                <li><strong>Show note names</strong> — letter names on frets (when not in “chord notes only” scale mode).</li>
+                <li><strong>Scale map</strong>
+                    <ul>
+                        <li><strong>Off</strong> — no amber scale diamonds.</li>
+                        <li><strong>Full</strong> — diamonds on scale tones.</li>
+                        <li><strong>Chord notes only</strong> — only current/next chord markers; extra scale notes hidden.</li>
+                    </ul>
+                </li>
+                <li><strong>Interval colours (hybrid)</strong> — function colours + current/next rings.</li>
+                <li><strong>Emphasize roots</strong> — gold ring on roots.</li>
+            </ul>
+            <h3>Labels &amp; chrome</h3>
+            <ul>
+                <li>Flats in flat keys, roman numerals, slash bass emphasis, colour open strings by role (current/next/scale).</li>
+            </ul>
+        </section>
+
+        <!-- NECK -->
+        <section class="card" id="neck">
+            <h2>6. Neck zoom (camera on the neck)</h2>
+            <p>There are no start/end sliders. Zoom lives on the board:</p>
+            <table class="guide-table">
+                <thead>
+                    <tr><th>Action</th><th>Result</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><strong>Scroll</strong> over the board</td><td>Pan along the neck</td></tr>
+                    <tr><td><strong>Ctrl+scroll</strong> (⌘ on Mac)</td><td>Zoom in/out (pivot under cursor)</td></tr>
+                    <tr><td><strong>Drag fret numbers</strong> under the neck</td><td>Pan (grab cursor)</td></tr>
+                    <tr><td><strong>Double-click</strong> a note/fret</td><td>Centre a ~7-fret window there</td></tr>
+                    <tr><td><strong>Reset view (0–12)</strong> in Display</td><td>Back to frets 0–12</td></tr>
+                </tbody>
+            </table>
+            <p>Status under <strong>Neck view</strong> shows e.g. <em>Frets 5–12 · 7 wide</em>.</p>
+        </section>
+
+        <!-- PROGRESSION -->
+        <section class="card" id="progression">
+            <h2>7. Progression</h2>
+            <p>Under the board: a sequence of chord slots (default C – G – Am – F).</p>
+            <ul>
+                <li><strong>Click a slot</strong> to focus it (becomes <strong>current</strong>; the following slot is <strong>next</strong>).</li>
+                <li><strong>Named / Custom</strong> — pick root + chord type, or build a custom pitch set.</li>
+                <li><strong>Bass / slash</strong> — root, chord tone, or arbitrary bass note.</li>
+                <li><strong>Eye button</strong> — show/hide that slot (see Morph for special 3-state eyes on current &amp; next).</li>
+                <li><strong>Add / Solo / All</strong> — add a slot, solo the focused chord, or show everything again.</li>
+                <li>Max <strong>8</strong> chords.</li>
+            </ul>
+            <p>Arrow keys <kbd>←</kbd> <kbd>→</kbd> step the focus when you’re not typing in a field.</p>
+        </section>
+
+        <!-- MORPH -->
+        <section class="card" id="morph">
+            <h2>8. Voice-leading morph</h2>
+            <p>Practice how notes move from current → next. Shared tones stay lit; exclusive tones pulse.</p>
+            <table class="guide-table">
+                <thead>
+                    <tr><th>Control</th><th>Cycle (click eye)</th><th>Look</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Next</strong> slot eye</td>
+                        <td>Show → <strong>pair morph</strong> → Hide</td>
+                        <td>Red / blue (current vs next)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Current</strong> slot eye</td>
+                        <td>Show → <strong>mono morph</strong> → Hide</td>
+                        <td>Greyscale motion (shape change without role colours)</td>
+                    </tr>
+                </tbody>
+            </table>
+            <ul>
+                <li>Only one morph mode at a time.</li>
+                <li><strong>Speed:</strong> ½× / 1× / 2× under the board legend.</li>
+                <li>Interval hybrid is bypassed while morphing (pair or mono colours only).</li>
+                <li>Scale diamonds hide during morph to reduce clutter.</li>
+                <li>Stops automatically for progression Play and Solo.</li>
+            </ul>
+            <p>Keyboard: <kbd>M</kbd> toggles pair morph.</p>
+        </section>
+
+        <!-- SCALE -->
+        <section class="card" id="scale">
+            <h2>9. Scale &amp; key</h2>
+            <p>Right column: choose <strong>root</strong> and <strong>scale type</strong> (major modes, minor, pentatonic, exotic, etc.).</p>
+            <p>That set drives amber diamonds (when Scale map = Full) and open-string “in scale” colouring.</p>
+            <p>Roman numerals on progression slots follow this key when enabled.</p>
+        </section>
+
+        <!-- AUDIO -->
+        <section class="card" id="audio">
+            <h2>10. Audio transport</h2>
+            <ul>
+                <li><strong>Click a fret</strong> — play that pitch.</li>
+                <li><strong>Play / Stop</strong> — walk the progression (visible slots) with the chosen pattern.</li>
+                <li><strong>◀ ▶</strong> — step previous / next chord and play it.</li>
+                <li><strong>Pattern:</strong> Strum, Arpeggio, Block, Root only.</li>
+                <li>Tempo, loop, volume, octave shift.</li>
+            </ul>
+            <p><kbd>Space</kbd> toggles progression play (when focus is not on a button).</p>
+            <div class="guide-callout">
+                Browsers often require a click before audio starts. Click any fret once if you hear silence.
+            </div>
+        </section>
+
+        <!-- DETECT -->
+        <section class="card" id="detect">
+            <h2>11. Detect &amp; shape capture</h2>
+            <p>Two related tools:</p>
+
+            <h3>Chord / scale detective (right panel)</h3>
+            <ul>
+                <li>Toggle pitch chips, or seed <strong>From pair</strong> / <strong>From progression</strong>.</li>
+                <li>Mode: <strong>Chord</strong> or <strong>Scale</strong> (with optional mode-root pin).</li>
+                <li><strong>Apply best</strong> writes the top match into the focused chord or into Scale/Key.</li>
+            </ul>
+
+            <h3>Shape capture (on the board)</h3>
+            <ul>
+                <li><strong>Shift+click</strong> a fretted note → white ring pin.</li>
+                <li><strong>One pin per string</strong> (chord grip). Same fretted spot again = remove. Another fret on the same string = <em>move</em> the pin.</li>
+                <li>While linked, DETECT chips follow the unique notes of the pins. Badge: <em>Following shape</em>.</li>
+                <li>Editing a chip <strong>unlinks</strong> detective; white rings can stay as ghosts.</li>
+                <li><strong>Clear shape</strong> / <strong>Clear all</strong> as needed.</li>
+            </ul>
+            <div class="guide-callout">
+                <strong>Example:</strong> Finger a B major shape → Shift+click each fretted note up the strings → earlier rings stay → DETECT should offer <strong>B Major</strong>.
+            </div>
+        </section>
+
+        <!-- PATH -->
+        <section class="card" id="path">
+            <h2>12. Path spotlight &amp; arps</h2>
+            <ol>
+                <li><strong>Set path</strong> → click start (A), then end (B) on the board.</li>
+                <li>Board outside the corridor dims; notes on the path stay bright.</li>
+                <li><strong>Width:</strong> Narrow / Normal (~3 frets) / Wide.</li>
+                <li><strong>Play mode:</strong> Scale run / Chord arp / Scale + arp.</li>
+                <li><strong>Direction:</strong> Up / Down / Up-down.</li>
+                <li><strong>Play path</strong> — auditions notes along the corridor.</li>
+                <li>Drag <strong>A</strong>, <strong>B</strong>, or the beam body to move the path (handles dim until hover).</li>
+            </ol>
+            <p>Keyboard: <kbd>P</kbd> set/clear path. Touch drag is supported for handles.</p>
+        </section>
+
+        <!-- SESSIONS -->
+        <section class="card" id="sessions">
+            <h2>13. Save, load &amp; export</h2>
+            <ul>
+                <li><strong>Name</strong> the session in the header field.</li>
+                <li><strong>Save / Load / Delete</strong> — browser local list.</li>
+                <li><strong>Export / Import JSON</strong> — files you can back up or share.</li>
+                <li>Last session auto-restores when you reopen the page.</li>
+                <li>Stored: tuning, progression, display, audio, path corridor, scale map mode, etc.</li>
+                <li><strong>Export PNG</strong> — diagram plus a caption (chords, key, path/morph flags).</li>
+            </ul>
+            <p>Dirty sessions show a <strong>*</strong> on the title until saved.</p>
+        </section>
+
+        <!-- KEYS -->
+        <section class="card" id="keys">
+            <h2>14. Keyboard shortcuts</h2>
+            <table class="guide-table">
+                <thead>
+                    <tr><th>Key</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step progression</td></tr>
+                    <tr><td><kbd>Space</kbd></td><td>Play / stop progression</td></tr>
+                    <tr><td><kbd>M</kbd></td><td>Toggle pair morph</td></tr>
+                    <tr><td><kbd>P</kbd></td><td>Set / clear path</td></tr>
+                    <tr><td><kbd>?</kbd></td><td>In-app help panel</td></tr>
+                    <tr><td><kbd>Esc</kbd></td><td>Close help or exit board focus</td></tr>
+                    <tr><td><kbd>Shift</kbd>+click</td><td>Shape-capture pin</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- TIPS -->
+        <section class="card" id="tips">
+            <h2>15. Practice recipes</h2>
+            <table class="guide-table">
+                <thead>
+                    <tr><th>Goal</th><th>Try this</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Voice leading</td>
+                        <td>Scale map → Chord notes only · Next eye → pair morph · shared tones stay lit</td>
+                    </tr>
+                    <tr>
+                        <td>Learn the key on the neck</td>
+                        <td>Scale map → Full · note names on · both chords visible</td>
+                    </tr>
+                    <tr>
+                        <td>Arp corridor</td>
+                        <td>Set path across a shape · Chord arp · Up · Play path</td>
+                    </tr>
+                    <tr>
+                        <td>Name a grip you played</td>
+                        <td>Shift+click fretted notes · read DETECT · Apply best</td>
+                    </tr>
+                    <tr>
+                        <td>Baritone / alternate tuning</td>
+                        <td>Pick preset · shape pins follow notes if you already captured a shape</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- FAQ -->
+        <section class="card" id="faq">
+            <h2>16. FAQ</h2>
+            <h3>No sound?</h3>
+            <p>Click the board once (browser audio unlock), then raise Volume and check the octave control.</p>
+            <h3>Why did scale notes disappear?</h3>
+            <p>Scale map may be <strong>Off</strong> or <strong>Chord notes only</strong>. Morph also hides scale diamonds while running.</p>
+            <h3>Shift+click removed a note I already had?</h3>
+            <p>Older builds toggled pitch class globally. Now shape capture is <strong>per fretted place</strong>, one pin per string.</p>
+            <h3>Standard preset looks selected but I’m in Baritone?</h3>
+            <p>Fixed: the blue preset is the one matching your real open MIDI tuning.</p>
+            <h3>Is data private?</h3>
+            <p>Sessions stay in your browser unless you export JSON. Nothing is uploaded by the app itself.</p>
+            <h3>Mobile?</h3>
+            <p>Works best on a tablet/desktop. Path handles support touch; neck zoom uses scroll/drag where available.</p>
+        </section>
+
+        <p style="text-align:center;margin:2.5rem 0 1rem;">
+            <a class="guide-cta" href="../index.html">Open Guitar Fretboard →</a>
+            <a class="guide-cta" href="../../index.html">Studio Tools</a>
+        </p>
+
+    </div>
+
+    <footer class="site-footer">
+        <p>© Idle Hanz · <a href="../../../index.html">Home</a> · <a href="../index.html">Fretboard</a> · <a href="https://idlehanz.com">idlehanz.com</a></p>
+    </footer>
+
+</body>
+</html>
