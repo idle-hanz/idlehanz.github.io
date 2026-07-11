@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Guitar Fretboard • Idle Hanz</title>
-    <meta name="description" content="Interactive guitar and bass fretboard — chords, scales, progressions, and session save. Free studio tool by Idle Hanz.">
+    <meta name="description" content="Interactive guitar and bass fretboard — chords, scales, progressions, shape capture, path arps. Free studio tool by Idle Hanz.">
     <meta property="og:title" content="Guitar Fretboard • Idle Hanz">
-    <meta property="og:description" content="Interactive fretboard for chords, scales, and progressions.">
+    <meta property="og:description" content="Interactive fretboard for chords, scales, progressions, and practice.">
+    <meta property="og:url" content="https://idlehanz.com/tools/fretboard/">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -48,8 +49,8 @@
         .chip:hover { border-color: #94a3b8; }
         .field { background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text-main); }
         .prog-slot { transition: all 0.15s ease; border: 2px solid var(--card-border); background: var(--card-bg); }
-        .prog-slot.role-current { border-color: #f87171; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15); }
-        .prog-slot.role-next { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
+        .prog-slot.role-current { border-color: #EF4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); }
+        .prog-slot.role-next { border-color: #3B82F6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18); }
         .prog-slot.hidden-slot { opacity: 0.55; }
         .prog-slot .tone-line { font-size: 0.68rem; line-height: 1.35; color: var(--text-muted); }
         .vis-toggle, .icon-btn {
@@ -61,6 +62,11 @@
         html.dark .vis-toggle.on { background: #064e3b; border-color: #059669; color: #6ee7b7; }
         .vis-toggle.off { background: #fef2f2; border-color: #fca5a5; color: #dc2626; }
         html.dark .vis-toggle.off { background: #450a0a; border-color: #b91c1c; color: #fca5a5; }
+        /* Morph eye states: pair (indigo) vs mono (slate) */
+        .vis-toggle.morph-pair { background: #eef2ff; border-color: #a5b4fc; color: #4338ca; }
+        html.dark .vis-toggle.morph-pair { background: #1e1b4b; border-color: #6366f1; color: #a5b4fc; }
+        .vis-toggle.morph-mono { background: #f1f5f9; border-color: #94a3b8; color: #475569; }
+        html.dark .vis-toggle.morph-mono { background: #1e293b; border-color: #64748b; color: #cbd5e1; }
         .note-chip {
             width: 1.65rem; height: 1.65rem; border-radius: 0.5rem; font-size: 0.65rem; font-weight: 700;
             border: 1px solid var(--card-border); display: inline-flex; align-items: center; justify-content: center;
@@ -97,8 +103,7 @@
         body.board-focus .app-header .tagline { display: none; }
         body.board-focus .side-panel,
         body.board-focus .progression-panel,
-        body.board-focus .app-footer,
-        body.board-focus > nav {
+        body.board-focus .app-footer {
             display: none !important;
         }
         /* Mini transport stays visible in focus mode */
@@ -182,18 +187,55 @@
             opacity: 0.45;
             cursor: not-allowed;
         }
+        .coach-bar {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
+            padding: 0.45rem 0.65rem; border-radius: 0.85rem;
+            background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(129, 140, 248, 0.35);
+            font-size: 11px; color: var(--text-muted);
+        }
+        html.dark .coach-bar { background: rgba(99, 102, 241, 0.12); border-color: rgba(129, 140, 248, 0.25); }
+        .coach-bar strong { color: var(--text-secondary); font-weight: 600; }
+        .coach-bar button.coach-dismiss {
+            margin-left: auto; font-size: 10px; padding: 0.2rem 0.5rem; border-radius: 0.5rem;
+        }
+        .display-subhead {
+            font-size: 10px; font-weight: 600; letter-spacing: 0.02em;
+            color: var(--text-muted); margin-bottom: 0.35rem; margin-top: 0.15rem;
+        }
+        .scale-display-btn.active {
+            background: #e0e7ff; border-color: #818cf8; color: #3730a3; font-weight: 600;
+        }
+        html.dark .scale-display-btn.active {
+            background: #312e81; border-color: #6366f1; color: #c7d2fe;
+        }
+        .morph-speed-btn.active {
+            background: #e0e7ff; border-color: #818cf8; color: #3730a3; font-weight: 700;
+        }
+        html.dark .morph-speed-btn.active {
+            background: #312e81; border-color: #6366f1; color: #c7d2fe;
+        }
+        .help-panel {
+            display: none; font-size: 11px; line-height: 1.45;
+            padding: 0.6rem 0.75rem; border-radius: 0.85rem;
+            background: var(--card-bg, #fff); border: 1px solid var(--border, #e2e8f0);
+            color: var(--text-muted); max-height: 14rem; overflow-y: auto;
+        }
+        .help-panel.open { display: block; }
+        html.dark .help-panel { background: #1e293b; border-color: #334155; }
+        .help-panel kbd {
+            font-size: 10px; padding: 0.05rem 0.3rem; border-radius: 0.25rem;
+            border: 1px solid #cbd5e1; background: #f8fafc; font-family: ui-monospace, monospace;
+        }
+        html.dark .help-panel kbd { background: #0f172a; border-color: #475569; color: #e2e8f0; }
     </style>
 </head>
 <body class="py-4">
-    <nav class="border-b border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-900/90 backdrop-blur sticky top-0 z-50 mb-2">
-        <div class="app-shell !py-0 !pb-0 flex items-center justify-between h-12">
-            <div class="flex items-center gap-x-3 text-sm">
-                <a href="../../index.html" class="font-display font-semibold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400">← Idle Hanz</a>
-                <span class="text-slate-400 hidden sm:inline">|</span>
-                <span class="text-slate-500 dark:text-slate-400 hidden sm:inline">Guitar Fretboard</span>
-            </div>
-            <a href="../index.html" class="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">Studio Tools</a>
-        </div>
+    <nav class="px-3 sm:px-4 py-2 text-xs flex flex-wrap items-center gap-x-3 gap-y-1 border-b mb-2" style="border-color:var(--card-border);color:var(--text-muted)">
+        <a href="../../index.html" class="font-semibold hover:underline" style="color:var(--text-main)">Idle Hanz</a>
+        <span aria-hidden="true">·</span>
+        <a href="../index.html" class="hover:underline">Studio Tools</a>
+        <span aria-hidden="true">·</span>
+        <span style="color:var(--text-main)">Guitar Fretboard</span>
     </nav>
     <div class="app-shell">
         <div class="app-header flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -203,7 +245,7 @@
                 </div>
                 <div>
                     <h1 class="font-display text-3xl tracking-tighter">Guitar Fretboard</h1>
-                    <p class="tagline text-sm -mt-1" style="color:var(--text-muted)">Chord • Scale • Progression Visualizer · Idle Hanz</p>
+                    <p class="tagline text-sm -mt-1" style="color:var(--text-muted)">Chord • Scale • Progression Visualizer</p>
                     <div id="session-title" class="tagline" title="Current session">Untitled</div>
                 </div>
             </div>
@@ -236,7 +278,7 @@
 
         <!-- Full-width 3-col: slim sides, fat center -->
         <div class="main-grid grid grid-cols-1 lg:grid-cols-12 gap-3 xl:gap-4 items-start">
-            <!-- LEFT: tuning / display / CAGED -->
+            <!-- LEFT: tuning / display -->
             <div class="side-panel lg:col-span-2 card-panel rounded-3xl shadow-sm p-4 space-y-4 order-1 max-h-[calc(100vh-6rem)] overflow-y-auto">
                 <div>
                     <div class="section-header flex items-center gap-x-2 mb-3"><i class="fa-solid fa-sliders-h w-4"></i><span>TUNING</span></div>
@@ -261,70 +303,139 @@
 
                 <div>
                     <div class="section-header flex items-center gap-x-2 mb-3"><i class="fa-solid fa-eye w-4"></i><span>DISPLAY</span></div>
-                    <div class="space-y-2.5 px-0.5">
-                        <div class="flex flex-wrap gap-1.5">
-                            <button type="button" class="text-[10px] px-2 py-1 rounded-xl border chip font-medium" onclick="setFretRange(0,5)">0–5</button>
-                            <button type="button" class="text-[10px] px-2 py-1 rounded-xl border chip font-medium" onclick="setFretRange(0,12)">0–12</button>
-                            <button type="button" class="text-[10px] px-2 py-1 rounded-xl border chip font-medium" onclick="setFretRange(5,12)">5–12</button>
-                            <button type="button" class="text-[10px] px-2 py-1 rounded-xl border chip font-medium" onclick="setFretRange(7,10)">7–10</button>
-                            <button type="button" class="text-[10px] px-2 py-1 rounded-xl border chip font-medium" onclick="setFretRange(12,15)">12–15</button>
-                            <button type="button" class="text-[10px] px-2 py-1 rounded-xl border chip font-medium" onclick="setFretRange(12,24)">12–24</button>
-                        </div>
+                    <div class="space-y-3 px-0.5">
                         <div>
-                            <div class="flex justify-between text-[10px] mb-1" style="color:var(--text-muted)"><span>Start</span><span id="start-fret-value" class="font-mono">0</span></div>
-                            <input type="range" id="start-fret" min="0" max="20" value="0" class="w-full accent-slate-600">
+                            <div class="display-subhead">NECK VIEW</div>
+                            <div id="neck-view-status" class="text-xs font-semibold mb-1.5" style="color:var(--text-main)">Frets 0–12</div>
+                            <p class="text-[9px] leading-snug mb-2" style="color:var(--text-muted)">
+                                Zoom on the board: <strong>scroll</strong> pan · <strong>Ctrl+scroll</strong> zoom ·
+                                <strong>drag</strong> fret numbers · <strong>double-click</strong> a note to centre
+                            </p>
+                            <button type="button" class="chip text-[10px] px-2.5 py-1.5 rounded-xl font-medium w-full" onclick="resetNeckView()" title="Reset to frets 0–12">
+                                <i class="fa-solid fa-expand mr-1"></i>Reset view (0–12)
+                            </button>
                         </div>
+
                         <div>
-                            <div class="flex justify-between text-[10px] mb-1" style="color:var(--text-muted)"><span>End</span><span id="end-fret-value" class="font-mono">12</span></div>
-                            <input type="range" id="end-fret" min="1" max="24" value="12" class="w-full accent-slate-600">
+                            <div class="display-subhead">BOARD</div>
+                            <div class="space-y-2">
+                                <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="show-notes" checked class="accent-red-500"><span>Show note names</span></label>
+                                <div>
+                                    <div class="text-[10px] mb-1" style="color:var(--text-muted)">Scale map</div>
+                                    <div class="flex flex-wrap gap-1" id="scale-display-btns">
+                                        <button type="button" class="scale-display-btn text-[10px] px-2 py-1 rounded-xl border chip font-medium" data-scale-display="off" onclick="setScaleDisplay('off')" title="No scale diamonds">Off</button>
+                                        <button type="button" class="scale-display-btn text-[10px] px-2 py-1 rounded-xl border chip font-medium active" data-scale-display="full" onclick="setScaleDisplay('full')" title="Amber diamonds on all scale frets">Full</button>
+                                        <button type="button" class="scale-display-btn text-[10px] px-2 py-1 rounded-xl border chip font-medium" data-scale-display="chords" onclick="setScaleDisplay('chords')" title="Only chord markers — hide extra scale notes">Chord notes only</button>
+                                    </div>
+                                    <p class="text-[9px] mt-1 leading-snug" style="color:var(--text-muted)">Chords only = hide scale notes outside current/next.</p>
+                                </div>
+                                <label class="flex items-center gap-x-2 cursor-pointer text-sm" title="Fill = function colour; outer ring = current/next"><input type="checkbox" id="interval-colors" class="accent-yellow-500"><span>Interval colours (hybrid)</span></label>
+                                <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="root-emphasis" checked class="accent-amber-400"><span>Emphasize roots</span></label>
+                            </div>
                         </div>
-                        <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="show-notes" checked class="accent-red-500"><span>Show note names</span></label>
-                        <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="show-scale" checked class="accent-amber-500"><span>Highlight scale tones</span></label>
-                        <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="chord-tones-only" class="accent-indigo-500"><span>Chord tones only</span></label>
-                        <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="interval-colors" class="accent-yellow-500"><span>Interval colours</span></label>
-                        <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="root-emphasis" checked class="accent-amber-400"><span>Emphasize roots</span></label>
-                        <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="use-flats-auto" checked class="accent-teal-500"><span>Flats in flat keys</span></label>
-                        <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="show-intervals" class="accent-violet-500"><span>Labels as intervals (not notes in info)</span></label>
-                        <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="show-roman" checked class="accent-pink-500"><span>Roman numerals in key</span></label>
-                        <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="bass-emphasis" checked class="accent-orange-500"><span>Emphasize slash bass</span></label>
+
+                        <div>
+                            <div class="display-subhead">LABELS &amp; CHROME</div>
+                            <div class="space-y-2">
+                                <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="use-flats-auto" checked class="accent-teal-500"><span>Flats in flat keys</span></label>
+                                <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="show-intervals" class="accent-violet-500"><span>Labels as intervals (info)</span></label>
+                                <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="show-roman" checked class="accent-pink-500"><span>Roman numerals in key</span></label>
+                                <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="bass-emphasis" checked class="accent-orange-500"><span>Emphasize slash bass</span></label>
+                                <label class="flex items-center gap-x-2 cursor-pointer text-sm"><input type="checkbox" id="colour-open-strings" checked class="accent-rose-500"><span>Colour strings by open role</span></label>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div id="caged-section">
-                    <div class="section-header flex items-center gap-x-2 mb-2"><i class="fa-solid fa-shapes w-4"></i><span>CAGED</span></div>
-                    <div class="flex flex-wrap gap-1.5">
-                        <button type="button" class="text-xs px-3 py-1.5 rounded-2xl border chip font-semibold" onclick="applyCageShape('C')">C</button>
-                        <button type="button" class="text-xs px-3 py-1.5 rounded-2xl border chip font-semibold" onclick="applyCageShape('A')">A</button>
-                        <button type="button" class="text-xs px-3 py-1.5 rounded-2xl border chip font-semibold" onclick="applyCageShape('G')">G</button>
-                        <button type="button" class="text-xs px-3 py-1.5 rounded-2xl border chip font-semibold" onclick="applyCageShape('E')">E</button>
-                        <button type="button" class="text-xs px-3 py-1.5 rounded-2xl border chip font-semibold" onclick="applyCageShape('D')">D</button>
-                    </div>
-                </div>
             </div>
 
             <!-- CENTER: fretboard + progression (between left & right columns) -->
             <div class="center-panel lg:col-span-8 space-y-2 order-2 min-w-0">
+                <div id="coach-bar" class="coach-bar">
+                    <i class="fa-solid fa-lightbulb text-amber-500"></i>
+                    <span><strong>Tips:</strong> <strong>Shift+click</strong> = shape capture (one pin per string) · DETECT = chord name · Next eye ⇄ morph · <kbd class="text-[10px]">?</kbd> help</span>
+                    <button type="button" class="coach-dismiss chip" onclick="dismissCoachBar()" title="Hide tips">Got it</button>
+                </div>
+                <div id="help-panel" class="help-panel">
+                    <div class="font-semibold mb-1" style="color:var(--text-secondary)">Quick help</div>
+                    <ul class="list-disc pl-4 space-y-0.5">
+                        <li><strong>Next eye:</strong> show → pair morph (red/blue) → hide</li>
+                        <li><strong>Current eye:</strong> show → mono morph (grey) → hide</li>
+                        <li><strong>Shared tones</strong> stay lit during morph; exclusives pulse</li>
+                        <li><strong>Path:</strong> Set path → click A then B · drag ends · Play path run</li>
+                        <li><strong>Shift+click</strong> = shape capture (white ring). One fretted note per string; click another fret on that string to move the pin. Detective follows frets.</li>
+                        <li><strong>DETECT panel</strong> chips = free detective; editing a chip unlinks from shape</li>
+                        <li><strong>Neck zoom:</strong> scroll = pan · Ctrl+scroll = zoom · drag fret numbers · double-click a note to centre · Reset in Display</li>
+                        <li><strong>Keys:</strong> <kbd>←</kbd><kbd>→</kbd> step · <kbd>Space</kbd> play prog · <kbd>M</kbd> toggle pair morph · <kbd>P</kbd> set/clear path · <kbd>Esc</kbd> exit focus · <kbd>?</kbd> this help</li>
+                    </ul>
+                    <button type="button" class="chip text-[10px] mt-2 px-2 py-1 rounded-lg" onclick="toggleHelpPanel(false)">Close</button>
+                </div>
                 <div class="fretboard-container">
                     <canvas id="fretboard" width="1200" height="340" class="w-full touch-none block"></canvas>
                 </div>
 
-                <div class="board-legend flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-[10px]" style="color:var(--text-muted)">
-                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 bg-red-500 rounded-full"></span>Current</span>
-                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 bg-blue-500 rounded-full"></span>Next</span>
-                    <span class="flex items-center gap-1"><span class="w-4 h-2.5 flex overflow-hidden rounded-sm"><span class="w-1/2 bg-red-500"></span><span class="w-1/2 bg-blue-500"></span></span>Shared split</span>
-                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 bg-amber-400 rotate-45"></span>In scale</span>
-                    <span class="text-emerald-600 font-medium">Eye = visibility · slash = bass · Focus board for full screen</span>
+                <div class="board-legend space-y-1 px-1 text-[10px]" style="color:var(--text-muted)">
+                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:#EF4444"></span>Current</span>
+                        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:#3B82F6"></span>Next</span>
+                        <span class="flex items-center gap-1"><span class="w-4 h-2.5 flex overflow-hidden rounded-sm"><span class="w-1/2" style="background:#EF4444"></span><span class="w-1/2" style="background:#3B82F6"></span></span>Shared</span>
+                        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rotate-45" style="background:rgba(245,158,11,0.55);border:1px solid #D97706"></span>Scale</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full border-2" style="border-color:#EAB308"></span>Root ring</span>
+                        <span class="flex items-center gap-1" title="Open string in both chords"><span class="inline-block w-5 h-0 border-t-2 border-dashed" style="border-image: repeating-linear-gradient(90deg,#EF4444 0 4px,#3B82F6 4px 8px) 1"></span>Open shared</span>
+                        <span class="flex items-center gap-1"><span class="w-3.5 h-3.5 rounded-full text-[8px] font-bold text-white flex items-center justify-center leading-none" style="background:#F59E0B">1</span>Arp #</span>
+                        <span class="flex items-center gap-1" title="Shift+click frets to pin a shape"><span class="w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm bg-transparent" style="box-shadow:0 0 0 1px #94a3b8"></span> Shape pin</span>
+                        <span id="shape-status" class="font-medium" style="color:#64748b"></span>
+                        <span class="flex items-center gap-1" title="Next eye: show → pair morph → hide"><i class="fa-solid fa-right-left text-[9px]" style="color:#6366f1"></i> Next pair</span>
+                        <span class="flex items-center gap-1" title="Current eye: show → mono morph → hide"><i class="fa-solid fa-right-left text-[9px]" style="color:#64748b"></i> Cur mono</span>
+                        <span class="flex items-center gap-1 gap-0.5" title="Morph animation speed">
+                            Speed
+                            <button type="button" class="morph-speed-btn chip text-[9px] px-1.5 py-0.5 rounded-md" data-rate="0.5" onclick="setMorphSpeed(0.5)">½×</button>
+                            <button type="button" class="morph-speed-btn chip text-[9px] px-1.5 py-0.5 rounded-md active" data-rate="1" onclick="setMorphSpeed(1)">1×</button>
+                            <button type="button" class="morph-speed-btn chip text-[9px] px-1.5 py-0.5 rounded-md" data-rate="2" onclick="setMorphSpeed(2)">2×</button>
+                        </span>
+                        <span id="morph-status" class="font-medium"></span>
+                        <button type="button" class="chip text-[9px] px-1.5 py-0.5 rounded-md" onclick="toggleHelpPanel()" title="Help"><i class="fa-solid fa-circle-question"></i></button>
+                    </div>
+                    <div id="interval-legend" class="flex flex-wrap items-center gap-x-2.5 gap-y-1 opacity-90">
+                        <span class="font-semibold mr-0.5" style="color:var(--text-secondary)">Intervals:</span>
+                        <span class="flex items-center gap-0.5"><span class="w-2 h-2 rounded-full" style="background:#EAB308"></span>R</span>
+                        <span class="flex items-center gap-0.5"><span class="w-2 h-2 rounded-full" style="background:#F97316"></span>3</span>
+                        <span class="flex items-center gap-0.5"><span class="w-2 h-2 rounded-full" style="background:#F43F5E"></span>b3</span>
+                        <span class="flex items-center gap-0.5"><span class="w-2 h-2 rounded-full" style="background:#22C55E"></span>5</span>
+                        <span class="flex items-center gap-0.5"><span class="w-2 h-2 rounded-full" style="background:#EC4899"></span>b5/#5</span>
+                        <span class="flex items-center gap-0.5"><span class="w-2 h-2 rounded-full" style="background:#8B5CF6"></span>7</span>
+                        <span class="flex items-center gap-0.5"><span class="w-2 h-2 rounded-full" style="background:#6366F1"></span>b7</span>
+                        <span class="flex items-center gap-0.5"><span class="w-2 h-2 rounded-full" style="background:#A78BFA"></span>4/11</span>
+                        <span class="flex items-center gap-0.5"><span class="w-2 h-2 rounded-full" style="background:#0EA5E9"></span>2/9</span>
+                        <span class="flex items-center gap-0.5"><span class="w-2 h-2 rounded-full" style="background:#14B8A6"></span>6/13</span>
+                        <span class="italic opacity-80">· hybrid = fill + red/blue ring</span>
+                    </div>
                 </div>
 
-                <!-- Scale path / run (always available; especially useful in focus) -->
+                <!-- Path spotlight + arpeggio run controls -->
                 <div class="path-controls flex flex-wrap items-center gap-1.5 px-1">
                     <button type="button" id="path-set-btn" class="chip text-[10px] px-2.5 py-1.5 rounded-xl font-semibold" onclick="togglePathButton()" title="Set a start→end run, or clear it">
                         <i id="path-set-icon" class="fa-solid fa-route mr-1"></i><span id="path-set-label">Set path</span>
                     </button>
-                    <button type="button" id="path-play-btn" class="chip text-[10px] px-2.5 py-1.5 rounded-xl font-semibold" onclick="playScalePath()" title="Play scale notes along the path" disabled>
-                        <i class="fa-solid fa-play mr-1"></i>Play run
+                    <select id="path-width" class="field text-[10px] rounded-xl px-2 py-1.5" onchange="onPathWidthChange()" title="Corridor width (~frets of room)">
+                        <option value="narrow">Narrow</option>
+                        <option value="normal" selected>Normal (~3 frets)</option>
+                        <option value="wide">Wide</option>
+                    </select>
+                    <select id="path-play-mode" class="field text-[10px] rounded-xl px-2 py-1.5" onchange="onPathPlayOptsChange()" title="What to play / emphasize">
+                        <option value="scale">Scale run</option>
+                        <option value="chord">Chord arp</option>
+                        <option value="both" selected>Scale + arp</option>
+                    </select>
+                    <select id="path-arp-dir" class="field text-[10px] rounded-xl px-2 py-1.5" onchange="onPathPlayOptsChange()" title="Arp / run direction">
+                        <option value="up" selected>Up</option>
+                        <option value="down">Down</option>
+                        <option value="updown">Up-down</option>
+                    </select>
+                    <button type="button" id="path-play-btn" class="chip text-[10px] px-2.5 py-1.5 rounded-xl font-semibold" onclick="playPathRun()" title="Audition notes along the path corridor" disabled>
+                        <i class="fa-solid fa-play mr-1"></i>Play path
                     </button>
-                    <span id="path-status" class="text-[10px]" style="color:var(--text-muted)">Path: off · full board</span>
+                    <span id="path-status" class="text-[10px]" style="color:var(--text-muted)">Path: off · full board · drag A/B when set</span>
                 </div>
 
                 <!-- Focus-only mini transport -->
@@ -412,16 +523,20 @@
                 </div>
 
                 <div>
-                    <div class="section-header flex items-center gap-x-2 mb-2"><i class="fa-solid fa-magnifying-glass w-4"></i><span>DETECT</span></div>
+                    <div class="section-header flex items-center gap-x-2 mb-2">
+                        <i class="fa-solid fa-magnifying-glass w-4"></i><span>DETECT</span>
+                        <span id="detect-link-badge" class="hidden text-[9px] px-1.5 py-0.5 rounded-md font-semibold ml-auto" style="background:#e0e7ff;color:#3730a3">Following shape</span>
+                    </div>
                     <div class="flex gap-1 mb-2">
                         <button type="button" id="detect-mode-chord" class="flex-1 text-[10px] px-2 py-1.5 rounded-xl border font-semibold" onclick="setDetectMode('chord')">Chord</button>
                         <button type="button" id="detect-mode-scale" class="flex-1 text-[10px] px-2 py-1.5 rounded-xl border font-semibold" onclick="setDetectMode('scale')">Scale</button>
                     </div>
-                    <div class="text-[10px] mb-1.5" style="color:var(--text-muted)" id="detect-hint">Pick notes → chord names (or Custom)</div>
+                    <div class="text-[10px] mb-1.5" style="color:var(--text-muted)" id="detect-hint">Panel chips = detective · Shift+click frets = shape capture</div>
                     <div class="flex flex-wrap gap-1 mb-2">
-                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="seedDetectFromPair()" title="Notes from current + next chords">From pair</button>
-                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="seedDetectFromProgression()" title="Notes from all progression chords">From progression</button>
-                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="clearDetectNotes()">Clear</button>
+                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="seedDetectFromPair()" title="Notes from current + next chords (clears shape pins)">From pair</button>
+                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="seedDetectFromProgression()" title="Notes from all progression chords (clears shape pins)">From progression</button>
+                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="clearShapePins()" title="Clear white rings on the board">Clear shape</button>
+                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="clearDetectNotes()" title="Clear detective chips + shape pins">Clear all</button>
                     </div>
                     <div class="flex flex-wrap gap-1 mb-2" id="detect-note-chips"></div>
                     <div id="detect-root-pin-wrap" class="mb-2 hidden">
@@ -502,13 +617,42 @@
             }
         }
     };
-    const COLOR_CURRENT = '#e74c3c';
-    const COLOR_NEXT = '#3b82f6';
+    // ——— Colour system ———
+    // Pair mode: current = warm red, next = cool blue (progression / voice leading)
+    // Interval mode: fill = chord function; outer ring still red/blue (hybrid)
+    // Scale: amber diamonds only (never as strong as chord fills)
+    const COLOR_CURRENT = '#EF4444';
+    const COLOR_NEXT = '#3B82F6';
+    const COLOR_ROOT_RING = '#EAB308';
+    const COLOR_BASS_RING = '#FB923C';
+    const COLOR_SCALE_STROKE = '#D97706';
+    const COLOR_SCALE_FILL_LIGHT = 'rgba(245,158,11,0.45)';
+    const COLOR_SCALE_FILL_DARK = 'rgba(250,204,21,0.5)';
+    // Mono morph palette (shape change without current/next hue)
+    const COLOR_MONO_SHARED_LIGHT = '#475569';
+    const COLOR_MONO_SHARED_DARK = '#CBD5E1';
+    const COLOR_MONO_EXCL_LIGHT = '#64748B';
+    const COLOR_MONO_EXCL_DARK = '#94A3B8';
+    /** Function-first interval palette (extensions share simple tone colours) */
     const INTERVAL_COLORS = {
-        'R':'#eab308','2':'#38bdf8','b2':'#7dd3fc','b3':'#fb923c','3':'#f97316',
-        '4':'#a78bfa','b5':'#f472b6','5':'#22c55e','#5':'#e879f9','6':'#2dd4bf',
-        'b7':'#60a5fa','7':'#818cf8','9':'#38bdf8','b9':'#7dd3fc','#9':'#c084fc',
-        '11':'#a78bfa','#11':'#d8b4fe','13':'#2dd4bf'
+        'R':  '#EAB308',
+        '3':  '#F97316',   // maj 3 — warm orange
+        'b3': '#F43F5E',   // min 3 — rose (clearly distinct from maj)
+        '5':  '#22C55E',
+        'b5': '#EC4899',
+        '#5': '#EC4899',
+        '7':  '#8B5CF6',   // maj 7 — violet
+        'b7': '#6366F1',   // dom 7 — indigo
+        '4':  '#A78BFA',
+        '11': '#A78BFA',
+        '#11':'#C4B5FD',
+        '2':  '#0EA5E9',
+        '9':  '#0EA5E9',
+        'b2': '#38BDF8',
+        'b9': '#38BDF8',
+        '#9': '#22D3EE',
+        '6':  '#14B8A6',
+        '13': '#14B8A6'
     };
 
     // A — expanded chord library
@@ -633,11 +777,6 @@
     // Flat map for lookups
     const scaleTypes = {};
     scaleGroups.forEach(g => { Object.assign(scaleTypes, g.scales); });
-    const CAGED = {
-        'C': { string: 2, offsetFret: 3 }, 'A': { string: 4, offsetFret: 0 },
-        'G': { string: 5, offsetFret: 3 }, 'E': { string: 5, offsetFret: 0 },
-        'D': { string: 1, offsetFret: 0 }
-    };
     const ROMAN = ['I','bII','II','bIII','III','IV','bV','V','bVI','VI','bVII','VII'];
 
     let instrument = 'guitar';
@@ -651,12 +790,15 @@
     }
     function setOpenPc(s, pc) {
         pc = ((pc % 12) + 12) % 12;
+        const prevOpen = openMidi.slice();
         const old = openMidi[s];
         let n = old - (((old % 12) + 12) % 12) + pc;
         while (n - old > 6) n -= 12;
         while (old - n > 6) n += 12;
         openMidi[s] = n;
         syncTuningFromMidi();
+        // Keep shape pins on the same sounding notes (frets may move)
+        relocateShapePinsAfterTuningChange(prevOpen);
     }
     function currentInstrumentCfg() {
         return INSTRUMENTS[instrument] || INSTRUMENTS.guitar;
@@ -676,19 +818,75 @@
         return out;
     }
     function applyOpenMidi(midiArr) {
+        const prevOpen = openMidi.slice();
         openMidi = midiArr.map(m => +m);
         syncTuningFromMidi();
+        // Shape capture: move frets so each pin keeps its pitch class on that string
+        relocateShapePinsAfterTuningChange(prevOpen);
+        highlightMatchingTuningPreset();
+    }
+
+    function midiArraysEqual(a, b) {
+        if (!a || !b || a.length !== b.length) return false;
+        for (let i = 0; i < a.length; i++) {
+            if ((+a[i]) !== (+b[i])) return false;
+        }
+        return true;
+    }
+
+    /** Highlight the tuning preset that matches openMidi (none if custom) */
+    function highlightMatchingTuningPreset() {
+        const host = document.getElementById('preset-buttons');
+        if (!host) return;
+        const presets = presetsForCurrent();
+        let matchKey = null;
+        Object.keys(presets).forEach(k => {
+            if (midiArraysEqual(openMidi, presets[k].midi)) matchKey = k;
+        });
+        host.querySelectorAll('button').forEach(btn => {
+            const isMatch = matchKey != null && btn.dataset.presetKey === matchKey;
+            btn.classList.toggle('active', isMatch);
+            btn.classList.toggle('bg-indigo-100', isMatch);
+            btn.classList.toggle('text-indigo-700', isMatch);
+            btn.classList.toggle('border-indigo-300', isMatch);
+            btn.classList.toggle('chip', !isMatch);
+        });
     }
     let startFret = 0, endFret = 12;
-    let showNoteNames = true, showScaleHighlight = true, chordTonesOnly = false;
+    let showNoteNames = true;
+    /** Scale map: 'off' | 'full' (diamonds) | 'chords' (chord markers only, no extra scale frets) */
+    let scaleDisplay = 'full';
     let intervalColors = false, rootEmphasis = true, useFlatsAuto = true;
     let showIntervalsInfo = false, showRoman = true, bassEmphasis = true;
+    let colourOpenStrings = true;
     let scaleRoot = 0, scaleType = 'Major (Ionian)';
+
+    function scaleMapFull() { return scaleDisplay === 'full'; }
+    function scaleMapChordsOnly() { return scaleDisplay === 'chords'; }
+    function scaleMapOff() { return scaleDisplay === 'off'; }
+
+    function setScaleDisplay(mode) {
+        if (mode !== 'off' && mode !== 'full' && mode !== 'chords') mode = 'full';
+        scaleDisplay = mode;
+        syncScaleDisplayUI();
+        if (canvas && ctx) updateFretboard();
+    }
+
+    function syncScaleDisplayUI() {
+        document.querySelectorAll('.scale-display-btn').forEach(b => {
+            b.classList.toggle('active', b.getAttribute('data-scale-display') === scaleDisplay);
+        });
+    }
     let scaleNotes = new Set([0,2,4,5,7,9,11]);
     let detectNotes = new Set();
     let detectMode = 'chord'; // 'chord' | 'scale'
-    let detectNotesDirty = false; // true after manual chip edits
+    let detectNotesDirty = false; // true after manual chip edits (unlinked from shape)
     let detectRootPin = null; // null = auto, or 0–11 to force that mode root
+    // Shape capture: fretted positions on the board (white rings); detective follows while linked
+    // One pin per string (chord grip) — Map keyed by string index
+    let shapePins = new Map(); // key string index s → { s, f, pc, n }
+    let shapeLinked = false;   // true → detectNotes rebuilt from pins
+    let shapePinSeq = 0;
     let audioVolume = 0.55, audioOctaveShift = 1;
     let audioPattern = 'strum';
     let audioTempo = 90;
@@ -698,10 +896,17 @@
     let progTimer = null;
     let progPlayGen = 0; // invalidate scheduled steps on stop
 
-    // Scale path / run: start→end corridor filters scale notes
+    // Path spotlight + arpeggio runway
     let pathPickPhase = 'idle'; // idle | start | end
     let pathStart = null; // { s, f }
     let pathEnd = null;
+    let pathWidth = 'normal'; // narrow | normal | wide  (~1 / ~3 / ~5 frets capacity)
+    let pathPlayMode = 'both'; // scale | chord | both
+    let pathArpDir = 'up'; // up | down | updown
+    let pathDrag = null; // null | 'start' | 'end' | 'body'
+    let pathDragOrigin = null; // { x, y, s0, f0, s1, f1 } for body drag
+    let pathDragMoved = false; // suppress click-to-play after a drag
+    let pathHoverHandle = null; // null | 'start' | 'end' | 'body' — badges brighten on hover
 
     function newSlot(root=0, typeIdx=0) {
         return {
@@ -721,6 +926,17 @@
         newSlot(5, 0)   // F
     ];
     let progressionFocus = 0;
+    // Morph: exclusive tones pulse current↔next; shared stay lit
+    // morphMode: null | 'pair' (Next eye, red/blue) | 'mono' (Current eye, greyscale)
+    let morphMode = null;
+    let morphStartTime = 0;
+    let morphRaf = null;
+    const MORPH_PERIOD_MS = 3000; // base at 1× — easier to read voice leading
+    const MORPH_FADE_MS = 240;
+    let morphRate = 1; // 0.5 | 1 | 2  (½× slower · 1× · 2× faster)
+    // Path spotlight cache (rebuild only when path/layout changes)
+    let pathVeilCache = null;
+    let pathVeilKey = '';
     let canvas, ctx, layout = {}, audioCtx = null;
 
     function prefersFlats() {
@@ -846,7 +1062,225 @@
         return slotIntervals(slot).notes.slice();
     }
 
+    // ——— Shape capture (board) ↔ Chord detective (panel) ———
+    /** Fretted position on string s that sounds pitch-class pc (prefer near preferF) */
+    function findFretForPcOnString(s, pc, preferF) {
+        pc = ((pc % 12) + 12) % 12;
+        if (s < 0 || s >= numStrings() || openMidi[s] == null) return null;
+        const open = openMidi[s];
+        const pref = preferF != null && isFinite(preferF) ? preferF : 0;
+        let best = null, bestDist = 1e9;
+        for (let f = 0; f <= 24; f++) {
+            if ((((open + f) % 12) + 12) % 12 !== pc) continue;
+            const d = Math.abs(f - pref);
+            if (d < bestDist || (d === bestDist && best != null && f < best)) {
+                bestDist = d;
+                best = f;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * After retuning: keep each pin's sounding note (pitch class), move frets on the same string.
+     * Drops pins if the string no longer exists or that PC is unreachable (shouldn't happen in 0–24).
+     */
+    function relocateShapePinsAfterTuningChange(prevOpenMidi) {
+        if (!shapePins.size) return;
+        const next = new Map();
+        shapePins.forEach((p, sKey) => {
+            const s = p.s != null ? p.s : +sKey;
+            if (s < 0 || s >= numStrings()) return;
+            // Note the player captured under the previous tuning
+            let wantPc = p.pc;
+            if (prevOpenMidi && prevOpenMidi[s] != null && p.f != null) {
+                wantPc = ((((prevOpenMidi[s] + p.f) % 12) + 12) % 12);
+            }
+            wantPc = ((wantPc % 12) + 12) % 12;
+            const nf = findFretForPcOnString(s, wantPc, p.f);
+            if (nf == null) return;
+            const npc = ((((openMidi[s] + nf) % 12) + 12) % 12);
+            next.set(s, { s, f: nf, pc: npc, n: p.n });
+        });
+        shapePins = next;
+        if (shapePins.size) {
+            // Rebuild detective from new frets if still following shape (or re-link when pins remain)
+            if (shapeLinked || !detectNotesDirty) syncDetectFromShapePins();
+            else {
+                // Unlinked: still update stored pc on pins for drawing consistency
+                updateShapeStatus();
+            }
+        } else {
+            shapeLinked = false;
+            updateShapeStatus();
+            updateDetectLinkUI();
+        }
+    }
+
+    /** Don't overwrite detective while shape pins exist or user edited freehand */
+    function canAutoSeedDetect() {
+        return !detectNotesDirty && !shapeLinked && shapePins.size === 0;
+    }
+
+    function clearShapePinsOnly() {
+        shapePins.clear();
+        shapePinSeq = 0;
+        shapeLinked = false;
+        updateShapeStatus();
+        updateDetectLinkUI();
+    }
+
+    function syncDetectFromShapePins() {
+        const notes = new Set();
+        shapePins.forEach(p => notes.add(p.pc));
+        detectNotes = notes;
+        detectNotesDirty = false;
+        shapeLinked = shapePins.size > 0;
+        updateShapeStatus();
+        updateDetectLinkUI();
+        renderDetectChips();
+        renderDetectRootPin();
+        renderDetectResults();
+    }
+
+    /**
+     * Shift+click fretted place.
+     * One pin per string (chord shape): same fretted spot = remove;
+     * other fret on that string = move pin; other strings keep their pins.
+     */
+    function toggleShapePin(s, f) {
+        const existing = shapePins.get(s);
+        if (existing && existing.f === f) {
+            // Toggle off this fretted spot
+            shapePins.delete(s);
+        } else if (existing) {
+            // Move pin along the same string (replaces impossible multi-fret grip)
+            const pc = ((tuning[s] + f) % 12 + 12) % 12;
+            shapePins.set(s, { s, f, pc, n: existing.n });
+        } else {
+            const pc = ((tuning[s] + f) % 12 + 12) % 12;
+            shapePinSeq++;
+            shapePins.set(s, { s, f, pc, n: shapePinSeq });
+        }
+        // Detective rebuilds from pins only (resets free-hand set while linked)
+        syncDetectFromShapePins();
+        if (ctx && layout && layout.stringYs) drawFretboard();
+    }
+
+    function clearShapePins() {
+        clearShapePinsOnly();
+        // If we were linked, clear detective too; free-hand chips stay if already unlinked empty pins
+        detectNotes = new Set();
+        detectNotesDirty = true;
+        detectRootPin = null;
+        renderDetectChips();
+        renderDetectRootPin();
+        renderDetectResults();
+        if (ctx && layout && layout.stringYs) drawFretboard();
+    }
+
+    function unlinkShapeFromDetective() {
+        if (!shapeLinked) return;
+        shapeLinked = false;
+        detectNotesDirty = true;
+        updateShapeStatus();
+        updateDetectLinkUI();
+    }
+
+    function updateDetectLinkUI() {
+        const badge = document.getElementById('detect-link-badge');
+        const hint = document.getElementById('detect-hint');
+        if (badge) {
+            if (shapeLinked && shapePins.size) {
+                badge.textContent = 'Following shape';
+                badge.classList.remove('hidden');
+            } else if (shapePins.size && !shapeLinked) {
+                badge.textContent = 'Shape unlinked';
+                badge.classList.remove('hidden');
+            } else {
+                badge.textContent = '';
+                badge.classList.add('hidden');
+            }
+        }
+        if (hint) {
+            if (shapeLinked && shapePins.size) {
+                hint.textContent = detectMode === 'scale'
+                    ? 'Shape capture → scale matches from fretted notes. Pin a root optional.'
+                    : 'Shape capture → detective follows white rings on the board.';
+            } else if (detectMode === 'scale') {
+                hint.textContent = 'Notes → each matching mode is listed. Pin a root to force e.g. B major.';
+            } else {
+                hint.textContent = 'Panel chips = detective · Shift+click frets = shape capture';
+            }
+        }
+    }
+
+    function updateShapeStatus() {
+        const el = document.getElementById('shape-status');
+        if (!el) return;
+        if (!shapePins.size) {
+            el.textContent = '';
+            return;
+        }
+        const pcs = [...new Set([...shapePins.values()].map(p => p.pc))];
+        const names = pcs.map(pc => getNoteName(pc)).join(' ');
+        let guess = '';
+        if (detectMode === 'chord' && pcs.length >= 2) {
+            const hits = analyzePitchSet(new Set(pcs));
+            if (hits[0]) guess = ' → ' + getNoteName(hits[0].root) + ' ' + hits[0].name;
+        } else if (detectMode === 'scale' && pcs.length >= 3) {
+            const hits = analyzeScaleSet(new Set(pcs));
+            if (hits[0]) guess = ' → ' + getNoteName(hits[0].root) + ' ' + hits[0].scaleName;
+        }
+        const link = shapeLinked ? 'linked' : 'unlinked';
+        el.textContent = `Shape ${shapePins.size} frets · ${names}${guess} · ${link}`;
+    }
+
+    function drawShapePins(ctx, isDark) {
+        if (!shapePins.size || !layout.stringYs) return;
+        shapePins.forEach(p => {
+            const x = p.f === 0 && layout.startFret === 0 ? layout.nutX - 16 : getXForFret(p.f);
+            const y = getYForString(p.s);
+            if (x == null || x < 0 || y == null || !isFinite(x) || !isFinite(y)) return;
+            const r = 16;
+            // Soft outer halo
+            ctx.beginPath();
+            ctx.arc(x, y, r + 2, 0, Math.PI * 2);
+            ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.55)';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            // White hollow ring — shape fingerprint
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.strokeStyle = isDark ? 'rgba(248,250,252,0.95)' : 'rgba(255,255,255,0.98)';
+            ctx.lineWidth = 2.75;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.strokeStyle = isDark ? 'rgba(15,23,42,0.65)' : 'rgba(15,23,42,0.35)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            // Small order number
+            if (p.n != null) {
+                const bx = x + 11, by = y + 11;
+                ctx.beginPath();
+                ctx.arc(bx, by, 7, 0, Math.PI * 2);
+                ctx.fillStyle = isDark ? 'rgba(248,250,252,0.95)' : 'rgba(255,255,255,0.95)';
+                ctx.fill();
+                ctx.strokeStyle = isDark ? '#64748b' : '#94a3b8';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                ctx.fillStyle = isDark ? '#0f172a' : '#334155';
+                ctx.font = '700 8px Inter, system-ui, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(String(p.n), bx, by + 0.5);
+            }
+        });
+    }
+
     function seedDetectFromPair() {
+        clearShapePinsOnly();
         const notes = new Set();
         pitchSetFromSlot(currentSlot()).forEach(n => notes.add(n));
         if (progression.length > 1) {
@@ -857,9 +1291,12 @@
         renderDetectChips();
         renderDetectRootPin();
         renderDetectResults();
+        updateDetectLinkUI();
+        if (ctx && layout && layout.stringYs) drawFretboard();
     }
 
     function seedDetectFromProgression() {
+        clearShapePinsOnly();
         const notes = new Set();
         progression.forEach(slot => {
             if (slot.visible === false) return;
@@ -873,33 +1310,31 @@
         renderDetectChips();
         renderDetectRootPin();
         renderDetectResults();
+        updateDetectLinkUI();
+        if (ctx && layout && layout.stringYs) drawFretboard();
     }
 
     function clearDetectNotes() {
+        clearShapePinsOnly();
         detectNotes = new Set();
         detectNotesDirty = true;
         detectRootPin = null;
         renderDetectChips();
         renderDetectRootPin();
         renderDetectResults();
+        if (ctx && layout && layout.stringYs) drawFretboard();
     }
 
     function setDetectMode(mode) {
         detectMode = mode === 'scale' ? 'scale' : 'chord';
         const chordBtn = document.getElementById('detect-mode-chord');
         const scaleBtn = document.getElementById('detect-mode-scale');
-        const hint = document.getElementById('detect-hint');
         const applyBtn = document.getElementById('detect-apply-btn');
         const on = 'bg-indigo-100 text-indigo-800 border-indigo-400';
         const off = 'chip';
         if (chordBtn && scaleBtn) {
             chordBtn.className = `flex-1 text-[10px] px-2 py-1.5 rounded-xl border font-semibold ${detectMode === 'chord' ? on : off}`;
             scaleBtn.className = `flex-1 text-[10px] px-2 py-1.5 rounded-xl border font-semibold ${detectMode === 'scale' ? on : off}`;
-        }
-        if (hint) {
-            hint.textContent = detectMode === 'scale'
-                ? 'Notes → each matching mode is listed. Pin a root to force e.g. B major.'
-                : 'Pick notes → chord names (or Custom)';
         }
         if (applyBtn) {
             applyBtn.textContent = detectMode === 'scale'
@@ -908,9 +1343,15 @@
         }
         const pinWrap = document.getElementById('detect-root-pin-wrap');
         if (pinWrap) pinWrap.classList.toggle('hidden', detectMode !== 'scale');
-        // Scale mode seeds from the active pair unless user already edited
-        if (detectMode === 'scale' && !detectNotesDirty) seedDetectFromPair();
-        else { renderDetectChips(); renderDetectRootPin(); renderDetectResults(); }
+        // Scale mode seeds from the active pair unless user already edited or shape-linked
+        if (detectMode === 'scale' && !detectNotesDirty && !shapeLinked) seedDetectFromPair();
+        else {
+            renderDetectChips();
+            renderDetectRootPin();
+            renderDetectResults();
+            updateDetectLinkUI();
+            updateShapeStatus();
+        }
     }
 
     function onDetectRootPinChange() {
@@ -1083,6 +1524,7 @@
         if (!canvas) return;
         const wrap = canvas.parentElement;
         if (!wrap) return;
+        invalidatePathVeil();
 
         const focus = document.body.classList.contains('board-focus');
         const rect = wrap.getBoundingClientRect();
@@ -1185,9 +1627,11 @@
         if (stroke) { c.strokeStyle = stroke; c.lineWidth = strokeW || 2; c.stroke(); }
     }
     function drawScaleDiamond(c, x, y, half, isDark) {
+        // Soft amber only — never competes with chord fills
         drawDiamond(c, x, y, half, isDark ? '#334155' : '#f1e7d9', null, 0);
-        drawDiamond(c, x, y, half, isDark ? 'rgba(250,204,21,0.55)' : 'rgba(245,158,11,0.5)',
-            isDark ? 'rgba(250,204,21,0.9)' : 'rgba(180,83,9,0.7)', 1.5);
+        drawDiamond(c, x, y, half,
+            isDark ? COLOR_SCALE_FILL_DARK : COLOR_SCALE_FILL_LIGHT,
+            isDark ? 'rgba(251,191,36,0.9)' : COLOR_SCALE_STROKE, 1.5);
     }
     function pathDiamond(c, x, y, half) {
         c.beginPath();
@@ -1196,7 +1640,18 @@
     }
     function pathCircle(c, x, y, r) { c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); }
 
-    function drawSplitMarker(c, x, y, inScale, size, leftColor, rightColor, leftLabel, rightLabel, emphasize) {
+    function strokeMarkerShape(c, x, y, inScale, size, stroke, lineW) {
+        c.strokeStyle = stroke;
+        c.lineWidth = lineW;
+        if (inScale) { pathDiamond(c, x, y, size); c.stroke(); }
+        else { pathCircle(c, x, y, size * 0.92); c.stroke(); }
+    }
+
+    /**
+     * Shared current|next marker. hybridPair=true → fill is interval colour(s),
+     * outer ring encodes current (left/red) vs next (right/blue).
+     */
+    function drawSplitMarker(c, x, y, inScale, size, leftColor, rightColor, leftLabel, rightLabel, emphasize, hybridPair) {
         const half = size, r = size * 0.92;
         c.save();
         c.save(); c.beginPath(); c.rect(x - half - 2, y - half - 2, half + 2, half * 2 + 4); c.clip();
@@ -1210,10 +1665,22 @@
         c.strokeStyle = 'rgba(255,255,255,0.85)'; c.lineWidth = 1.5;
         const divH = inScale ? half * 0.72 : r * 0.78;
         c.beginPath(); c.moveTo(x, y - divH); c.lineTo(x, y + divH); c.stroke();
+
+        // Hybrid: dual outer ring — red current | blue next (pair still readable)
+        if (hybridPair) {
+            const ring = size + 3.5;
+            c.save();
+            c.beginPath(); c.rect(x - ring - 2, y - ring - 2, ring + 2, ring * 2 + 4); c.clip();
+            strokeMarkerShape(c, x, y, inScale, ring, COLOR_CURRENT, 2.75);
+            c.restore();
+            c.save();
+            c.beginPath(); c.rect(x, y - ring - 2, ring + 2, ring * 2 + 4); c.clip();
+            strokeMarkerShape(c, x, y, inScale, ring, COLOR_NEXT, 2.75);
+            c.restore();
+        }
+
         if (emphasize) {
-            c.strokeStyle = '#fbbf24'; c.lineWidth = 2.5;
-            if (inScale) { pathDiamond(c, x, y, half + 3); c.stroke(); }
-            else { pathCircle(c, x, y, r + 3); c.stroke(); }
+            strokeMarkerShape(c, x, y, inScale, size + (hybridPair ? 6 : 3), COLOR_ROOT_RING, 2.5);
         }
         c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle';
         const fs = (leftLabel.length > 2 || rightLabel.length > 2) ? 8 : 9;
@@ -1223,21 +1690,34 @@
         c.restore();
     }
 
-    function drawSolidMarker(c, x, y, inScale, size, color, label, emphasizeRoot, emphasizeBass) {
+    /**
+     * Solid chord marker. pairRing = COLOR_CURRENT|COLOR_NEXT when interval hybrid is on.
+     */
+    function drawSolidMarker(c, x, y, inScale, size, color, label, emphasizeRoot, emphasizeBass, pairRing) {
         c.shadowColor = 'rgba(0,0,0,0.28)'; c.shadowBlur = 4; c.shadowOffsetY = 1.5;
         if (inScale) drawDiamond(c, x, y, size, color, '#fff', 2.25);
         else drawCircle(c, x, y, size * 0.92, color, '#fff', 2.25);
         c.shadowBlur = 0; c.shadowOffsetY = 0;
+
+        // Hybrid pair ring (outside white edge) so current/next survives interval fills
+        if (pairRing) {
+            strokeMarkerShape(c, x, y, inScale, size + 3.5, pairRing, 2.75);
+        }
+
         if (emphasizeRoot) {
-            if (inScale) drawDiamond(c, x, y, size + 3, null, '#fbbf24', 2.5);
-            else drawCircle(c, x, y, size * 0.92 + 3, null, '#fbbf24', 2.5);
+            const ringSize = size + (pairRing ? 6.5 : 3);
+            strokeMarkerShape(c, x, y, inScale, ringSize, COLOR_ROOT_RING, 2.5);
         } else if (emphasizeBass) {
-            if (inScale) drawDiamond(c, x, y, size + 3, null, '#fb923c', 2.5);
-            else drawCircle(c, x, y, size * 0.92 + 3, null, '#fb923c', 2.5);
+            const ringSize = size + (pairRing ? 6.5 : 3);
+            strokeMarkerShape(c, x, y, inScale, ringSize, COLOR_BASS_RING, 2.5);
         }
         c.fillStyle = '#fff'; c.font = `700 ${emphasizeRoot ? 12 : 11}px Inter,system-ui,sans-serif`;
         c.textAlign = 'center'; c.textBaseline = 'middle';
         c.fillText(label, x, y + 0.5);
+    }
+
+    function intervalFill(label, fallback) {
+        return INTERVAL_COLORS[label] || fallback;
     }
 
     // ——— Audio (soft plucked tone) ———
@@ -1341,9 +1821,67 @@
         playTone(openMidiOf(s) + f, null, 0.9);
     }
 
-    // ——— Scale path (run up the neck) ———
+    // ——— Path spotlight + arpeggio runway ———
     function pathIsActive() {
         return !!(pathStart && pathEnd);
+    }
+
+    function pathWidthParams() {
+        // Half-widths in fret/string units. Normal ≈ ~3 frets of room on a string.
+        if (pathWidth === 'narrow') return { fretTol: 0.95, strTol: 0.9 };
+        if (pathWidth === 'wide') return { fretTol: 2.7, strTol: 1.65 };
+        return { fretTol: 1.6, strTol: 1.3 };
+    }
+
+    function invalidatePathVeil() {
+        pathVeilCache = null;
+        pathVeilKey = '';
+    }
+
+    function onPathWidthChange() {
+        const el = document.getElementById('path-width');
+        if (el) pathWidth = el.value || 'normal';
+        invalidatePathVeil();
+        updatePathUI();
+        if (ctx) drawFretboard();
+    }
+
+    function onPathPlayOptsChange() {
+        const m = document.getElementById('path-play-mode');
+        const d = document.getElementById('path-arp-dir');
+        if (m) pathPlayMode = m.value || 'both';
+        if (d) pathArpDir = d.value || 'up';
+        updatePathUI();
+        if (ctx) drawFretboard();
+    }
+
+    function pathPixelEnds() {
+        if (!pathStart || !pathEnd || !layout.stringYs) return null;
+        const px = (p) => {
+            const x = p.f === 0 && layout.startFret === 0 ? layout.nutX - 16 : getXForFret(p.f);
+            const y = getYForString(p.s);
+            if (x == null || x < 0 || y == null || !isFinite(y)) return null;
+            return { x, y };
+        };
+        const a = px(pathStart), b = px(pathEnd);
+        if (!a || !b) return null;
+        return { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
+    }
+
+    function pathBeamPixelWidth() {
+        const { fretTol, strTol } = pathWidthParams();
+        // Approximate pixels from frets/strings spacing
+        let fretPx = layout.fretSpacing || 40;
+        if (pathStart && pathEnd && layout.wireXMap) {
+            const f0 = Math.min(pathStart.f, pathEnd.f);
+            const f1 = Math.max(pathStart.f, pathEnd.f);
+            if (f1 > f0) {
+                const x0 = getXForFret(f0), x1 = getXForFret(f1);
+                if (x0 > 0 && x1 > 0) fretPx = Math.abs(x1 - x0) / (f1 - f0);
+            }
+        }
+        const strPx = layout.stringSpacing || 28;
+        return Math.max(28, Math.min(120, fretTol * fretPx * 1.6 + strTol * strPx * 0.55));
     }
 
     function updatePathUI() {
@@ -1367,25 +1905,24 @@
                 : 'fa-solid fa-route mr-1';
         }
         if (status) {
-            if (pathPickPhase === 'start') status.textContent = 'Path: click start on the board';
+            if (pathPickPhase === 'start') status.textContent = 'Path: click start · then end · drag handles when set';
             else if (pathPickPhase === 'end') {
                 const a = pathStart;
                 status.textContent = a
                     ? `Path: start s${a.s + 1}/f${a.f} → click end`
                     : 'Path: click end';
             } else if (pathIsActive()) {
-                const n = collectPathScaleNotes().length;
-                status.textContent = `Path: s${pathStart.s + 1}/f${pathStart.f} → s${pathEnd.s + 1}/f${pathEnd.f} · ${n} scale notes · chords on path only`;
+                const sc = collectPathScaleNotes().length;
+                const ch = collectPathChordNotes().length;
+                status.textContent = `Spotlight s${pathStart.s + 1}/f${pathStart.f}→s${pathEnd.s + 1}/f${pathEnd.f} · ${sc} scale · ${ch} arp tones · drag A/B`;
             } else {
-                status.textContent = 'Path: off · full board';
+                status.textContent = 'Path: off · full board · drag A/B when set';
             }
         }
     }
 
-    /** One button: start picking, or clear an active path */
     function togglePathButton() {
         if (pathPickPhase === 'start' || pathPickPhase === 'end') {
-            // Cancel in-progress pick
             clearScalePath();
             return;
         }
@@ -1400,6 +1937,8 @@
         pathPickPhase = 'start';
         pathStart = null;
         pathEnd = null;
+        pathDrag = null;
+        invalidatePathVeil();
         updatePathUI();
         if (ctx) drawFretboard();
     }
@@ -1408,11 +1947,14 @@
         pathPickPhase = 'idle';
         pathStart = null;
         pathEnd = null;
+        pathDrag = null;
+        pathHoverHandle = null;
+        invalidatePathVeil();
         updatePathUI();
         if (ctx) drawFretboard();
     }
 
-    /** Elliptical corridor around the line segment start→end in (fret, string) space */
+    /** Elliptical corridor — width from pathWidth (normal ≈ 3 frets capacity) */
     function isInPathCorridor(s, f) {
         if (!pathStart || !pathEnd) return true;
         const s0 = pathStart.s, f0 = pathStart.f;
@@ -1427,12 +1969,10 @@
         }
         const pf = f0 + t * df;
         const ps = s0 + t * ds;
-        // Corridor half-widths (generous enough for playable runs)
-        const fretTol = 0.85;
-        const strTol = 1.15;
+        const { fretTol, strTol } = pathWidthParams();
         const nf = (f - pf) / fretTol;
         const ns = (s - ps) / strTol;
-        return (nf * nf + ns * ns) <= 1.05;
+        return (nf * nf + ns * ns) <= 1.08;
     }
 
     function pathProgress(s, f) {
@@ -1445,35 +1985,124 @@
         return ((f - f0) * df + (s - s0) * ds) / len2;
     }
 
+    function pathScanBounds() {
+        const { fretTol } = pathWidthParams();
+        const pad = Math.ceil(fretTol + 1);
+        const fLo = Math.max(0, Math.min(pathStart.f, pathEnd.f) - pad);
+        const fHi = Math.min(24, Math.max(pathStart.f, pathEnd.f) + pad);
+        return { fLo, fHi };
+    }
+
     function collectPathScaleNotes() {
         if (!pathIsActive()) return [];
         const pts = [];
         const nStr = numStrings();
-        const fLo = Math.max(0, Math.min(pathStart.f, pathEnd.f) - 1);
-        const fHi = Math.min(24, Math.max(pathStart.f, pathEnd.f) + 1);
+        const { fLo, fHi } = pathScanBounds();
         for (let s = 0; s < nStr; s++) {
             for (let f = fLo; f <= fHi; f++) {
                 const pc = (tuning[s] + f) % 12;
                 if (!scaleNotes.has(pc)) continue;
                 if (!isInPathCorridor(s, f)) continue;
-                pts.push({ s, f, midi: openMidiOf(s) + f, t: pathProgress(s, f) });
+                pts.push({ s, f, midi: openMidiOf(s) + f, t: pathProgress(s, f), kind: 'scale', pc });
             }
         }
         pts.sort((a, b) => (a.t - b.t) || (a.f - b.f) || (a.s - b.s));
-        // de-dupe same pitch class consecutive at same-ish place optional — keep all frets
         return pts;
     }
 
-    function playScalePath() {
-        const pts = collectPathScaleNotes();
+    /** Current-chord tones on the path (for arp practice) */
+    function collectPathChordNotes() {
+        if (!pathIsActive()) return [];
+        const slot = currentSlot();
+        if (!slot || slot.visible === false) return [];
+        const positions = computeChordPositions(slot);
+        const pts = [];
+        positions.forEach(p => {
+            if (!isInPathCorridor(p.s, p.f)) return;
+            if (p.f < 0 || p.f > 24) return;
+            pts.push({
+                s: p.s, f: p.f,
+                midi: openMidiOf(p.s) + p.f,
+                t: pathProgress(p.s, p.f),
+                kind: 'chord',
+                label: p.label,
+                pc: p.semi
+            });
+        });
+        // Unique s-f
+        const seen = new Set();
+        const uniq = [];
+        pts.sort((a, b) => (a.t - b.t) || (a.f - b.f) || (a.s - b.s));
+        pts.forEach(p => {
+            const k = p.s + '-' + p.f;
+            if (seen.has(k)) return;
+            seen.add(k);
+            uniq.push(p);
+        });
+        return uniq;
+    }
+
+    function orderPathNotes(pts) {
+        const sorted = pts.slice().sort((a, b) => (a.t - b.t) || (a.f - b.f) || (a.s - b.s));
+        if (pathArpDir === 'down') return sorted.reverse();
+        if (pathArpDir === 'updown') {
+            if (sorted.length < 2) return sorted;
+            const up = sorted;
+            const down = sorted.slice(0, -1).reverse();
+            return up.concat(down);
+        }
+        return sorted; // up
+    }
+
+    function collectPathPlayNotes() {
+        let pts = [];
+        if (pathPlayMode === 'scale' || pathPlayMode === 'both') {
+            pts = pts.concat(collectPathScaleNotes());
+        }
+        if (pathPlayMode === 'chord' || pathPlayMode === 'both') {
+            const ch = collectPathChordNotes();
+            if (pathPlayMode === 'chord') pts = ch;
+            else {
+                // both: merge, prefer keeping all, de-dupe by s-f
+                const seen = new Set(pts.map(p => p.s + '-' + p.f));
+                ch.forEach(p => {
+                    const k = p.s + '-' + p.f;
+                    if (!seen.has(k)) { seen.add(k); pts.push(p); }
+                });
+            }
+        }
+        return orderPathNotes(pts);
+    }
+
+    /** Map s-f → arp order number for current chord tones on path */
+    function pathChordOrderMap() {
+        const map = new Map();
+        if (!pathIsActive()) return map;
+        if (pathPlayMode === 'scale') return map;
+        const ordered = orderPathNotes(collectPathChordNotes());
+        // For updown, only number the first ascent
+        const seen = new Set();
+        let n = 0;
+        ordered.forEach(p => {
+            const k = p.s + '-' + p.f;
+            if (seen.has(k)) return;
+            seen.add(k);
+            n++;
+            map.set(k, n);
+        });
+        return map;
+    }
+
+    function playPathRun() {
+        const pts = collectPathPlayNotes();
         if (!pts.length) return;
         const a = ensureAudio();
         if (!a) return;
         readAudioControls();
         a.resume().then(() => {
             const t0 = a.currentTime + 0.04;
-            const step = 0.14;
-            pts.forEach((p, i) => playTone(p.midi, t0 + i * step, 0.75));
+            const step = pathPlayMode === 'chord' ? 0.16 : 0.13;
+            pts.forEach((p, i) => playTone(p.midi, t0 + i * step, 0.72));
         });
     }
 
@@ -1487,66 +2116,425 @@
             playFret(hit.s, hit.f);
         } else {
             pathEnd = { s: hit.s, f: hit.f };
-            // Avoid zero-length path
             if (pathStart && pathEnd.s === pathStart.s && pathEnd.f === pathStart.f) {
                 pathEnd = { s: hit.s, f: Math.min(24, hit.f + 1) };
             }
             pathPickPhase = 'idle';
             playFret(hit.s, hit.f);
+            invalidatePathVeil();
         }
         updatePathUI();
         if (ctx) drawFretboard();
         return true;
     }
 
-    function drawPathOverlay(ctx, isDark) {
+    /** Pixel layout for an end handle: note center + offset A/B badge (keeps notes readable) */
+    function pathHandleLayout(which) {
+        const ends = pathPixelEnds();
+        if (!ends) return null;
+        const isStart = which === 'start';
+        const nx = isStart ? ends.x0 : ends.x1;
+        const ny = isStart ? ends.y0 : ends.y1;
+        // Push badge away from the path so it sits outside the note, not on it
+        let dx = ends.x1 - ends.x0, dy = ends.y1 - ends.y0;
+        const len = Math.hypot(dx, dy) || 1;
+        dx /= len; dy /= len;
+        // start badge opposite to end; end badge further past end
+        const outward = isStart ? -1 : 1;
+        // Prefer a slight vertical lift so badges clear interval labels
+        const off = 18;
+        let bx = nx + outward * dx * off;
+        let by = ny + outward * dy * off - 12;
+        // Keep badge on canvas
+        bx = Math.max(12, Math.min(canvas.width - 12, bx));
+        by = Math.max(12, Math.min(canvas.height - 12, by));
+        return { nx, ny, bx, by };
+    }
+
+    function hitPathHandle(canvasX, canvasY) {
+        if (!pathIsActive() || pathPickPhase !== 'idle') return null;
+        const ends = pathPixelEnds();
+        if (!ends) return null;
+
+        // Generous hit: ring around note OR the offset badge (drag stays easy)
+        const hitEnd = (which) => {
+            const L = pathHandleLayout(which);
+            if (!L) return false;
+            if (Math.hypot(canvasX - L.nx, canvasY - L.ny) <= 16) return true;
+            if (Math.hypot(canvasX - L.bx, canvasY - L.by) <= 14) return true;
+            return false;
+        };
+        const h0 = hitEnd('start');
+        const h1 = hitEnd('end');
+        if (h0 && h1) {
+            // Prefer closer of the two note centers
+            const d0 = Math.hypot(canvasX - ends.x0, canvasY - ends.y0);
+            const d1 = Math.hypot(canvasX - ends.x1, canvasY - ends.y1);
+            return d0 <= d1 ? 'start' : 'end';
+        }
+        if (h0) return 'start';
+        if (h1) return 'end';
+
+        // Body: near segment (away from ends a bit so A/B win)
+        const { x0, y0, x1, y1 } = ends;
+        const dx = x1 - x0, dy = y1 - y0;
+        const len2 = dx * dx + dy * dy || 1;
+        let t = ((canvasX - x0) * dx + (canvasY - y0) * dy) / len2;
+        t = Math.max(0.08, Math.min(0.92, t));
+        const px = x0 + t * dx, py = y0 + t * dy;
+        const dist = Math.hypot(canvasX - px, canvasY - py);
+        if (dist <= pathBeamPixelWidth() * 0.35) return 'body';
+        return null;
+    }
+
+    function canvasCoordsFromEvent(e) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        return {
+            x: (e.clientX - rect.left) * scaleX,
+            y: (e.clientY - rect.top) * scaleY,
+            cssX: e.clientX - rect.left,
+            cssY: e.clientY - rect.top
+        };
+    }
+
+    function setupPathDragListeners() {
+        if (!canvas || canvas._pathDragBound) return;
+        canvas._pathDragBound = true;
+
+        canvas.addEventListener('mousedown', e => {
+            if (pathPickPhase !== 'idle' || !pathIsActive()) return;
+            const c = canvasCoordsFromEvent(e);
+            const h = hitPathHandle(c.x, c.y);
+            if (!h) return;
+            e.preventDefault();
+            pathDrag = h;
+            pathDragMoved = false;
+            pathDragOrigin = {
+                x: c.x, y: c.y,
+                s0: pathStart.s, f0: pathStart.f,
+                s1: pathEnd.s, f1: pathEnd.f
+            };
+            canvas.style.cursor = 'grabbing';
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            if (pathHoverHandle) {
+                pathHoverHandle = null;
+                if (ctx && !pathDrag) drawFretboard();
+            }
+            if (!pathDrag && canvas) canvas.style.cursor = 'crosshair';
+        });
+
+        window.addEventListener('mousemove', e => {
+            if (!pathDrag || !pathDragOrigin) {
+                if (canvas && pathIsActive() && pathPickPhase === 'idle') {
+                    const c = canvasCoordsFromEvent(e);
+                    const h = hitPathHandle(c.x, c.y);
+                    canvas.style.cursor = h ? 'grab' : 'crosshair';
+                    // Only A/B ends light up badges; body hover doesn't need badge flash
+                    const nextHover = (h === 'start' || h === 'end') ? h : null;
+                    if (nextHover !== pathHoverHandle) {
+                        pathHoverHandle = nextHover;
+                        if (ctx) drawFretboard();
+                    }
+                } else if (pathHoverHandle) {
+                    pathHoverHandle = null;
+                    if (ctx) drawFretboard();
+                }
+                return;
+            }
+            pathDragMoved = true;
+            const c = canvasCoordsFromEvent(e);
+            const hit = hitTestFret(c.cssX, c.cssY);
+            if (pathDrag === 'start' && hit) {
+                pathStart = { s: hit.s, f: hit.f };
+                if (pathStart.s === pathEnd.s && pathStart.f === pathEnd.f) {
+                    pathStart.f = Math.max(0, pathEnd.f - 1);
+                }
+            } else if (pathDrag === 'end' && hit) {
+                pathEnd = { s: hit.s, f: hit.f };
+                if (pathStart.s === pathEnd.s && pathStart.f === pathEnd.f) {
+                    pathEnd.f = Math.min(24, pathStart.f + 1);
+                }
+            } else if (pathDrag === 'body' && hit) {
+                // Translate whole path so its midpoint follows the grab
+                const midS = Math.round((pathDragOrigin.s0 + pathDragOrigin.s1) / 2);
+                const midF = Math.round((pathDragOrigin.f0 + pathDragOrigin.f1) / 2);
+                const dS = hit.s - midS;
+                const dF = hit.f - midF;
+                let ns0 = pathDragOrigin.s0 + dS;
+                let nf0 = pathDragOrigin.f0 + dF;
+                let ns1 = pathDragOrigin.s1 + dS;
+                let nf1 = pathDragOrigin.f1 + dF;
+                const nStr = numStrings();
+                ns0 = Math.max(0, Math.min(nStr - 1, ns0));
+                ns1 = Math.max(0, Math.min(nStr - 1, ns1));
+                nf0 = Math.max(0, Math.min(24, nf0));
+                nf1 = Math.max(0, Math.min(24, nf1));
+                pathStart = { s: ns0, f: nf0 };
+                pathEnd = { s: ns1, f: nf1 };
+            }
+            invalidatePathVeil();
+            updatePathUI();
+            if (ctx) drawFretboard();
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (pathDrag) {
+                pathDrag = null;
+                pathDragOrigin = null;
+                if (canvas) canvas.style.cursor = 'crosshair';
+                invalidatePathVeil();
+                updatePathUI();
+                if (ctx) drawFretboard();
+            }
+        });
+
+        // Touch: path drag + pick (tablet / phone)
+        const touchPoint = (e) => {
+            if (!e.touches || !e.touches.length) return null;
+            const t = e.touches[0];
+            return {
+                clientX: t.clientX, clientY: t.clientY,
+                preventDefault: () => e.preventDefault()
+            };
+        };
+        canvas.addEventListener('touchstart', e => {
+            const t = touchPoint(e);
+            if (!t) return;
+            const c = canvasCoordsFromEvent(t);
+            if (pathPickPhase === 'start' || pathPickPhase === 'end') {
+                e.preventDefault();
+                const hit = hitTestFret(c.cssX, c.cssY);
+                handlePathClick(hit);
+                return;
+            }
+            if (pathPickPhase !== 'idle' || !pathIsActive()) return;
+            const h = hitPathHandle(c.x, c.y);
+            if (!h) return;
+            e.preventDefault();
+            pathDrag = h;
+            pathDragMoved = false;
+            pathDragOrigin = {
+                x: c.x, y: c.y,
+                s0: pathStart.s, f0: pathStart.f,
+                s1: pathEnd.s, f1: pathEnd.f
+            };
+        }, { passive: false });
+        canvas.addEventListener('touchmove', e => {
+            if (!pathDrag || !pathDragOrigin) return;
+            e.preventDefault();
+            pathDragMoved = true;
+            const t = touchPoint(e);
+            if (!t) return;
+            const c = canvasCoordsFromEvent(t);
+            const hit = hitTestFret(c.cssX, c.cssY);
+            if (pathDrag === 'start' && hit) {
+                pathStart = { s: hit.s, f: hit.f };
+                if (pathStart.s === pathEnd.s && pathStart.f === pathEnd.f) pathStart.f = Math.max(0, pathEnd.f - 1);
+            } else if (pathDrag === 'end' && hit) {
+                pathEnd = { s: hit.s, f: hit.f };
+                if (pathStart.s === pathEnd.s && pathStart.f === pathEnd.f) pathEnd.f = Math.min(24, pathStart.f + 1);
+            } else if (pathDrag === 'body' && hit) {
+                const midS = Math.round((pathDragOrigin.s0 + pathDragOrigin.s1) / 2);
+                const midF = Math.round((pathDragOrigin.f0 + pathDragOrigin.f1) / 2);
+                const dS = hit.s - midS, dF = hit.f - midF;
+                const nStr = numStrings();
+                pathStart = {
+                    s: Math.max(0, Math.min(nStr - 1, pathDragOrigin.s0 + dS)),
+                    f: Math.max(0, Math.min(24, pathDragOrigin.f0 + dF))
+                };
+                pathEnd = {
+                    s: Math.max(0, Math.min(nStr - 1, pathDragOrigin.s1 + dS)),
+                    f: Math.max(0, Math.min(24, pathDragOrigin.f1 + dF))
+                };
+            }
+            invalidatePathVeil();
+            updatePathUI();
+            if (ctx) drawFretboard();
+        }, { passive: false });
+        canvas.addEventListener('touchend', () => {
+            if (pathDrag) {
+                pathDrag = null;
+                pathDragOrigin = null;
+                invalidatePathVeil();
+                updatePathUI();
+            }
+        });
+    }
+
+    /** Dark veil with soft lit beam — cached while path/layout stable (morph-friendly) */
+    function applyPathSpotlight(isDark) {
+        if (!pathIsActive()) return;
+        const ends = pathPixelEnds();
+        if (!ends) return;
+        const baseW = pathBeamPixelWidth();
+        const key = [
+            canvas.width, canvas.height, isDark ? 1 : 0,
+            Math.round(ends.x0), Math.round(ends.y0), Math.round(ends.x1), Math.round(ends.y1),
+            pathWidth, Math.round(baseW)
+        ].join('|');
+        if (pathVeilCache && pathVeilKey === key) {
+            ctx.drawImage(pathVeilCache, 0, 0);
+            return;
+        }
+
+        const veil = document.createElement('canvas');
+        veil.width = canvas.width;
+        veil.height = canvas.height;
+        const v = veil.getContext('2d');
+        v.fillStyle = isDark ? 'rgba(2, 6, 23, 0.62)' : 'rgba(15, 23, 42, 0.52)';
+        v.fillRect(0, 0, veil.width, veil.height);
+        v.globalCompositeOperation = 'destination-out';
+        v.lineCap = 'round';
+        v.lineJoin = 'round';
+        const layers = 14;
+        const feather = Math.max(36, baseW * 1.35);
+        for (let i = layers; i >= 0; i--) {
+            const t = i / layers;
+            const a = 0.045 + (1 - t) * (1 - t) * 0.11;
+            v.strokeStyle = `rgba(0,0,0,${a})`;
+            v.lineWidth = baseW + t * feather;
+            v.beginPath();
+            v.moveTo(ends.x0, ends.y0);
+            v.lineTo(ends.x1, ends.y1);
+            v.stroke();
+        }
+        for (let i = layers; i >= 0; i--) {
+            const t = i / layers;
+            const a = 0.04 + (1 - t) * (1 - t) * 0.1;
+            const r = baseW * 0.42 + t * feather * 0.55;
+            v.fillStyle = `rgba(0,0,0,${a})`;
+            v.beginPath();
+            v.arc(ends.x0, ends.y0, r, 0, Math.PI * 2);
+            v.fill();
+            v.beginPath();
+            v.arc(ends.x1, ends.y1, r, 0, Math.PI * 2);
+            v.fill();
+        }
+
+        pathVeilCache = veil;
+        pathVeilKey = key;
+        ctx.drawImage(veil, 0, 0);
+    }
+
+    /**
+     * A/B handles: hollow ring around the note + offset badge.
+     * Badges stay dim until hover (or while dragging that end).
+     */
+    function drawPathHandles(ctx, isDark) {
         if (!pathStart && pathPickPhase === 'idle') return;
-        const mark = (p, label, color) => {
-            if (!p) return;
-            const x = p.f === 0 ? (layout.nutX - 16) : getXForFret(p.f);
-            const y = getYForString(p.s);
-            if (x < 0 || y == null) return;
+
+        const markAt = (nx, ny, bx, by, label, color, lit) => {
+            if (nx == null || ny == null || !isFinite(nx) || !isFinite(ny)) return;
+            const ringR = 15;
+            // Ring always subtle so notes stay primary; slightly stronger when lit
+            const ringAlpha = lit ? 0.95 : 0.38;
+            const haloAlpha = lit ? 0.35 : 0.12;
+
+            ctx.save();
+            ctx.globalAlpha = haloAlpha;
             ctx.beginPath();
-            ctx.arc(x, y, 16, 0, Math.PI * 2);
+            ctx.arc(nx, ny, ringR + 3, 0, Math.PI * 2);
             ctx.strokeStyle = color;
-            ctx.lineWidth = 2.5;
+            ctx.lineWidth = 5;
             ctx.stroke();
-            ctx.fillStyle = color;
+            ctx.restore();
+
+            ctx.save();
+            ctx.globalAlpha = ringAlpha;
+            ctx.beginPath();
+            ctx.arc(nx, ny, ringR, 0, Math.PI * 2);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lit ? 3 : 2;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(nx, ny, ringR, -Math.PI * 0.72, -Math.PI * 0.28);
+            ctx.lineWidth = lit ? 3.5 : 2.25;
+            ctx.stroke();
+            ctx.restore();
+
+            // Badge + leader: dim until hover/drag
+            if (bx != null && by != null) {
+                const badgeAlpha = lit ? 1 : 0.28;
+                ctx.save();
+                ctx.globalAlpha = badgeAlpha * (lit ? 0.7 : 0.45);
+                ctx.beginPath();
+                ctx.moveTo(nx + (bx - nx) * 0.35, ny + (by - ny) * 0.35);
+                ctx.lineTo(bx, by);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1.25;
+                ctx.stroke();
+                ctx.restore();
+
+                ctx.save();
+                ctx.globalAlpha = badgeAlpha;
+                const bw = 16, bh = 14;
+                const rx = bx - bw / 2, ry = by - bh / 2;
+                ctx.beginPath();
+                if (ctx.roundRect) ctx.roundRect(rx, ry, bw, bh, 4);
+                else ctx.rect(rx, ry, bw, bh);
+                ctx.fillStyle = isDark ? 'rgba(15,23,42,0.92)' : 'rgba(255,255,255,0.95)';
+                ctx.fill();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = lit ? 1.75 : 1.25;
+                ctx.stroke();
+                ctx.fillStyle = color;
+                ctx.font = '700 10px Inter, system-ui, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, bx, by + 0.5);
+                ctx.restore();
+            }
+        };
+
+        const colA = isDark ? 'rgba(196,181,253,0.95)' : 'rgba(124,58,237,0.9)';
+        const colB = isDark ? 'rgba(251,207,232,0.95)' : 'rgba(219,39,119,0.9)';
+
+        // Ghost start while picking end — keep A bright so user sees the anchor
+        if (pathStart && !pathEnd && pathPickPhase === 'end') {
+            const x = pathStart.f === 0 && layout.startFret === 0 ? layout.nutX - 16 : getXForFret(pathStart.f);
+            const y = getYForString(pathStart.s);
+            markAt(x, y, x, y - 18, 'A', colA, true);
+            return;
+        }
+
+        const La = pathHandleLayout('start');
+        const Lb = pathHandleLayout('end');
+        const litA = pathDrag === 'start' || pathHoverHandle === 'start';
+        const litB = pathDrag === 'end' || pathHoverHandle === 'end';
+        if (La) markAt(La.nx, La.ny, La.bx, La.by, 'A', colA, litA);
+        if (Lb) markAt(Lb.nx, Lb.ny, Lb.bx, Lb.by, 'B', colB, litB);
+    }
+
+    /** Stamp 1…n order badges on current-chord tones in the path (arp practice) */
+    function drawPathArpOrderNumbers(ctx, isDark) {
+        if (!pathIsActive()) return;
+        if (pathPlayMode === 'scale') return;
+        const orderMap = pathChordOrderMap();
+        if (!orderMap.size) return;
+        orderMap.forEach((n, key) => {
+            const parts = key.split('-');
+            const s = +parts[0], f = +parts[1];
+            const x = f === 0 && layout.startFret === 0 ? layout.nutX - 16 : getXForFret(f);
+            const y = getYForString(s);
+            if (x < 0 || y == null || !isFinite(x)) return;
+            const bx = x + 10, by = y - 10;
+            ctx.beginPath();
+            ctx.arc(bx, by, 8, 0, Math.PI * 2);
+            ctx.fillStyle = isDark ? 'rgba(251,191,36,0.95)' : 'rgba(217,119,6,0.95)';
+            ctx.fill();
+            ctx.strokeStyle = isDark ? 'rgba(15,23,42,0.9)' : 'rgba(255,255,255,0.95)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.fillStyle = isDark ? '#0f172a' : '#fffbeb';
             ctx.font = '700 9px Inter, system-ui, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(label, x, y - 20);
-        };
-
-        if (pathStart && pathEnd) {
-            const x0 = pathStart.f === 0 ? layout.nutX - 16 : getXForFret(pathStart.f);
-            const y0 = getYForString(pathStart.s);
-            const x1 = pathEnd.f === 0 ? layout.nutX - 16 : getXForFret(pathEnd.f);
-            const y1 = getYForString(pathEnd.s);
-            if (x0 > 0 && x1 > 0) {
-                ctx.save();
-                // Soft corridor wash
-                ctx.strokeStyle = isDark ? 'rgba(167, 139, 250, 0.18)' : 'rgba(139, 92, 246, 0.14)';
-                ctx.lineWidth = 12;
-                ctx.lineCap = 'round';
-                ctx.beginPath();
-                ctx.moveTo(x0, y0);
-                ctx.lineTo(x1, y1);
-                ctx.stroke();
-                // Light dashed guide
-                ctx.strokeStyle = isDark ? 'rgba(196, 181, 253, 0.4)' : 'rgba(124, 58, 237, 0.32)';
-                ctx.lineWidth = 1.5;
-                ctx.setLineDash([5, 6]);
-                ctx.beginPath();
-                ctx.moveTo(x0, y0);
-                ctx.lineTo(x1, y1);
-                ctx.stroke();
-                ctx.setLineDash([]);
-                ctx.restore();
-            }
-        }
-        mark(pathStart, 'A', isDark ? 'rgba(167,139,250,0.85)' : 'rgba(124,58,237,0.7)');
-        mark(pathEnd, 'B', isDark ? 'rgba(244,114,182,0.85)' : 'rgba(219,39,119,0.7)');
+            ctx.fillText(String(n), bx, by + 0.5);
+        });
     }
 
     /** Switch named ↔ custom, carrying notes either way when possible */
@@ -1719,6 +2707,8 @@
             stopProgressionPlay();
             return;
         }
+        // Avoid two clocks: morph + progression step
+        stopPairMorph();
         const a = ensureAudio();
         if (!a) return;
         readAudioControls();
@@ -1741,7 +2731,7 @@
                     progression.forEach((s, i) => { s.visible = i === progressionFocus; });
                 }
                 updateFretboard();
-                if (!detectNotesDirty) seedDetectFromPair();
+                if (canAutoSeedDetect()) seedDetectFromPair();
                 playSlotPattern(progression[idx]);
 
                 pos++;
@@ -1772,7 +2762,7 @@
             progression.forEach((s, i) => { s.visible = i === progressionFocus; });
         }
         updateFretboard();
-        if (!detectNotesDirty) seedDetectFromPair();
+        if (canAutoSeedDetect()) seedDetectFromPair();
         playSlotPattern(progression[idx]);
     }
 
@@ -1844,8 +2834,6 @@
         populateStringCountSelect();
         populatePresets();
         populateCustomTuning();
-        const caged = document.getElementById('caged-section');
-        if (caged) caged.style.display = instrument === 'guitar' ? '' : 'none';
     }
 
     function defaultMidiFor(inst, count) {
@@ -1893,24 +2881,21 @@
         c.innerHTML = '';
         const presets = presetsForCurrent();
         const keys = Object.keys(presets);
-        keys.forEach((key, idx) => {
+        keys.forEach((key) => {
             const b = document.createElement('button');
             b.type = 'button';
-            b.className = `preset-btn text-xs px-2.5 py-1 rounded-2xl border font-medium ${idx === 0 ? 'active bg-indigo-100 text-indigo-700 border-indigo-300' : 'chip'}`;
+            b.dataset.presetKey = key;
+            b.className = 'tuning-preset-btn text-xs px-2.5 py-1 rounded-2xl border font-medium chip';
             b.textContent = presets[key].name;
+            b.title = presets[key].midi.map(m => getNoteName(((m % 12) + 12) % 12)).join(' ');
             b.onclick = () => {
-                document.querySelectorAll('#preset-buttons button').forEach(x => {
-                    x.classList.remove('active', 'bg-indigo-100', 'text-indigo-700', 'border-indigo-300');
-                    x.classList.add('chip');
-                });
-                b.classList.add('active', 'bg-indigo-100', 'text-indigo-700', 'border-indigo-300');
-                b.classList.remove('chip');
                 applyOpenMidi([...presets[key].midi]);
                 populateCustomTuning();
                 updateFretboard();
             };
             c.appendChild(b);
         });
+        highlightMatchingTuningPreset();
     }
 
     function populateCustomTuning() {
@@ -1934,6 +2919,7 @@
             fillNotes(sel, tuning[internalIdx]);
             sel.onchange = () => {
                 setOpenPc(internalIdx, +sel.value);
+                highlightMatchingTuningPreset();
                 populateCustomTuning();
                 updateFretboard();
             };
@@ -1955,12 +2941,18 @@
             chip.type = 'button';
             chip.className = `note-chip ${detectNotes.has(i) ? 'on' : ''}`;
             chip.textContent = getNoteName(i);
+            chip.title = shapeLinked
+                ? 'Edit unlinks detective from shape pins (white rings stay)'
+                : 'Toggle pitch in detective';
             chip.onclick = () => {
+                // Manual chip edit = free detective; pins remain as unlinked ghosts
+                if (shapeLinked) unlinkShapeFromDetective();
                 if (detectNotes.has(i)) detectNotes.delete(i); else detectNotes.add(i);
                 detectNotesDirty = true;
                 renderDetectChips();
                 renderDetectRootPin();
                 renderDetectResults();
+                updateShapeStatus();
             };
             c.appendChild(chip);
         }
@@ -2055,7 +3047,10 @@
 
     // ——— Progression UI E ———
     function addSlot() {
-        if (progression.length >= 8) return;
+        if (progression.length >= 8) {
+            setInstanceStatus('Max 8 chords in progression', false);
+            return;
+        }
         progression.push(newSlot(0, 0));
         updateFretboard();
     }
@@ -2063,6 +3058,7 @@
         if (progression.length <= 1) return;
         progression.splice(idx, 1);
         if (progressionFocus >= progression.length) progressionFocus = progression.length - 1;
+        if (progression.length < 2) stopPairMorph();
         updateFretboard();
     }
     function moveSlot(idx, dir) {
@@ -2096,6 +3092,7 @@
 
     function toggleSoloFocused() {
         if (!soloActive) {
+            stopPairMorph();
             // Enter solo: remember every slot's eye state, then show only focused
             soloSavedVisibility = progression.map(s => !!s.visible);
             progression.forEach((s, i) => { s.visible = i === progressionFocus; });
@@ -2116,6 +3113,7 @@
 
     function showAllSlots() {
         // Cancels solo mode and shows everything
+        stopPairMorph();
         soloActive = false;
         soloSavedVisibility = null;
         progression.forEach(s => { s.visible = true; });
@@ -2127,11 +3125,13 @@
     function setProgressionFocus(idx) {
         progressionFocus = idx;
         if (soloActive) {
+            stopPairMorph();
             progression.forEach((s, i) => { s.visible = i === progressionFocus; });
         }
         updateFretboard();
-        // Keep detect chips in sync with the new current+next pair (unless user edited)
-        if (!detectNotesDirty) seedDetectFromPair();
+        updateMorphStatus();
+        // Keep detect chips in sync with the new current+next pair (unless user edited / shape capture)
+        if (canAutoSeedDetect()) seedDetectFromPair();
     }
 
     function renderProgressionSlots() {
@@ -2160,8 +3160,8 @@
             head.className = 'flex items-center justify-between gap-1 mb-1';
             const role = document.createElement('span');
             role.className = 'text-[9px] font-bold tracking-wide truncate';
-            if (isCur) { role.style.color = '#dc2626'; role.textContent = isPlaying ? `${idx+1} · PLAY` : `${idx+1} · CUR`; }
-            else if (isNext) { role.style.color = '#2563eb'; role.textContent = `${idx+1} · NEXT`; }
+            if (isCur) { role.style.color = COLOR_CURRENT; role.textContent = isPlaying ? `${idx+1} · PLAY` : `${idx+1} · CUR`; }
+            else if (isNext) { role.style.color = COLOR_NEXT; role.textContent = `${idx+1} · NEXT`; }
             else { role.style.color = 'var(--text-muted)'; role.textContent = `${idx+1}`; }
             if (showRoman) {
                 const rom = romanForSlot(slot);
@@ -2170,10 +3170,45 @@
             const tools = document.createElement('div');
             tools.className = 'flex items-center gap-0.5 shrink-0';
             const eye = document.createElement('button');
-            eye.type = 'button'; eye.className = `vis-toggle ${slot.visible?'on':'off'}`;
+            eye.type = 'button';
             eye.style.width = '1.5rem'; eye.style.height = '1.5rem';
-            eye.innerHTML = slot.visible ? '<i class="fa-solid fa-eye text-[10px]"></i>' : '<i class="fa-solid fa-eye-slash text-[10px]"></i>';
-            eye.onclick = (e) => { e.stopPropagation(); slot.visible = !slot.visible; updateFretboard(); };
+            // Current: show → mono morph → hide. Next: show → pair morph → hide. Else on/off.
+            if (isCur && progression.length > 1) {
+                if (morphMode === 'mono') {
+                    eye.className = 'vis-toggle morph-mono';
+                    eye.innerHTML = '<i class="fa-solid fa-right-left text-[10px]"></i>';
+                    eye.title = 'Mono morph: greyscale pulse · click to hide current';
+                } else if (slot.visible) {
+                    eye.className = 'vis-toggle on';
+                    eye.innerHTML = '<i class="fa-solid fa-eye text-[10px]"></i>';
+                    eye.title = 'Current shown · click for mono morph';
+                } else {
+                    eye.className = 'vis-toggle off';
+                    eye.innerHTML = '<i class="fa-solid fa-eye-slash text-[10px]"></i>';
+                    eye.title = 'Current hidden · click to show';
+                }
+            } else if (isNext && !isCur) {
+                if (morphMode === 'pair') {
+                    eye.className = 'vis-toggle morph-pair';
+                    eye.innerHTML = '<i class="fa-solid fa-right-left text-[10px]"></i>';
+                    eye.title = 'Pair morph: red/blue · shared held · click to hide next';
+                } else if (slot.visible) {
+                    eye.className = 'vis-toggle on';
+                    eye.innerHTML = '<i class="fa-solid fa-eye text-[10px]"></i>';
+                    eye.title = 'Next shown · click for pair morph (voice leading)';
+                } else {
+                    eye.className = 'vis-toggle off';
+                    eye.innerHTML = '<i class="fa-solid fa-eye-slash text-[10px]"></i>';
+                    eye.title = 'Next hidden · click to show';
+                }
+            } else {
+                eye.className = `vis-toggle ${slot.visible ? 'on' : 'off'}`;
+                eye.innerHTML = slot.visible
+                    ? '<i class="fa-solid fa-eye text-[10px]"></i>'
+                    : '<i class="fa-solid fa-eye-slash text-[10px]"></i>';
+                eye.title = slot.visible ? 'Hide chord' : 'Show chord';
+            }
+            eye.onclick = (e) => { e.stopPropagation(); cycleSlotEye(idx); };
             const leftB = document.createElement('button');
             leftB.type='button'; leftB.className='icon-btn'; leftB.style.width='1.5rem'; leftB.style.height='1.5rem';
             leftB.innerHTML='<i class="fa-solid fa-chevron-left text-[10px]"></i>';
@@ -2302,40 +3337,379 @@
         });
     }
 
-    function setFretRange(a,b) {
-        startFret = a; endFret = b;
-        document.getElementById('start-fret').value = a;
-        document.getElementById('end-fret').value = b;
-        updateFretboard();
-    }
-    function applyCageShape(shape) {
-        if (instrument !== 'guitar') return;
-        const cfg = CAGED[shape]; if (!cfg) return;
-        const sIdx = Math.min(cfg.string, numStrings() - 1);
-        const root = slotIntervals(currentSlot()).root;
-        let rootFret = 0;
-        for (let f = 0; f <= 15; f++) {
-            if ((tuning[sIdx] + f) % 12 === root) { rootFret = f; break; }
+    function clampNeckRange(a, b) {
+        a = Math.max(0, Math.min(23, Math.round(+a || 0)));
+        b = Math.max(1, Math.min(24, Math.round(+b || 12)));
+        if (b <= a) b = Math.min(24, a + 3);
+        // Minimum window width (~3 frets of span)
+        if (b - a < 3) {
+            b = Math.min(24, a + 3);
+            if (b - a < 3) a = Math.max(0, b - 3);
         }
-        let a = Math.max(0, rootFret - 1), b = Math.min(24, rootFret + 4);
-        if (shape === 'E' || shape === 'A') { a = rootFret; b = Math.min(24, rootFret + 4); }
-        if (shape === 'D') { a = Math.max(0, rootFret - 2); b = Math.min(24, rootFret + 3); }
+        return { a, b };
+    }
+
+    function updateNeckViewUI() {
+        const el = document.getElementById('neck-view-status');
+        if (!el) return;
+        const span = endFret - startFret;
+        let label = 'Frets ' + startFret + '–' + endFret;
+        if (startFret === 0 && endFret === 12) label += ' · open half';
+        else if (startFret === 0 && endFret <= 5) label += ' · open';
+        else if (startFret >= 12) label += ' · upper';
+        el.textContent = label + ' · ' + span + ' wide';
+    }
+
+    function setFretRange(a, b, opts) {
+        const r = clampNeckRange(a, b);
+        startFret = r.a;
+        endFret = r.b;
+        updateNeckViewUI();
+        if (opts && opts.skipUpdate) return;
+        if (canvas && ctx) updateFretboard();
+        else if (typeof updateFretboard === 'function') {
+            try { updateFretboard(); } catch (e) { /* early init */ }
+        }
+    }
+
+    function resetNeckView() {
+        setFretRange(0, 12);
+    }
+
+    function panNeckBy(deltaFrets) {
+        const d = Math.round(deltaFrets);
+        if (!d) return;
+        let a = startFret + d;
+        let b = endFret + d;
+        if (a < 0) { b -= a; a = 0; }
+        if (b > 24) { a -= (b - 24); b = 24; }
+        a = Math.max(0, a);
+        b = Math.min(24, Math.max(a + 3, b));
         setFretRange(a, b);
+    }
+
+    /** Zoom window; pivotFret keeps that fret roughly centred */
+    function zoomNeck(factor, pivotFret) {
+        const span = Math.max(3, endFret - startFret);
+        let newSpan = Math.round(span * factor);
+        newSpan = Math.max(3, Math.min(24, newSpan));
+        if (newSpan === span && factor !== 1) {
+            newSpan = factor < 1 ? Math.max(3, span - 1) : Math.min(24, span + 1);
+        }
+        const pivot = pivotFret != null && isFinite(pivotFret)
+            ? pivotFret
+            : (startFret + endFret) / 2;
+        let a = Math.round(pivot - newSpan / 2);
+        let b = a + newSpan;
+        if (a < 0) { b -= a; a = 0; }
+        if (b > 24) { a -= (b - 24); b = 24; }
+        setFretRange(a, b);
+    }
+
+    /** Approximate fret under canvas CSS x (for zoom pivot / double-click) */
+    function fretAtCanvasCssX(cssX) {
+        if (!canvas || !layout.wireXMap) return (startFret + endFret) / 2;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / Math.max(1, rect.width);
+        const x = cssX * scaleX;
+        let bestF = startFret, bestD = 1e9;
+        const lo = layout.firstFretted != null ? layout.firstFretted : Math.max(1, startFret);
+        const hi = layout.lastFretted != null ? layout.lastFretted : endFret;
+        for (let f = lo; f <= hi; f++) {
+            const fx = getXForFret(f);
+            if (fx < 0) continue;
+            const d = Math.abs(fx - x);
+            if (d < bestD) { bestD = d; bestF = f; }
+        }
+        if (startFret === 0 && layout.nutX != null && Math.abs(x - layout.nutX) < bestD) bestF = 0;
+        return bestF;
+    }
+
+    function isOverFretNumberStrip(cssY) {
+        if (!canvas || !layout.fbBottom) return false;
+        const rect = canvas.getBoundingClientRect();
+        const scaleY = canvas.height / Math.max(1, rect.height);
+        const y = cssY * scaleY;
+        return y >= layout.fbBottom + 2 && y <= canvas.height - 2;
+    }
+
+    let neckPanDrag = null; // { startCssX, startA, startB }
+
+    function setupNeckZoomListeners() {
+        if (!canvas || canvas._neckZoomBound) return;
+        canvas._neckZoomBound = true;
+
+        canvas.addEventListener('wheel', e => {
+            // Don't steal page scroll when pointer is far from board — only over canvas
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const cssX = e.clientX - rect.left;
+            const pivot = fretAtCanvasCssX(cssX);
+            if (e.ctrlKey || e.metaKey) {
+                // Zoom: ctrl+scroll up = zoom in (narrower window)
+                const factor = e.deltaY > 0 ? 1.15 : 0.87;
+                zoomNeck(factor, pivot);
+            } else {
+                // Pan along neck (shift also pans; trackpads use horizontal delta)
+                let d = 0;
+                if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) d = e.deltaX > 0 ? 1 : -1;
+                else d = e.deltaY > 0 ? 1 : -1;
+                if (e.shiftKey) d *= 2;
+                panNeckBy(d);
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('mousedown', e => {
+            if (e.button !== 0) return;
+            const rect = canvas.getBoundingClientRect();
+            const cssY = e.clientY - rect.top;
+            if (!isOverFretNumberStrip(cssY)) return;
+            // Don't start path drag from number strip
+            e.preventDefault();
+            e.stopPropagation();
+            neckPanDrag = {
+                startCssX: e.clientX - rect.left,
+                startA: startFret,
+                startB: endFret
+            };
+            canvas.style.cursor = 'grabbing';
+        }, true);
+
+        window.addEventListener('mousemove', e => {
+            if (!neckPanDrag && canvas && pathPickPhase === 'idle' && !pathDrag) {
+                const rect = canvas.getBoundingClientRect();
+                const over = e.clientX >= rect.left && e.clientX <= rect.right
+                    && e.clientY >= rect.top && e.clientY <= rect.bottom
+                    && isOverFretNumberStrip(e.clientY - rect.top);
+                if (over) canvas.style.cursor = 'grab';
+                // else leave path/crosshair handlers alone
+            }
+            if (!neckPanDrag || !canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            const cssX = e.clientX - rect.left;
+            const dx = cssX - neckPanDrag.startCssX;
+            // ~ one fret of drag ≈ move window by 1
+            const frettedW = Math.max(40, (layout.frettedRight || canvas.width) - (layout.frettedLeft || 0));
+            const span = Math.max(3, neckPanDrag.startB - neckPanDrag.startA);
+            const pxPerFret = frettedW / span;
+            const dFrets = Math.round(-dx / Math.max(12, pxPerFret));
+            let a = neckPanDrag.startA + dFrets;
+            let b = neckPanDrag.startB + dFrets;
+            if (a < 0) { b -= a; a = 0; }
+            if (b > 24) { a -= (b - 24); b = 24; }
+            setFretRange(a, b);
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (neckPanDrag) {
+                neckPanDrag = null;
+                if (canvas) canvas.style.cursor = 'crosshair';
+            }
+        });
+
+        canvas.addEventListener('dblclick', e => {
+            if (pathPickPhase === 'start' || pathPickPhase === 'end') return;
+            const rect = canvas.getBoundingClientRect();
+            const cssX = e.clientX - rect.left;
+            const cssY = e.clientY - rect.top;
+            // Double-click note or frets: centre a ~7-fret window
+            const hit = hitTestFret(cssX, cssY);
+            const pivot = hit ? hit.f : fretAtCanvasCssX(cssX);
+            const half = 3;
+            setFretRange(Math.max(0, pivot - half), Math.min(24, pivot + half + 1));
+            e.preventDefault();
+        });
+    }
+    // ——— Morph (voice-leading pulse): pair = red/blue, mono = greyscale ———
+    function isMorphing() {
+        return !!morphMode && progression.length > 1 && !soloActive;
+    }
+
+    function morphPeriodMs() {
+        const r = morphRate > 0 ? morphRate : 1;
+        return MORPH_PERIOD_MS / r;
+    }
+    function morphFadeMs() {
+        return Math.min(320, Math.max(160, MORPH_FADE_MS * (morphPeriodMs() / MORPH_PERIOD_MS)));
+    }
+
+    function setMorphSpeed(rate, opts) {
+        const r = +rate;
+        if (r !== 0.5 && r !== 1 && r !== 2) return;
+        morphRate = r;
+        document.querySelectorAll('.morph-speed-btn').forEach(b => {
+            b.classList.toggle('active', +b.dataset.rate === r);
+        });
+        // Keep phase continuous-ish by resetting start relative to progress
+        morphStartTime = performance.now();
+        try { localStorage.setItem('guitarAppMorphRate', String(r)); } catch (e) {}
+        updateMorphStatus();
+        // Skip draw when layout not ready yet (init) or caller opts out
+        if (opts && opts.skipDraw) return;
+        if (ctx && layout && layout.stringYs) drawFretboard();
+    }
+
+    function morphWeights(now) {
+        if (!isMorphing()) return { cur: 1, nxt: 1 };
+        const period = morphPeriodMs();
+        const fade = morphFadeMs();
+        const hold = period / 2 - fade;
+        const t = (((now != null ? now : performance.now()) - morphStartTime) % period + period) % period;
+        const h1 = hold, f1 = hold + fade, h2 = f1 + hold;
+        if (t < h1) return { cur: 1, nxt: 0 };
+        if (t < f1) {
+            const u = (t - h1) / fade;
+            return { cur: 1 - u, nxt: u };
+        }
+        if (t < h2) return { cur: 0, nxt: 1 };
+        const u = (t - h2) / fade;
+        return { cur: u, nxt: 1 - u };
+    }
+
+    function monoColors(isDark) {
+        return {
+            shared: isDark ? COLOR_MONO_SHARED_DARK : COLOR_MONO_SHARED_LIGHT,
+            excl: isDark ? COLOR_MONO_EXCL_DARK : COLOR_MONO_EXCL_LIGHT
+        };
+    }
+
+    function updateMorphStatus() {
+        const el = document.getElementById('morph-status');
+        if (!el) return;
+        if (!morphMode) {
+            el.textContent = '';
+            el.style.color = '';
+            return;
+        }
+        const cur = currentSlot(), nxt = nextSlot();
+        const cn = cur ? slotDisplayName(cur) : '?';
+        const nn = nxt ? slotDisplayName(nxt) : '?';
+        let shared = 0;
+        if (cur && nxt) {
+            const a = new Set(slotIntervals(cur).notes.map(n => ((n % 12) + 12) % 12));
+            slotIntervals(nxt).notes.forEach(n => {
+                if (a.has(((n % 12) + 12) % 12)) shared++;
+            });
+        }
+        const spd = morphRate === 0.5 ? '½×' : (morphRate === 2 ? '2×' : '1×');
+        if (morphMode === 'mono') {
+            el.style.color = '#64748b';
+            el.textContent = `Morph mono ${cn} ↔ ${nn} · ${shared} shared · ${spd}`;
+        } else {
+            el.style.color = '#6366f1';
+            el.textContent = `Morph pair ${cn} ↔ ${nn} · ${shared} shared · red/blue · ${spd}`;
+        }
+    }
+
+    function morphTick() {
+        if (!morphMode) {
+            morphRaf = null;
+            return;
+        }
+        if (ctx) drawFretboard();
+        morphRaf = requestAnimationFrame(morphTick);
+    }
+
+    /** mode: 'pair' | 'mono' — only one morph at a time */
+    function startMorph(mode) {
+        if (progression.length < 2 || soloActive) return;
+        if (mode !== 'pair' && mode !== 'mono') return;
+        morphMode = mode;
+        morphStartTime = performance.now();
+        const nxt = nextSlot();
+        if (nxt) nxt.visible = true;
+        const cur = currentSlot();
+        if (cur) cur.visible = true;
+        if (!morphRaf) morphRaf = requestAnimationFrame(morphTick);
+        updateMorphStatus();
+    }
+
+    function stopPairMorph() {
+        stopMorph();
+    }
+
+    function stopMorph() {
+        if (!morphMode && !morphRaf) {
+            updateMorphStatus();
+            return;
+        }
+        morphMode = null;
+        if (morphRaf) {
+            cancelAnimationFrame(morphRaf);
+            morphRaf = null;
+        }
+        updateMorphStatus();
+    }
+
+    /**
+     * Current eye: show → mono morph → hide → show
+     * Next eye:    show → pair morph → hide → show
+     * Other slots: binary show/hide
+     * Only one morph mode active at a time.
+     */
+    function cycleSlotEye(idx) {
+        const slot = progression[idx];
+        if (!slot) return;
+        const isCur = idx === progressionFocus;
+        const isNext = progression.length > 1 && idx === (progressionFocus + 1) % progression.length;
+
+        if (isCur && progression.length > 1) {
+            if (morphMode === 'mono') {
+                stopMorph();
+                slot.visible = false;
+            } else if (slot.visible && morphMode !== 'mono') {
+                // show → mono morph (also cancels pair morph)
+                startMorph('mono');
+            } else if (!slot.visible) {
+                stopMorph();
+                slot.visible = true;
+            } else {
+                stopMorph();
+                slot.visible = !slot.visible;
+            }
+            updateFretboard();
+            return;
+        }
+
+        if (isNext && !isCur) {
+            if (morphMode === 'pair') {
+                stopMorph();
+                slot.visible = false;
+            } else if (slot.visible && morphMode !== 'pair') {
+                startMorph('pair');
+            } else if (!slot.visible) {
+                stopMorph();
+                slot.visible = true;
+            } else {
+                stopMorph();
+                slot.visible = !slot.visible;
+            }
+            updateFretboard();
+            return;
+        }
+
+        // Other slots: binary
+        if (morphMode) stopMorph();
+        slot.visible = !slot.visible;
+        updateFretboard();
     }
 
     function getActiveChords() {
         const cur = currentSlot(), nxt = nextSlot();
+        const morph = isMorphing();
+        const curVis = !!(cur && (cur.visible || morph));
+        const nxtVis = morph || !!(nxt && nxt.visible && progression.length > 1);
         return {
             current: {
-                visible: !!(cur && cur.visible),
+                visible: curVis,
                 color: COLOR_CURRENT,
-                positions: cur && cur.visible ? computeChordPositions(cur) : [],
+                positions: cur && curVis ? computeChordPositions(cur) : [],
                 slot: cur
             },
             next: {
-                visible: !!(nxt && nxt.visible && progression.length > 1),
+                visible: nxtVis,
                 color: COLOR_NEXT,
-                positions: (nxt && nxt.visible && progression.length > 1) ? computeChordPositions(nxt) : [],
+                positions: nxt && nxtVis ? computeChordPositions(nxt) : [],
                 slot: nxt
             }
         };
@@ -2343,11 +3717,14 @@
 
     function drawFretboard() {
         if (!ctx || !canvas) return;
+        // Layout is filled by resizeCanvas/calculateLayout — never draw half-ready
+        if (!layout || !layout.stringYs || !layout.stringYs.length) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         const isDark = document.documentElement.classList.contains('dark');
         ctx.fillStyle = isDark ? '#0f172a' : '#f8fafc';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         const { fbLeft, fbTop, fbBottom, fbRight, stringYs } = layout;
+        if (fbLeft == null || fbRight == null) return;
 
         ctx.fillStyle = isDark ? '#334155' : '#f1e7d9';
         ctx.fillRect(fbLeft - 2, fbTop - 4, fbRight - fbLeft + 4, fbBottom - fbTop + 8);
@@ -2408,12 +3785,92 @@
             }
         });
 
+        // String colours reflect whether the OPEN pitch is in current / next / scale
+        // (so when zoomed high on the neck you still know which opens are live)
+        function openStringRole(s) {
+            const pc = ((tuning[s] % 12) + 12) % 12;
+            const cur = currentSlot();
+            const nxt = nextSlot();
+            let inCur = false, inNext = false;
+            if (cur && cur.visible !== false) {
+                inCur = slotIntervals(cur).notes.some(n => ((n % 12) + 12) % 12 === pc);
+            }
+            if (nxt && nxt.visible !== false && progression.length > 1) {
+                inNext = slotIntervals(nxt).notes.some(n => ((n % 12) + 12) % 12 === pc);
+            }
+            const inScale = !scaleMapOff() && scaleNotes.has(pc);
+            if (inCur && inNext) return 'both';
+            if (inCur) return 'current';
+            if (inNext) return 'next';
+            if (inScale) return 'scale';
+            return 'none';
+        }
+
+        function drawOpenRoleString(x0, y, x1, role, lineW) {
+            const neutral = isDark ? '#94a3b8' : '#64748b';
+            const red = COLOR_CURRENT;
+            const blue = COLOR_NEXT;
+            const amber = isDark ? '#fbbf24' : '#d97706';
+            ctx.lineCap = 'round';
+            ctx.lineWidth = lineW;
+
+            if (!colourOpenStrings || role === 'none') {
+                ctx.setLineDash([]);
+                ctx.strokeStyle = neutral;
+                ctx.beginPath();
+                ctx.moveTo(x0, y);
+                ctx.lineTo(x1, y);
+                ctx.stroke();
+                return;
+            }
+
+            // Soft neutral underlay so colour reads as a tint of the string
+            ctx.setLineDash([]);
+            ctx.strokeStyle = neutral;
+            ctx.globalAlpha = 0.35;
+            ctx.beginPath();
+            ctx.moveTo(x0, y);
+            ctx.lineTo(x1, y);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+
+            if (role === 'both') {
+                // Dashed alternating red / blue segments
+                const seg = 11;
+                let x = x0;
+                let useRed = true;
+                ctx.lineCap = 'butt';
+                ctx.lineWidth = lineW + 0.35;
+                while (x < x1 - 0.5) {
+                    const x2 = Math.min(x1, x + seg);
+                    ctx.strokeStyle = useRed ? red : blue;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x2, y);
+                    ctx.stroke();
+                    x = x2;
+                    useRed = !useRed;
+                }
+                ctx.lineCap = 'round';
+                return;
+            }
+
+            ctx.setLineDash([]);
+            ctx.lineWidth = lineW + 0.25;
+            if (role === 'current') ctx.strokeStyle = red;
+            else if (role === 'next') ctx.strokeStyle = blue;
+            else ctx.strokeStyle = amber; // scale
+            ctx.beginPath();
+            ctx.moveTo(x0, y);
+            ctx.lineTo(x1, y);
+            ctx.stroke();
+        }
+
         for (let s = 0; s < nStr; s++) {
-            ctx.strokeStyle = isDark ? '#94a3b8' : '#64748b';
-            // Thicker toward low strings (bottom)
             const t = nStr > 1 ? s / (nStr - 1) : 0;
-            ctx.lineWidth = 1.1 + t * 2.2; ctx.lineCap = 'round';
-            ctx.beginPath(); ctx.moveTo(fbLeft+2, stringYs[s]); ctx.lineTo(fbRight-2, stringYs[s]); ctx.stroke();
+            const lineW = 1.1 + t * 2.2;
+            const role = openStringRole(s);
+            drawOpenRoleString(fbLeft + 2, stringYs[s], fbRight - 2, role, lineW);
         }
 
         if (layout.startFret === 0) {
@@ -2429,11 +3886,17 @@
             ctx.beginPath(); ctx.moveTo(wx, fbTop); ctx.lineTo(wx, fbBottom); ctx.stroke();
         }
 
+        // Fret numbers — drag strip for pan (see setupNeckZoomListeners)
         ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
         ctx.font = '600 10px Inter,system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         for (let f = layout.firstFretted; f <= layout.lastFretted; f++) {
             const x = getXForFret(f); if (x > 0) ctx.fillText(String(f), x, fbBottom + 16);
         }
+        // Subtle pan affordance under numbers
+        ctx.fillStyle = isDark ? 'rgba(148,163,184,0.35)' : 'rgba(100,116,139,0.35)';
+        ctx.font = '500 8px Inter,system-ui,sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('⟷ drag', fbLeft, canvas.height - 6);
 
         const { current, next } = getActiveChords();
         // When path is set, only positions on the corridor are drawn (chords + scale)
@@ -2456,42 +3919,61 @@
             const nxtP = (layout.startFret === 0 && next.visible && onPath) ? nextPosMap.get(key) : null;
             const dotX = layout.nutX - 16, inScale = scaleNotes.has(openSemi);
 
+            // Morph: shared always full; exclusive tones fade
+            const morphing = isMorphing();
+            const mono = morphing && morphMode === 'mono';
+            const useInt = intervalColors && !morphing;
+            const mw = morphing ? morphWeights() : { cur: 1, nxt: 1 };
+            const monoC = mono ? monoColors(isDark) : null;
+
             if (curP && nxtP) {
-                let lc = intervalColors ? (INTERVAL_COLORS[curP.label] || COLOR_CURRENT) : COLOR_CURRENT;
-                let rc = intervalColors ? (INTERVAL_COLORS[nxtP.label] || COLOR_NEXT) : COLOR_NEXT;
+                let lc, rc;
+                if (mono) { lc = monoC.shared; rc = monoC.shared; }
+                else if (useInt) {
+                    lc = intervalFill(curP.label, COLOR_CURRENT);
+                    rc = intervalFill(nxtP.label, COLOR_NEXT);
+                } else { lc = COLOR_CURRENT; rc = COLOR_NEXT; }
                 const emph = rootEmphasis && (curP.label === 'R' || nxtP.label === 'R');
-                drawSplitMarker(ctx, dotX, y, inScale, 13, lc, rc, curP.label, nxtP.label, emph);
+                drawSplitMarker(ctx, dotX, y, inScale, 13, lc, rc, curP.label, nxtP.label, emph, !!useInt);
             } else if (curP || nxtP) {
                 const p = curP || nxtP;
-                let col = curP ? COLOR_CURRENT : COLOR_NEXT;
-                if (intervalColors) col = INTERVAL_COLORS[p.label] || col;
-                const emphR = rootEmphasis && p.label === 'R';
-                const emphB = bassEmphasis && p.isBass && p.label !== 'R';
-                drawSolidMarker(ctx, dotX, y, inScale, emphR ? 14 : 12, col, p.label, emphR, emphB);
-            } else if (!chordTonesOnly && onPath) {
+                const pair = curP ? COLOR_CURRENT : COLOR_NEXT;
+                const a = morphing ? (curP ? mw.cur : mw.nxt) : 1;
+                if (a >= 0.04) {
+                    const col = mono ? monoC.excl
+                        : (useInt ? intervalFill(p.label, pair) : pair);
+                    const emphR = rootEmphasis && p.label === 'R';
+                    const emphB = bassEmphasis && p.isBass && p.label !== 'R';
+                    ctx.save();
+                    ctx.globalAlpha = a;
+                    drawSolidMarker(ctx, dotX, y, inScale, emphR ? 14 : 12, col, p.label, emphR, emphB,
+                        useInt ? pair : null);
+                    ctx.restore();
+                }
+            } else if (onPath && !scaleMapChordsOnly()) {
                 const openX = layout.nutX - 12;
-                // Scale diamond only when highlight is ON
-                if (showScaleHighlight && inScale) {
+                // Scale diamond only in Full map mode
+                if (scaleMapFull() && inScale) {
                     drawScaleDiamond(ctx, openX, y, 10, isDark);
                     ctx.textAlign = 'center'; ctx.font = '700 11px Inter,system-ui,sans-serif';
                     ctx.fillStyle = isDark ? '#f8fafc' : '#1e293b';
                     ctx.fillText(noteName, openX, y + 0.5);
                 } else {
-                    // Tuning letter (not a scale highlight) — always for open string identity
+                    // Tuning letter — always for open string identity
                     ctx.textAlign = 'right'; ctx.font = '700 13px Inter,system-ui,sans-serif';
                     ctx.fillStyle = isDark ? '#e2e8f0' : '#334155';
                     ctx.fillText(noteName, layout.nutX - 8, y);
                 }
-            } else if (!chordTonesOnly && !onPath) {
-                // Off path: still show muted open tuning letter so strings stay labeled
+            } else if (!onPath || scaleMapChordsOnly()) {
+                // Off path, or chords-only mode: muted open letter so strings stay labeled
                 ctx.textAlign = 'right'; ctx.font = '600 11px Inter,system-ui,sans-serif';
                 ctx.fillStyle = isDark ? 'rgba(148,163,184,0.45)' : 'rgba(100,116,139,0.4)';
                 ctx.fillText(noteName, layout.nutX - 8, y);
             }
         }
 
-        // Scale diamonds — strictly gated by "Highlight scale tones"
-        if (!chordTonesOnly && showScaleHighlight) {
+        // Scale diamonds — Full map only (not during morph)
+        if (scaleMapFull() && !isMorphing()) {
             for (let s = 0; s < nStr; s++) {
                 for (let f = layout.firstFretted; f <= layout.lastFretted; f++) {
                     const posSemi = (tuning[s] + f) % 12;
@@ -2506,8 +3988,8 @@
             }
         }
 
-        // Note names — independent of scale highlight; path still limits to corridor
-        if (showNoteNames && !chordTonesOnly) {
+        // Note names — hidden in chords-only (markers carry R/3/5); path limits corridor
+        if (showNoteNames && !scaleMapChordsOnly()) {
             ctx.font = '700 11px Inter,system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             for (let s = 0; s < nStr; s++) {
                 for (let f = layout.firstFretted; f <= layout.lastFretted; f++) {
@@ -2516,11 +3998,11 @@
                     if (pathIsActive() && !isInPathCorridor(s, f)) continue;
                     const posSemi = (tuning[s] + f) % 12;
                     const isScaleTone = scaleNotes.has(posSemi);
-                    // With scale highlight on, only label scale tones (cleaner); off = all frets on path/board
-                    if (showScaleHighlight && !isScaleTone) continue;
+                    // Full map: only label scale tones; Off: all frets (names as map)
+                    if (scaleMapFull() && !isScaleTone) continue;
                     const x = getXForFret(f), y = getYForString(s);
                     if (x < 0) continue;
-                    if (!(showScaleHighlight && isScaleTone)) {
+                    if (!(scaleMapFull() && isScaleTone)) {
                         ctx.fillStyle = isDark ? '#334155' : '#f1e7d9';
                         ctx.fillRect(x - 8, y - 6, 16, 13);
                         ctx.fillStyle = isDark ? '#e2e8f0' : '#334155';
@@ -2532,29 +4014,44 @@
             }
         }
 
-        // Path corridor overlay + A/B markers
-        drawPathOverlay(ctx, isDark);
-
+        // Chord markers (under spotlight). Morph: shared steady; exclusives pulse.
         const drawn = new Set();
-        function drawPos(p, color, asSplit, other) {
+        const morphing = isMorphing();
+        const mono = morphing && morphMode === 'mono';
+        const useInt = intervalColors && !morphing;
+        const mw = morphing ? morphWeights() : { cur: 1, nxt: 1 };
+        const monoC = mono ? monoColors(isDark) : null;
+
+        function drawPos(p, color, asSplit, other, alpha) {
             if (p.f === 0) return;
             if (pathIsActive() && !isInPathCorridor(p.s, p.f)) return;
+            if (alpha != null && alpha < 0.04) return;
             const x = getXForFret(p.f), y = getYForString(p.s);
             if (x < 0) return;
             const inScale = scaleNotes.has(p.semi);
+            ctx.save();
+            if (alpha != null && alpha < 0.999) ctx.globalAlpha = alpha;
             if (asSplit && other) {
-                let lc = intervalColors ? (INTERVAL_COLORS[p.label] || COLOR_CURRENT) : COLOR_CURRENT;
-                let rc = intervalColors ? (INTERVAL_COLORS[other.label] || COLOR_NEXT) : COLOR_NEXT;
+                let lc, rc;
+                if (mono) { lc = monoC.shared; rc = monoC.shared; }
+                else if (useInt) {
+                    lc = intervalFill(p.label, COLOR_CURRENT);
+                    rc = intervalFill(other.label, COLOR_NEXT);
+                } else { lc = COLOR_CURRENT; rc = COLOR_NEXT; }
                 const emph = rootEmphasis && (p.label === 'R' || other.label === 'R');
                 ctx.shadowColor = 'rgba(0,0,0,0.28)'; ctx.shadowBlur = 4;
-                drawSplitMarker(ctx, x, y, inScale, 14, lc, rc, p.label, other.label, emph);
+                drawSplitMarker(ctx, x, y, inScale, 14, lc, rc, p.label, other.label, emph, !!useInt);
                 ctx.shadowBlur = 0;
             } else {
-                let col = intervalColors ? (INTERVAL_COLORS[p.label] || color) : color;
-                const emphR = rootEmphasis && p.label === 'R';
+                const baseCol = mono ? monoC.excl : color;
+                const col = (!mono && useInt) ? intervalFill(p.label, color) : baseCol;
+                // Mono: keep root ring so roots don't vanish into grey
+                const emphR = (rootEmphasis && p.label === 'R') || (mono && p.label === 'R');
                 const emphB = bassEmphasis && p.isBass && p.label !== 'R';
-                drawSolidMarker(ctx, x, y, inScale, emphR ? 15 : 13, col, p.label, emphR, emphB);
+                drawSolidMarker(ctx, x, y, inScale, emphR ? 15 : 13, col, p.label, emphR, emphB,
+                    useInt ? color : null);
             }
+            ctx.restore();
         }
 
         if (current.visible && next.visible) {
@@ -2564,7 +4061,13 @@
                 const key = `${p.s}-${p.f}`;
                 const np = nextPosMap.get(key);
                 if (!np) return;
-                drawPos(p, COLOR_CURRENT, true, np);
+                // Shared: always full brightness (voice-leading anchors)
+                drawPos(p, mono ? monoC.shared : COLOR_CURRENT, true, np, 1);
+                // Extra root ring on mono shared roots
+                if (mono && (p.label === 'R' || (np && np.label === 'R'))) {
+                    const x = getXForFret(p.f), y = getYForString(p.s);
+                    if (x >= 0) strokeMarkerShape(ctx, x, y, scaleNotes.has(p.semi), 17, COLOR_ROOT_RING, 2.25);
+                }
                 drawn.add(key);
             });
         }
@@ -2573,7 +4076,8 @@
                 if (p.f === 0) return;
                 if (pathIsActive() && !isInPathCorridor(p.s, p.f)) return;
                 const key = `${p.s}-${p.f}`; if (drawn.has(key)) return;
-                drawPos(p, COLOR_CURRENT, false); drawn.add(key);
+                drawPos(p, mono ? monoC.excl : COLOR_CURRENT, false, null, morphing ? mw.cur : 1);
+                drawn.add(key);
             });
         }
         if (next.visible) {
@@ -2581,9 +4085,18 @@
                 if (p.f === 0) return;
                 if (pathIsActive() && !isInPathCorridor(p.s, p.f)) return;
                 const key = `${p.s}-${p.f}`; if (drawn.has(key)) return;
-                drawPos(p, COLOR_NEXT, false); drawn.add(key);
+                drawPos(p, mono ? monoC.excl : COLOR_NEXT, false, null, morphing ? mw.nxt : 1);
+                drawn.add(key);
             });
         }
+
+        // Spotlight dims off-path frets/notes; beam keeps corridor bright
+        if (pathIsActive()) applyPathSpotlight(isDark);
+        // Shape capture rings stay bright on top of veil
+        drawShapePins(ctx, isDark);
+        // Arp order badges + A/B handles on top of the veil
+        drawPathArpOrderNumbers(ctx, isDark);
+        drawPathHandles(ctx, isDark);
 
         ctx.fillStyle = isDark ? 'rgba(226,232,240,0.45)' : 'rgba(15,23,42,0.5)';
         ctx.font = '500 9px Inter,system-ui,sans-serif'; ctx.textAlign = 'left';
@@ -2591,21 +4104,28 @@
     }
 
     function updateFretboard() {
-        startFret = Math.max(0, +document.getElementById('start-fret').value || 0);
-        endFret = Math.max(startFret + 1, +document.getElementById('end-fret').value || 12);
-        if (endFret > 24) endFret = 24;
-        document.getElementById('start-fret-value').textContent = startFret;
-        document.getElementById('end-fret-value').textContent = endFret;
+        // Neck window is owned by setFretRange / board zoom (not sliders)
+        const clamped = clampNeckRange(startFret, endFret);
+        startFret = clamped.a;
+        endFret = clamped.b;
+        updateNeckViewUI();
 
         showNoteNames = document.getElementById('show-notes').checked;
-        showScaleHighlight = document.getElementById('show-scale').checked;
-        chordTonesOnly = document.getElementById('chord-tones-only').checked;
+        // scaleDisplay set via setScaleDisplay / session restore
         intervalColors = document.getElementById('interval-colors').checked;
+        const intLeg = document.getElementById('interval-legend');
+        if (intLeg) {
+            // Morph forces pair colours visually; legend dims to show it's bypassed
+            intLeg.style.opacity = (intervalColors && !morphMode) ? '1' : '0.45';
+        }
+        updateMorphStatus();
         rootEmphasis = document.getElementById('root-emphasis').checked;
         useFlatsAuto = document.getElementById('use-flats-auto').checked;
         showIntervalsInfo = document.getElementById('show-intervals').checked;
         showRoman = document.getElementById('show-roman').checked;
         bassEmphasis = document.getElementById('bass-emphasis').checked;
+        const cosEl = document.getElementById('colour-open-strings');
+        colourOpenStrings = cosEl ? cosEl.checked : true;
         readAudioControls();
 
         scaleRoot = +document.getElementById('scale-root').value;
@@ -2615,8 +4135,8 @@
 
         resizeCanvas();
         renderProgressionSlots();
-        // Keep detect chips aligned with current+next unless user edited them
-        if (!detectNotesDirty) {
+        // Keep detect chips aligned with current+next unless user edited or shape-capturing
+        if (canAutoSeedDetect()) {
             const notes = new Set();
             pitchSetFromSlot(currentSlot()).forEach(n => notes.add(n));
             if (progression.length > 1) pitchSetFromSlot(nextSlot()).forEach(n => notes.add(n));
@@ -2625,6 +4145,8 @@
             renderDetectRootPin();
         }
         renderDetectResults();
+        updateShapeStatus();
+        updateDetectLinkUI();
         if (!sessionSuppressDirty) scheduleLastSessionSave();
         else updateSessionTitleUI();
     }
@@ -2637,10 +4159,61 @@
         updateFretboard();
     }
     function exportPng() {
+        // Caption strip under board so screenshots are self-explanatory
+        const pad = 28;
+        const out = document.createElement('canvas');
+        out.width = canvas.width;
+        out.height = canvas.height + pad;
+        const o = out.getContext('2d');
+        const isDark = document.documentElement.classList.contains('dark');
+        o.fillStyle = isDark ? '#0f172a' : '#f8fafc';
+        o.fillRect(0, 0, out.width, out.height);
+        o.drawImage(canvas, 0, 0);
+        o.fillStyle = isDark ? '#0f172a' : '#f1f5f9';
+        o.fillRect(0, canvas.height, out.width, pad);
+        o.fillStyle = isDark ? '#e2e8f0' : '#334155';
+        o.font = '600 12px Inter, system-ui, sans-serif';
+        o.textAlign = 'left';
+        o.textBaseline = 'middle';
+        const cur = currentSlot(), nxt = nextSlot();
+        let cap = cur ? slotDisplayName(cur) : '—';
+        if (progression.length > 1 && nxt) cap += '  →  ' + slotDisplayName(nxt);
+        cap += '  ·  ' + getNoteName(scaleRoot) + ' ' + scaleType;
+        if (pathIsActive()) cap += '  ·  path on';
+        if (morphMode) cap += '  ·  morph ' + morphMode;
+        o.fillText(cap, 10, canvas.height + pad / 2);
         const a = document.createElement('a');
         a.download = `fretboard-${Date.now()}.png`;
-        a.href = canvas.toDataURL('image/png');
+        a.href = out.toDataURL('image/png');
         a.click();
+    }
+
+    function setCheckbox(id, val) {
+        const el = document.getElementById(id);
+        if (el) el.checked = !!val;
+    }
+
+    function dismissCoachBar() {
+        const el = document.getElementById('coach-bar');
+        if (el) el.style.display = 'none';
+        try { localStorage.setItem('guitarAppCoachDismissed', '1'); } catch (e) {}
+    }
+
+    function initCoachBar() {
+        try {
+            if (localStorage.getItem('guitarAppCoachDismissed') === '1') {
+                const el = document.getElementById('coach-bar');
+                if (el) el.style.display = 'none';
+            }
+        } catch (e) {}
+    }
+
+    function toggleHelpPanel(force) {
+        const el = document.getElementById('help-panel');
+        if (!el) return;
+        if (force === false) el.classList.remove('open');
+        else if (force === true) el.classList.add('open');
+        else el.classList.toggle('open');
     }
 
     // ——— Save / Load instances ———
@@ -2789,19 +4362,27 @@
             startFret,
             endFret,
             showNoteNames,
-            showScaleHighlight,
-            chordTonesOnly,
+            scaleDisplay,
             intervalColors,
             rootEmphasis,
             useFlatsAuto,
             showIntervalsInfo,
             showRoman,
             bassEmphasis,
+            colourOpenStrings,
             audioVolume,
             audioOctaveShift,
             audioPattern,
             audioTempo,
-            audioLoop
+            audioLoop,
+            morphRate,
+            path: pathIsActive() ? {
+                start: { s: pathStart.s, f: pathStart.f },
+                end: { s: pathEnd.s, f: pathEnd.f },
+                width: pathWidth,
+                playMode: pathPlayMode,
+                arpDir: pathArpDir
+            } : null
         };
     }
 
@@ -2848,40 +4429,48 @@
         if (data.scaleRoot != null) scaleRoot = ((+data.scaleRoot % 12) + 12) % 12;
         if (data.scaleType && scaleTypes[data.scaleType]) scaleType = data.scaleType;
 
-        if (data.startFret != null) startFret = Math.max(0, Math.min(20, +data.startFret));
-        if (data.endFret != null) endFret = Math.max(startFret + 1, Math.min(24, +data.endFret));
+        if (data.startFret != null || data.endFret != null) {
+            const a = data.startFret != null ? +data.startFret : startFret;
+            const b = data.endFret != null ? +data.endFret : endFret;
+            const r = clampNeckRange(a, b);
+            startFret = r.a;
+            endFret = r.b;
+        }
+        updateNeckViewUI();
 
         const flags = [
             ['showNoteNames', 'show-notes'],
-            ['showScaleHighlight', 'show-scale'],
-            ['chordTonesOnly', 'chord-tones-only'],
             ['intervalColors', 'interval-colors'],
             ['rootEmphasis', 'root-emphasis'],
             ['useFlatsAuto', 'use-flats-auto'],
             ['showIntervalsInfo', 'show-intervals'],
             ['showRoman', 'show-roman'],
-            ['bassEmphasis', 'bass-emphasis']
+            ['bassEmphasis', 'bass-emphasis'],
+            ['colourOpenStrings', 'colour-open-strings']
         ];
-        // Apply into variables first where needed
         if (typeof data.showNoteNames === 'boolean') showNoteNames = data.showNoteNames;
-        if (typeof data.showScaleHighlight === 'boolean') showScaleHighlight = data.showScaleHighlight;
-        if (typeof data.chordTonesOnly === 'boolean') chordTonesOnly = data.chordTonesOnly;
         if (typeof data.intervalColors === 'boolean') intervalColors = data.intervalColors;
         if (typeof data.rootEmphasis === 'boolean') rootEmphasis = data.rootEmphasis;
         if (typeof data.useFlatsAuto === 'boolean') useFlatsAuto = data.useFlatsAuto;
         if (typeof data.showIntervalsInfo === 'boolean') showIntervalsInfo = data.showIntervalsInfo;
         if (typeof data.showRoman === 'boolean') showRoman = data.showRoman;
         if (typeof data.bassEmphasis === 'boolean') bassEmphasis = data.bassEmphasis;
+        if (typeof data.colourOpenStrings === 'boolean') colourOpenStrings = data.colourOpenStrings;
+
+        // Scale map (new) or migrate legacy booleans
+        if (data.scaleDisplay === 'off' || data.scaleDisplay === 'full' || data.scaleDisplay === 'chords') {
+            scaleDisplay = data.scaleDisplay;
+        } else if (typeof data.chordTonesOnly === 'boolean' || typeof data.showScaleHighlight === 'boolean') {
+            if (data.chordTonesOnly) scaleDisplay = 'chords';
+            else if (data.showScaleHighlight === false) scaleDisplay = 'off';
+            else scaleDisplay = 'full';
+        }
+        syncScaleDisplayUI();
 
         flags.forEach(([key, id]) => {
             const el = document.getElementById(id);
             if (el && typeof data[key] === 'boolean') el.checked = data[key];
         });
-
-        const sf = document.getElementById('start-fret');
-        const ef = document.getElementById('end-fret');
-        if (sf) sf.value = startFret;
-        if (ef) ef.value = endFret;
 
         if (data.audioVolume != null) {
             audioVolume = +data.audioVolume;
@@ -2909,6 +4498,33 @@
             if (el) el.checked = audioLoop;
         }
 
+        // Path corridor + play options
+        stopMorph();
+        clearScalePath();
+        if (data.path && data.path.start && data.path.end) {
+            pathStart = { s: +data.path.start.s, f: +data.path.start.f };
+            pathEnd = { s: +data.path.end.s, f: +data.path.end.f };
+            pathPickPhase = 'idle';
+            if (data.path.width) {
+                pathWidth = data.path.width;
+                const wEl = document.getElementById('path-width');
+                if (wEl) wEl.value = pathWidth;
+            }
+            if (data.path.playMode) {
+                pathPlayMode = data.path.playMode;
+                const mEl = document.getElementById('path-play-mode');
+                if (mEl) mEl.value = pathPlayMode;
+            }
+            if (data.path.arpDir) {
+                pathArpDir = data.path.arpDir;
+                const dEl = document.getElementById('path-arp-dir');
+                if (dEl) dEl.value = pathArpDir;
+            }
+            invalidatePathVeil();
+        }
+        if (data.morphRate === 0.5 || data.morphRate === 1 || data.morphRate === 2) {
+            setMorphSpeed(data.morphRate);
+        }
         // Exit solo so loaded visibility is respected
         soloActive = false;
         soloSavedVisibility = null;
@@ -2925,6 +4541,7 @@
 
         detectNotesDirty = false;
         updateFretboard();
+        updatePathUI();
         seedDetectFromPair();
         setDetectMode(detectMode);
     }
@@ -3062,8 +4679,9 @@
     }
 
     function setupEventListeners() {
-        ['start-fret','end-fret','show-notes','show-scale','chord-tones-only','interval-colors',
-         'root-emphasis','use-flats-auto','show-intervals','show-roman','bass-emphasis',
+        ['show-notes','interval-colors',
+         'root-emphasis','use-flats-auto','show-intervals','show-roman',
+         'bass-emphasis','colour-open-strings',
          'scale-root','scale-type','audio-volume','audio-octave','audio-tempo','audio-pattern','audio-loop'].forEach(id => {
             const el = document.getElementById(id);
             if (!el) return;
@@ -3093,6 +4711,11 @@
             }
         });
         canvas.addEventListener('click', e => {
+            // Ignore click that ends a path drag
+            if (pathDragMoved) {
+                pathDragMoved = false;
+                return;
+            }
             const rect = canvas.getBoundingClientRect();
             const hit = hitTestFret(e.clientX - rect.left, e.clientY - rect.top);
             // Path pick takes priority when Set path is active
@@ -3101,12 +4724,13 @@
                 return;
             }
             if (hit) {
-                playFret(hit.s, hit.f);
                 if (e.shiftKey) {
-                    const pc = (tuning[hit.s] + hit.f) % 12;
-                    if (detectNotes.has(pc)) detectNotes.delete(pc); else detectNotes.add(pc);
-                    renderDetectChips(); renderDetectResults();
+                    // Shape capture: pin fretted place (does not PC-toggle off other frets of same note)
+                    toggleShapePin(hit.s, hit.f);
+                    playFret(hit.s, hit.f);
+                    return;
                 }
+                playFret(hit.s, hit.f);
             }
         });
 
@@ -3117,8 +4741,15 @@
         });
 
         document.addEventListener('keydown', e => {
-            if (e.key === 'Escape' && document.body.classList.contains('board-focus')) {
-                toggleBoardFocus();
+            if (e.key === 'Escape') {
+                if (document.getElementById('help-panel')?.classList.contains('open')) {
+                    toggleHelpPanel(false);
+                    return;
+                }
+                if (document.body.classList.contains('board-focus')) {
+                    toggleBoardFocus();
+                    return;
+                }
             }
             // Arrow keys step progression when not typing in a field
             const tag = (e.target && e.target.tagName) || '';
@@ -3126,10 +4757,26 @@
             if (e.key === 'ArrowLeft') { e.preventDefault(); stepProgression(-1); }
             if (e.key === 'ArrowRight') { e.preventDefault(); stepProgression(1); }
             if (e.key === ' ') {
-                // space = play/stop (avoid when focused on buttons that already handle it)
                 if (tag === 'BUTTON') return;
                 e.preventDefault();
                 toggleProgressionPlay();
+            }
+            // ? = help
+            if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+                e.preventDefault();
+                toggleHelpPanel();
+            }
+            // M = toggle pair morph (next-eye style)
+            if (e.key === 'm' || e.key === 'M') {
+                e.preventDefault();
+                if (morphMode === 'pair') stopMorph();
+                else if (progression.length > 1) startMorph('pair');
+                updateFretboard();
+            }
+            // P = set/clear path
+            if (e.key === 'p' || e.key === 'P') {
+                e.preventDefault();
+                togglePathButton();
             }
         });
     }
@@ -3142,24 +4789,35 @@
             const icon = document.getElementById('dark-toggle-icon');
             if (icon) { icon.classList.remove('fa-moon'); icon.classList.add('fa-sun'); }
         }
+        try {
+            const mr = +localStorage.getItem('guitarAppMorphRate');
+            if (mr === 0.5 || mr === 1 || mr === 2) morphRate = mr;
+        } catch (e) {}
         populateScaleRoot();
         populateScaleTypes();
         populateInstrumentUI();
         setupEventListeners();
+        setupPathDragListeners();
+        setupNeckZoomListeners();
         renderProgressionSlots();
         refreshInstanceList();
+        initCoachBar();
         // Restore last session if present; else fresh defaults
         if (!restoreLastSession()) {
             seedDetectFromPair();
             setDetectMode('chord');
             markSessionClean('');
         }
+        setMorphSpeed(morphRate, { skipDraw: true }); // sync speed buttons only
+        syncScaleDisplayUI();
+        updateNeckViewUI();
         // Defer first size until layout is painted
         updatePathUI();
         requestAnimationFrame(() => {
-            resizeCanvas();
+            resizeCanvas(); // builds layout + draws board
             updateSessionTitleUI();
-            console.log('%c[Guitar App] Ready · scale path runs', 'color:#16a34a');
+            updateNeckViewUI();
+            console.log('%c[Guitar App] Ready · board neck zoom', 'color:#16a34a');
         });
     }
 
@@ -3168,7 +4826,9 @@
     window.toggleBoardFocus = toggleBoardFocus;
     window.exportPng = exportPng;
     window.setFretRange = setFretRange;
-    window.applyCageShape = applyCageShape;
+    window.resetNeckView = resetNeckView;
+    window.panNeckBy = panNeckBy;
+    window.zoomNeck = zoomNeck;
     window.addSlot = addSlot;
     window.toggleSoloFocused = toggleSoloFocused;
     window.showAllSlots = showAllSlots;
@@ -3178,6 +4838,8 @@
     window.seedDetectFromPair = seedDetectFromPair;
     window.seedDetectFromProgression = seedDetectFromProgression;
     window.clearDetectNotes = clearDetectNotes;
+    window.clearShapePins = clearShapePins;
+    window.toggleShapePin = toggleShapePin;
     window.applyBestDetect = applyBestDetect;
     window.onDetectRootPinChange = onDetectRootPinChange;
     window.saveInstance = saveInstance;
@@ -3189,7 +4851,18 @@
     window.togglePathButton = togglePathButton;
     window.beginPathPick = beginPathPick;
     window.clearScalePath = clearScalePath;
-    window.playScalePath = playScalePath;
+    window.playPathRun = playPathRun;
+    window.playScalePath = playPathRun; // alias
+    window.onPathWidthChange = onPathWidthChange;
+    window.onPathPlayOptsChange = onPathPlayOptsChange;
+    window.cycleSlotEye = cycleSlotEye;
+    window.startMorph = startMorph;
+    window.stopMorph = stopMorph;
+    window.stopPairMorph = stopMorph; // alias
+    window.setMorphSpeed = setMorphSpeed;
+    window.setScaleDisplay = setScaleDisplay;
+    window.dismissCoachBar = dismissCoachBar;
+    window.toggleHelpPanel = toggleHelpPanel;
     </script>
 </body>
 </html>
