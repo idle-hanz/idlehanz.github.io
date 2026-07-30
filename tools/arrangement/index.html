@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arrangement • Idle Hanz</title>
+  <meta name="description" content="Order cells into song form and export full-song chord MIDI.">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Crimson+Text:ital@0;1&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #080706; --panel: #12100e; --elev: #1a1612; --line: #2c261e;
+      --text: #ebe4d8; --muted: #95897a; --gold: #c4a574; --gold2: #e8c98a;
+      --blue: #7eb8da; --ok: #7dba92; --red: #c23b2e;
+      --font: 'DM Sans', system-ui, sans-serif;
+      --serif: 'Crimson Text', Georgia, serif;
+      --display: 'Cinzel', serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); }
+    .app { height: 100vh; display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; }
+    header {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.85rem;
+      padding: 0.55rem 1rem; border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #14110e, #0b0a09);
+    }
+    .brand h1 { margin: 0; font-family: var(--display); font-size: 1.05rem; color: var(--gold2); }
+    .brand p { margin: 0.1rem 0 0; font-family: var(--serif); font-style: italic; font-size: 0.82rem; color: var(--muted); }
+    .ctrls { margin-left: auto; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+    label.ctl { display: flex; align-items: center; gap: 0.3rem; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+    input[type="text"], input[type="number"], select {
+      background: var(--elev); border: 1px solid var(--line); color: var(--text);
+      border-radius: 6px; padding: 0.3rem 0.45rem; font: inherit; font-size: 0.85rem;
+    }
+    input[type="text"] { min-width: 10rem; }
+    input[type="number"] { width: 3.5rem; }
+    .btn {
+      border: 1px solid var(--line); background: var(--elev); color: var(--text);
+      border-radius: 7px; padding: 0.35rem 0.7rem; font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    }
+    .btn:hover { border-color: var(--gold); color: var(--gold2); }
+    .btn.primary { background: linear-gradient(135deg, #3a2218, #241610); border-color: #8a4535; color: #f0cfc4; }
+    .btn.ghost { background: transparent; font-weight: 500; }
+    main { display: grid; grid-template-columns: minmax(220px, 280px) 1fr; min-height: 0; overflow: hidden; }
+    @media (max-width: 800px) { main { grid-template-columns: 1fr; overflow: auto; } }
+    .col { min-height: 0; overflow: auto; padding: 0.75rem; border-right: 1px solid var(--line); background: var(--panel); }
+    .col:last-child { border-right: 0; }
+    h2 { margin: 0 0 0.45rem; font-family: var(--display); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); }
+    .hint { font-family: var(--serif); font-style: italic; color: var(--muted); font-size: 0.88rem; margin: 0 0 0.5rem; line-height: 1.35; }
+    .cell-wrap {
+      border: 1px solid var(--line); border-radius: 9px; background: var(--elev);
+      margin-bottom: 0.4rem; overflow: hidden;
+    }
+    .cell-wrap.active, .cell-wrap:hover { border-color: var(--gold); }
+    .cell-wrap.active { background: rgba(196,165,116,0.08); }
+    .cell-head { padding: 0.4rem 0.45rem 0.15rem; }
+    .cell-name-input {
+      width: 100%; font-weight: 700; font-size: 0.9rem; color: var(--gold2);
+      background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+      padding: 0.3rem 0.4rem; font-family: var(--font);
+    }
+    .cell-name-input:focus { border-color: var(--gold); outline: none; }
+    .cell {
+      width: 100%; text-align: left; background: transparent; border: 0;
+      padding: 0.25rem 0.55rem 0.35rem; cursor: pointer; color: inherit; font: inherit;
+    }
+    .cell span { font-size: 0.75rem; color: var(--muted); }
+    .cell em { display: block; font-family: var(--serif); font-size: 0.78rem; color: var(--gold); font-style: normal; margin-top: 0.15rem; }
+    .cell-actions {
+      display: flex; gap: 0.3rem; padding: 0 0.45rem 0.45rem;
+    }
+    .cell-actions .btn { font-size: 0.72rem; padding: 0.2rem 0.5rem; }
+    .btn-del-cell:hover { border-color: var(--red); color: #f0a090; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th { text-align: left; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 0.35rem 0.4rem; border-bottom: 1px solid var(--line); }
+    td { padding: 0.4rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    tr.selected { background: rgba(196,165,116,0.08); }
+    tr.dragging { opacity: 0.45; }
+    .grip { cursor: grab; color: var(--muted); user-select: none; }
+    td input, td select { width: 100%; max-width: 11rem; }
+    .row-actions { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+    .timeline {
+      margin-top: 0.85rem; padding: 0.65rem; background: var(--elev); border: 1px solid var(--line); border-radius: 10px;
+    }
+    .tl-bar {
+      display: flex; height: 28px; border-radius: 6px; overflow: hidden; background: #0a0908;
+    }
+    .tl-seg {
+      display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 600;
+      color: #0a0a0a; min-width: 2rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 0.25rem;
+    }
+    .tl-meta { margin-top: 0.4rem; font-size: 0.78rem; color: var(--muted); }
+    .focus-strip {
+      border-top: 1px solid var(--line); padding: 0.55rem 1rem; background: #0c0b0a;
+      display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; font-size: 0.82rem;
+    }
+    .focus-strip strong { color: var(--gold2); }
+    .status { font-size: 0.72rem; color: var(--muted); }
+    #export-out {
+      width: 100%; min-height: 60px; margin-top: 0.5rem; background: #0a0908; border: 1px solid var(--line);
+      color: var(--muted); border-radius: 6px; font-family: ui-monospace, monospace; font-size: 0.68rem; padding: 0.4rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">
+        <h1>Arrangement</h1>
+        <p>Playlist of cells · form of the song · MIDI skeleton</p>
+      </div>
+      <div class="ctrls">
+        <label class="ctl">Song
+          <input type="text" id="song-title" placeholder="Untitled" maxlength="64">
+        </label>
+        <label class="ctl">BPM
+          <input type="number" id="bpm" min="40" max="220" value="96">
+        </label>
+        <span class="status" id="key-label">B minor</span>
+        <button type="button" class="btn" id="btn-landscape">Landscape</button>
+        <button type="button" class="btn" id="btn-fretboard">Fretboard</button>
+        <button type="button" class="btn primary" id="btn-play">Play song</button>
+        <button type="button" class="btn primary" id="btn-midi">Export MIDI</button>
+        <button type="button" class="btn" id="btn-text">Export text</button>
+      </div>
+    </header>
+
+    <main>
+      <aside class="col">
+        <h2>Cells</h2>
+        <p class="hint">Rename in the name field. Click the chords (or Edit) to open Landscape. Delete removes the cell and sections that use it.</p>
+        <div id="cell-list"></div>
+        <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-top:0.5rem">
+          <button type="button" class="btn primary" id="btn-new-cell">+ New cell</button>
+          <button type="button" class="btn ghost" id="btn-refresh">Refresh</button>
+        </div>
+        <p class="status" id="sync-status" style="margin-top:0.6rem"></p>
+      </aside>
+
+      <section class="col">
+        <h2>Form</h2>
+        <p class="hint">Drag ⋮⋮ to reorder. Each row plays a cell N times.</p>
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>#</th>
+              <th>Section</th>
+              <th>Cell</th>
+              <th>Reps</th>
+              <th>Bars</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="form-body"></tbody>
+        </table>
+        <div style="margin-top:0.55rem;display:flex;gap:0.35rem;flex-wrap:wrap">
+          <button type="button" class="btn primary" id="btn-add-sec">+ Section</button>
+        </div>
+
+        <div class="timeline">
+          <h2>Timeline</h2>
+          <div class="tl-bar" id="tl-bar"></div>
+          <div class="tl-meta" id="tl-meta">0 bars</div>
+        </div>
+
+        <div style="margin-top:0.75rem">
+          <h2>Export preview</h2>
+          <textarea id="export-out" readonly></textarea>
+        </div>
+      </section>
+    </main>
+
+    <footer class="focus-strip">
+      <div><strong id="focus-title">No section selected</strong></div>
+      <div id="focus-chords" class="status">—</div>
+      <div style="margin-left:auto;display:flex;gap:0.35rem">
+        <button type="button" class="btn ghost" id="btn-focus-land">Edit in Landscape</button>
+        <button type="button" class="btn ghost" id="btn-focus-fret">On Fretboard</button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="../ih-session.js"></script>
+  <script src="../harmonic-landscape/js/music.js"></script>
+  <script src="../harmonic-landscape/js/compose.js"></script>
+  <script src="../harmonic-landscape/js/audio.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

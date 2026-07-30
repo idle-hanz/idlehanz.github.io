@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Harmonic Landscape • Idle Hanz</title>
+  <meta name="description" content="Enter or load a chord sequence. Move through harmonic space. Flavours, cadences, and modulation from where you are.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=DM+Sans:opsz,wght@9..40,400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #080706;
+      --panel: #12100e;
+      --elev: #1a1612;
+      --line: #2c261e;
+      --text: #ebe4d8;
+      --muted: #95897a;
+      --gold: #c4a574;
+      --gold2: #e8c98a;
+      --blue: #7eb8da;
+      --purple: #a78bfa;
+      --coral: #d4786a;
+      --ok: #7dba92;
+      --font: 'DM Sans', system-ui, sans-serif;
+      --serif: 'Crimson Text', Georgia, serif;
+      --display: 'Cinzel', serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); }
+    a { color: var(--gold); text-decoration: none; }
+    a:hover { color: var(--gold2); }
+
+    .app {
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      overflow: hidden;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.55rem 1rem;
+      padding: 0.55rem 1rem;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #14110e, #0b0a09);
+      z-index: 5;
+    }
+    .brand h1 {
+      margin: 0;
+      font-family: var(--display);
+      font-size: 1.05rem;
+      color: var(--gold2);
+      letter-spacing: 0.04em;
+    }
+    .brand p {
+      margin: 0.1rem 0 0;
+      font-family: var(--serif);
+      font-style: italic;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    .nav { display: flex; gap: 0.7rem; font-size: 0.78rem; }
+    .nav a { color: var(--muted); }
+    .ctrls {
+      margin-left: auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem 0.6rem;
+      align-items: center;
+    }
+    label.ctl {
+      display: flex;
+      align-items: center;
+      gap: 0.28rem;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+    }
+    select, input[type="number"] {
+      background: var(--elev);
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 0.28rem 0.4rem;
+      font: inherit;
+      font-size: 0.82rem;
+    }
+    input[type="number"] { width: 3.4rem; }
+    input[type="checkbox"] { accent-color: var(--gold); }
+    input[type="range"] { accent-color: var(--gold); width: 100%; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: var(--elev);
+      color: var(--text);
+      border-radius: 7px;
+      padding: 0.35rem 0.7rem;
+      font: inherit;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:hover { border-color: var(--gold); color: var(--gold2); }
+    .btn.primary {
+      background: linear-gradient(135deg, #3a2218, #241610);
+      border-color: #8a4535;
+      color: #f0cfc4;
+    }
+    .btn.primary.on { border-color: var(--ok); color: var(--ok); }
+    .btn.ghost { background: transparent; font-weight: 500; }
+    .chip {
+      border: 1px solid var(--line);
+      background: var(--elev);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 0.22rem 0.55rem;
+      font: inherit;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+    .chip.on, .chip:hover { border-color: var(--gold); color: var(--gold2); }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(260px, 320px) 1fr minmax(200px, 240px);
+      min-height: 0;
+      overflow: hidden;
+    }
+    @media (max-width: 960px) {
+      main {
+        grid-template-columns: 1fr;
+        overflow: auto;
+      }
+      .map-wrap { min-height: 300px; height: 40vh; }
+    }
+
+    .col {
+      min-height: 0;
+      overflow: auto;
+      padding: 0.7rem 0.75rem;
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .col:last-child { border-right: 0; border-left: 1px solid var(--line); }
+    .col-seq { border-right: 1px solid var(--line); }
+    .col h2 {
+      margin: 0 0 0.4rem;
+      font-family: var(--display);
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--gold);
+    }
+    .section { margin-bottom: 0.9rem; }
+    .hint {
+      font-family: var(--serif);
+      font-style: italic;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin: 0 0 0.45rem;
+      line-height: 1.35;
+    }
+
+    /* Feels / packs */
+    .pack-scroll { max-height: 200px; overflow: auto; padding-right: 0.15rem; }
+    .pack {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.08rem;
+      width: 100%;
+      text-align: left;
+      background: var(--elev);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.4rem 0.5rem;
+      margin-bottom: 0.28rem;
+      cursor: pointer;
+      color: inherit;
+      font: inherit;
+    }
+    .pack:hover, .pack.active { border-color: var(--gold); }
+    .pack.active { background: rgba(196,165,116,0.08); }
+    .pack strong { font-size: 0.82rem; }
+    .pack span { font-size: 0.62rem; color: var(--blue); text-transform: uppercase; letter-spacing: 0.03em; }
+    .pack em { font-family: var(--serif); font-size: 0.74rem; color: var(--muted); font-style: italic; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+    /* Sequence */
+    .seq-head {
+      background: radial-gradient(ellipse at 20% 0%, rgba(196,165,116,0.1), transparent 50%), var(--elev);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.75rem 0.85rem;
+      margin-bottom: 0.65rem;
+    }
+    .seq-head h3 {
+      margin: 0;
+      font-family: var(--display);
+      font-size: 1.15rem;
+      color: var(--gold2);
+    }
+    .seq-head .key { font-size: 0.78rem; color: var(--muted); margin-top: 0.15rem; }
+    .badge {
+      display: inline-block;
+      margin-top: 0.4rem;
+      font-size: 0.68rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 999px;
+      border: 1px solid rgba(126,184,218,0.4);
+      color: #b8d8ec;
+      background: rgba(126,184,218,0.1);
+    }
+    .badge.exact {
+      border-color: rgba(125,186,146,0.45);
+      color: #b8e0c4;
+      background: rgba(125,186,146,0.1);
+    }
+    #seq-why {
+      font-family: var(--serif);
+      font-style: italic;
+      font-size: 0.88rem;
+      color: var(--muted);
+      margin: 0.45rem 0 0;
+      line-height: 1.4;
+    }
+    #path-text {
+      margin-top: 0.55rem;
+      font-weight: 600;
+      font-size: 0.95rem;
+      line-height: 1.4;
+      letter-spacing: 0.01em;
+    }
+
+    .add-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      align-items: center;
+      margin-bottom: 0.55rem;
+    }
+
+    .slot {
+      display: grid;
+      grid-template-columns: 1rem 1.2rem 1fr 2rem 2rem 1.2rem;
+      gap: 0.25rem;
+      align-items: center;
+      padding: 0.4rem 0.45rem;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--elev);
+      margin-bottom: 0.3rem;
+      cursor: grab;
+      font-size: 0.85rem;
+    }
+    .slot:hover { border-color: #4a4034; }
+    .slot.selected { border-color: var(--gold); background: rgba(196,165,116,0.08); }
+    .slot.dragging { opacity: 0.5; }
+    .slot.drag-over { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(126,184,218,0.25); }
+    .slot .grip { color: var(--muted); font-size: 0.65rem; letter-spacing: -0.1em; cursor: grab; user-select: none; }
+    .slot .n { color: var(--muted); font-size: 0.72rem; }
+    .slot .nm { font-weight: 700; }
+    .slot .rm { color: var(--muted); font-family: var(--serif); font-size: 0.8rem; }
+    .slot .du { color: var(--gold); font-size: 0.75rem; font-weight: 600; }
+    .insp-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin-bottom: 0.4rem; }
+    .insp-row select { width: 100%; }
+    .slot .x {
+      border: 0;
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+    }
+    .slot .x:hover { color: #e85d4c; }
+
+    .insp-name { font-weight: 700; font-size: 1rem; margin-bottom: 0.4rem; color: var(--gold2); }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+    }
+    .bass-row { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.45rem; }
+
+    /* Map */
+    .map-wrap {
+      position: relative;
+      min-height: 0;
+      height: 100%;
+      background: #050505;
+      display: flex;
+      flex-direction: column;
+    }
+    #map {
+      flex: 1;
+      width: 100%;
+      min-height: 260px;
+      display: block;
+      cursor: grab;
+      touch-action: none;
+    }
+    .map-tools {
+      position: absolute;
+      top: 0.5rem;
+      left: 0.5rem;
+      display: flex;
+      gap: 0.3rem;
+      z-index: 2;
+    }
+
+    /* Horizon lists */
+    .hz {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      width: 100%;
+      text-align: left;
+      border: 1px solid var(--line);
+      background: var(--elev);
+      border-radius: 8px;
+      padding: 0.4rem 0.5rem;
+      margin-bottom: 0.3rem;
+      cursor: pointer;
+      color: inherit;
+      font: inherit;
+    }
+    .hz:hover { border-color: var(--gold); }
+    .hz strong { font-size: 0.84rem; }
+    .hz span { font-size: 0.68rem; color: var(--muted); }
+    .hz.kind-flavour strong { color: #f0a070; }
+    .hz.kind-direction strong { color: var(--blue); }
+    .hz.kind-cadence strong { color: var(--gold2); }
+    .hz.kind-modulate strong { color: var(--purple); }
+
+    #export-out {
+      width: 100%;
+      min-height: 72px;
+      background: #0a0908;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      border-radius: 6px;
+      font-family: ui-monospace, monospace;
+      font-size: 0.68rem;
+      padding: 0.4rem;
+      resize: vertical;
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+    .foot {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-top: 0.4rem;
+    }
+    kbd {
+      background: var(--elev);
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      padding: 0.05rem 0.25rem;
+      font-size: 0.65rem;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">
+        <h1>Harmonic Landscape</h1>
+        <p>Sequence is the document · space is the compass</p>
+      </div>
+      <nav class="nav">
+        <button type="button" class="btn primary" <a href="../index.html" style="color:var(--muted);font-size:0.78rem;margin-right:0.4rem">Tools</a>`n        <button type="button" class="btn primary" id="btn-fret" title="Send sequence to Guitar Fretboard">→ Fretboard</button>
+        <button type="button" class="btn" id="btn-arrange" title="Open Arrangement">Arrangement</button>
+        <span id="sync-status" class="key" style="font-size:0.72rem;color:var(--muted)"></span>
+      </nav>
+      <div class="ctrls">
+        <label class="ctl">Home
+          <select id="tonic"></select>
+        </label>
+        <label class="ctl">Mode
+          <select id="mode"></select>
+        </label>
+        <label class="ctl">BPM
+          <input type="number" id="bpm" min="40" max="200" value="96">
+        </label>
+        <label class="ctl"><input type="checkbox" id="loop" checked> Loop</label>
+        <label class="ctl"><input type="checkbox" id="pulse" checked> Pulse</label>
+        <button type="button" class="btn primary" id="btn-play">Loop</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- Sequence document -->
+      <section class="col col-seq">
+        <div class="seq-head">
+          <label class="field" style="text-transform:none;letter-spacing:0;font-size:0.68rem;color:var(--muted);margin-bottom:0.2rem">Cell name
+            <input type="text" id="seq-title" value="Home grit" maxlength="64" title="Rename this cell" style="font-family:var(--display);font-size:1.1rem;font-weight:600;color:var(--gold2);width:100%;margin-top:0.15rem;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:0.3rem 0.45rem" />
+          </label>
+          <div class="key" id="seq-key">B Natural Minor</div>
+          <div id="canonical-badge" class="badge" hidden></div>
+          <p id="seq-why"></p>
+          <div id="path-text"></div>
+        </div>
+
+        <div class="section">
+          <h2>Sequence</h2>
+          <div class="add-row">
+            <select id="add-root" aria-label="Root"></select>
+            <select id="add-quality" aria-label="Quality"></select>
+            <button type="button" class="btn primary" id="btn-add" title="Append chord">Add</button>
+            <button type="button" class="btn ghost" id="btn-insert" title="Insert after selection">Insert</button>
+            <button type="button" class="btn ghost" id="btn-dup" title="Ctrl+D">Dup</button>
+            <button type="button" class="btn ghost" id="btn-undo" title="Ctrl+Z">Undo</button>
+            <button type="button" class="btn ghost" id="btn-redo-edit" title="Ctrl+Y">Redo</button>
+            <button type="button" class="btn ghost" id="btn-clear">Clear</button>
+          </div>
+          <p class="hint" style="margin-top:0.25rem">Drag ⋮⋮ to reorder · ← → select · Alt+↑↓ move · Del remove</p>
+          <div id="slots"></div>
+          <div id="inspector" style="margin-top:0.55rem"></div>
+        </div>
+
+        <div class="section">
+          <h2>Feels</h2>
+          <p class="hint">Or start from a colour world</p>
+          <label class="ctl" style="margin-bottom:0.4rem">Filter
+            <select id="feel-filter"></select>
+          </label>
+          <div id="pack-list" class="pack-scroll"></div>
+        </div>
+
+        <div class="section">
+          <h2>Export</h2>
+          <div class="row">
+            <button type="button" class="btn primary" id="btn-export-txt">Text</button>
+            <button type="button" class="btn primary" id="btn-export-mid">MIDI</button>
+            <button type="button" class="btn" id="btn-pull-fb" title="Load focused cell from shared session (if fretboard sent one)">Pull session</button>
+          </div>
+          <textarea id="export-out" readonly style="margin-top:0.4rem"></textarea>
+          <p class="foot"><kbd>Space</kbd> play · drag map chords for alternates</p>
+        </div>
+      </section>
+
+      <!-- Spatial compass (main stage) -->
+      <div class="map-wrap">
+        <div class="map-tools">
+          <button type="button" class="btn ghost" id="btn-home">Home</button>
+        </div>
+        <canvas id="map" aria-label="Harmonic path and directions"></canvas>
+      </div>
+
+      <!-- Horizon lists -->
+      <aside class="col col-horizon">
+        <div class="section">
+          <h2>Flavours</h2>
+          <div id="list-flavour"></div>
+        </div>
+        <div class="section">
+          <h2>Directions</h2>
+          <div id="list-direction"></div>
+        </div>
+        <div class="section">
+          <h2>Cadences</h2>
+          <div id="list-cadence"></div>
+        </div>
+        <div class="section">
+          <h2>Modulate</h2>
+          <div id="list-modulate"></div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="../ih-session.js"></script>
+  <script src="js/music.js"></script>
+  <script src="js/compose.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/packs.js"></script>
+  <script src="js/spatial.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

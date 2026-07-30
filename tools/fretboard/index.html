@@ -265,6 +265,13 @@
                     <span id="instance-status" class="text-[9px] max-w-[8rem] truncate" style="color:var(--text-muted)"></span>
                     <input type="file" id="instance-file-input" accept="application/json,.json" class="hidden" onchange="importInstanceFile(event)">
                 </div>
+                <div class="flex flex-wrap items-center gap-1.5 chip rounded-2xl px-2 py-1 shadow-sm" title="Landscape / Arrangement">
+                    <i class="fa-solid fa-route text-amber-500"></i>
+                    <button type="button" class="chip text-[10px] px-2 py-1 rounded-xl font-semibold" onclick="sendToLandscape()">? Landscape</button>
+                    <button type="button" class="chip text-[10px] px-2 py-1 rounded-xl font-semibold" onclick="openArrangement()">Arrangement</button>
+                    <button type="button" class="chip text-[10px] px-2 py-1 rounded-xl font-semibold" onclick="pullFromLandscapeSession()">Pull session</button>
+                    <span id="ih-sync-status" class="text-[9px] max-w-[10rem] truncate" style="color:var(--text-muted)"></span>
+                </div>
                 <button type="button" id="board-focus-btn" onclick="toggleBoardFocus()" class="chip cursor-pointer px-3 py-1.5 rounded-2xl shadow-sm flex items-center gap-x-2 font-medium">
                     <i id="board-focus-icon" class="fa-solid fa-expand text-indigo-500"></i>
                     <span id="board-focus-label">Focus board</span>
@@ -559,6 +566,7 @@
         </div>
     </div>
 
+    <script src="../ih-session.js"></script>
     <script>
     const NOTES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     const NOTES_FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
@@ -4805,7 +4813,11 @@
         refreshInstanceList();
         initCoachBar();
         // Restore last session if present; else fresh defaults
-        if (!restoreLastSession()) {
+        if (tryIngestLandscapeHandoff()) {
+            seedDetectFromPair();
+            setDetectMode('chord');
+            markSessionClean('From Landscape');
+        } else if (!restoreLastSession()) {
             seedDetectFromPair();
             setDetectMode('chord');
             markSessionClean('');
@@ -4823,6 +4835,192 @@
         });
     }
 
+    // ─── Harmonic Landscape shared session handoff ─────────
+    function setIhSyncStatus(msg) {
+        const el = document.getElementById('ih-sync-status');
+        if (el) el.textContent = msg || '';
+    }
+
+    function applyChordsFromSession(chords, meta) {
+        meta = meta || {};
+        if (!window.IHSession || !chords || !chords.length) return false;
+        const slots = IHSession.chordsToFretboardSlots(chords, newSlot, chordTypes);
+        if (!slots.length) return false;
+        progression = slots;
+        progressionFocus = Math.max(0, Math.min(progression.length - 1, +(meta.focus || 0)));
+        if (meta.key && meta.key.tonic != null) {
+            scaleRoot = ((+meta.key.tonic % 12) + 12) % 12;
+            const mode = meta.key.mode || 'minor';
+            if (mode === 'minor' || mode === 'harmonic' || mode === 'melodic') scaleType = 'Natural Minor';
+            else if (mode === 'dorian') scaleType = 'Dorian';
+            else if (mode === 'phrygian') scaleType = 'Phrygian';
+            else if (mode === 'major' || mode === 'ionian') scaleType = 'Major (Ionian)';
+            else if (mode === 'mixolydian') scaleType = 'Mixolydian';
+            else if (mode === 'lydian') scaleType = 'Lydian';
+            populateScaleRoot();
+            populateScaleTypes();
+        }
+        if (meta.bpm != null) {
+            audioTempo = +meta.bpm;
+            const el = document.getElementById('audio-tempo');
+            if (el) el.value = audioTempo;
+        }
+        if (meta.title || meta.cellName) {
+            const nameEl = document.getElementById('instance-name');
+            if (nameEl) nameEl.value = (meta.cellName || meta.title || '').slice(0, 48);
+        }
+        renderProgressionSlots();
+        updateFretboard();
+        return true;
+    }
+
+    function tryIngestLandscapeHandoff() {
+        if (!window.IHSession) {
+            setIhSyncStatus('ih-session.js missing');
+            return false;
+        }
+        const handoff = IHSession.readHandoffFromLocation() || IHSession.readHandoffStorage();
+        if (handoff && handoff.to === 'fretboard' && handoff.chords && handoff.chords.length) {
+            const chords = IHSession.expandHandoffChords(handoff);
+            const ok = applyChordsFromSession(chords, {
+                focus: handoff.focus,
+                key: handoff.key,
+                bpm: handoff.bpm,
+                title: handoff.title,
+                cellName: handoff.cellName,
+            });
+            IHSession.clearHandoffHash();
+            if (ok) {
+                // Persist into full song session
+                pushProgressionToSongSession('fretboard', handoff.cellId, handoff.cellName || handoff.title);
+                setIhSyncStatus('Loaded from Landscape');
+                setInstanceStatus('Progression from Harmonic Landscape', true);
+                return true;
+            }
+        }
+        // Focused cell in song session (if newer path without hash)
+        const song = IHSession.loadSong();
+        const cell = song && IHSession.getFocusedCell(song);
+        // Only auto-load focused cell if handoff storage says it was for us recently
+        const ho = IHSession.readHandoffStorage();
+        if (ho && ho.to === 'fretboard' && cell && cell.chords && cell.chords.length) {
+            const age = Date.now() - Date.parse(ho.t || 0);
+            if (age >= 0 && age < 120000) {
+                applyChordsFromSession(cell.chords, {
+                    focus: song.focus && song.focus.chordIndex,
+                    key: song.key,
+                    bpm: song.bpm,
+                    cellName: cell.name,
+                    title: song.title,
+                });
+                setIhSyncStatus('Loaded session cell');
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function pushProgressionToSongSession(by, cellId, cellName) {
+        if (!window.IHSession) return null;
+        const chords = IHSession.fretboardSlotsToChords(progression, chordTypes);
+        let song = IHSession.loadSong() || IHSession.emptySong({
+            title: cellName || 'Untitled',
+            bpm: audioTempo,
+            tonic: scaleRoot,
+            mode: /minor|dorian|phrygian|locrian/i.test(scaleType) ? 'minor' : 'major',
+            updatedBy: by || 'fretboard',
+        });
+        const id = cellId || (song.focus && song.focus.cellId) || IHSession.newCellId('cell');
+        song.cells[id] = {
+            id,
+            name: cellName || (document.getElementById('instance-name') || {}).value || 'From fretboard',
+            packId: null,
+            chords,
+        };
+        song.focus = { cellId: id, sectionId: null, chordIndex: progressionFocus };
+        song.bpm = audioTempo;
+        song.key = {
+            tonic: scaleRoot,
+            mode: /minor|dorian|phrygian|locrian|aeolian/i.test(scaleType) ? 'minor' : 'major',
+        };
+        song.title = song.cells[id].name;
+        IHSession.saveSong(song, by || 'fretboard');
+        setIhSyncStatus('Session saved');
+        return song;
+    }
+
+    function sendToLandscape() {
+        if (!window.IHSession) {
+            alert('ih-session.js not found. Keep it on the Desktop next to this HTML file.');
+            return;
+        }
+        if (!progression.length) {
+            alert('No progression to send.');
+            return;
+        }
+        const chords = IHSession.fretboardSlotsToChords(progression, chordTypes);
+        const cellName = ((document.getElementById('instance-name') || {}).value || 'From fretboard').slice(0, 48);
+        const song = pushProgressionToSongSession('fretboard', null, cellName);
+        const cellId = song && song.focus && song.focus.cellId;
+        const payload = IHSession.buildHandoffPayload({
+            by: 'fretboard',
+            to: 'landscape',
+            title: cellName,
+            bpm: audioTempo,
+            key: {
+                tonic: scaleRoot,
+                mode: /minor|dorian|phrygian|locrian|aeolian/i.test(scaleType) ? 'minor' : 'major',
+            },
+            cellId,
+            cellName,
+            focus: progressionFocus,
+            chords,
+        });
+        const ok = IHSession.openWithHandoff(IHSession.PATHS.landscapeFromFretboard, payload);
+        setIhSyncStatus(ok ? 'Opened Landscape' : 'Could not open Landscape');
+    }
+
+    function pullFromLandscapeSession() {
+        if (!window.IHSession) {
+            setIhSyncStatus('ih-session.js missing');
+            return;
+        }
+        const song = IHSession.loadSong();
+        const cell = song && IHSession.getFocusedCell(song);
+        if (!cell || !cell.chords || !cell.chords.length) {
+            setIhSyncStatus('No focused cell — send from Landscape first');
+            return;
+        }
+        applyChordsFromSession(cell.chords, {
+            focus: song.focus && song.focus.chordIndex,
+            key: song.key,
+            bpm: song.bpm,
+            cellName: cell.name,
+            title: song.title,
+        });
+        markSessionClean(cell.name || 'Session');
+        setIhSyncStatus('Pulled “' + (cell.name || 'cell') + '”');
+        setInstanceStatus('Loaded from shared session', true);
+    }
+
+    function openArrangement() {
+        if (!window.IHSession) {
+            alert('ih-session.js missing');
+            return;
+        }
+        pushProgressionToSongSession('fretboard', null, ((document.getElementById('instance-name') || {}).value || 'Cell').slice(0, 48));
+        const url = IHSession.PATHS.arrangementFromFretboard;
+        if (IHSession.goTo) IHSession.goTo(url);
+        else location.href = url;
+    }
+
+    window.onload = initializeApp;
+    window.sendToLandscape = sendToLandscape;
+    window.pullFromLandscapeSession = pullFromLandscapeSession;
+    window.openArrangement = openArrangement;
+    window.toggleDarkMode = toggleDarkMode;
+    window.toggleBoardFocus = toggleBoardFocus;
+    window.exportPng = exportPng;
     window.onload = initializeApp;
     window.toggleDarkMode = toggleDarkMode;
     window.toggleBoardFocus = toggleBoardFocus;

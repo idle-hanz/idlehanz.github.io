@@ -1,0 +1,1058 @@
+/**
+ * Harmonic Landscape — writing partner
+ * Goals, next-chord intelligence, bass/inversions, tension, critique,
+ * variations, taste memory, exotic-soup guardrails.
+ */
+(function (global) {
+  'use strict';
+
+  const M = () => global.HLMusic;
+  if (!global.HLMusic) {
+    console.error('compose.js requires music.js first');
+    return;
+  }
+
+  const GOALS = {
+    balanced: {
+      id: 'balanced',
+      name: 'Balanced journey',
+      hint: 'Leave home, colour, return with intent',
+      prefer: { diatonic: 0.2, secondary: 0.15, interchange: 0.2, chromatic: 0.05, tritone: 0.05, parallel: 0.1 },
+      wantTension: 0.55,
+      wantReturn: 0.4,
+    },
+    stay_close: {
+      id: 'stay_close',
+      name: 'Stay close',
+      hint: 'Mostly diatonic, smooth motion',
+      prefer: { diatonic: 0.55, secondary: 0.1, interchange: 0.05, chromatic: -0.3, tritone: -0.25, parallel: 0.05 },
+      wantTension: 0.35,
+      wantReturn: 0.3,
+    },
+    get_darker: {
+      id: 'get_darker',
+      name: 'Get darker',
+      hint: 'Minor colour, interchange, shadows',
+      prefer: { diatonic: 0.1, secondary: 0.15, interchange: 0.35, chromatic: 0.15, tritone: 0.2, parallel: 0.15 },
+      wantTension: 0.7,
+      wantReturn: 0.25,
+    },
+    delay_home: {
+      id: 'delay_home',
+      name: 'Delay home',
+      hint: 'Avoid tonic; stretch the longing',
+      prefer: { diatonic: 0.15, secondary: 0.25, interchange: 0.2, chromatic: 0.1, tritone: 0.15, parallel: 0.1 },
+      wantTension: 0.65,
+      wantReturn: -0.5,
+    },
+    epic_lift: {
+      id: 'epic_lift',
+      name: 'Epic lift',
+      hint: 'Brighter or larger harmonic gestures',
+      prefer: { diatonic: 0.15, secondary: 0.2, interchange: 0.1, chromatic: 0.25, tritone: 0.05, parallel: 0.25 },
+      wantTension: 0.6,
+      wantReturn: 0.2,
+    },
+    float: {
+      id: 'float',
+      name: 'Float unresolved',
+      hint: 'Avoid hard cadences; soft colours',
+      prefer: { diatonic: 0.2, secondary: -0.1, interchange: 0.25, chromatic: 0.2, tritone: -0.15, parallel: 0.15 },
+      wantTension: 0.45,
+      wantReturn: -0.35,
+    },
+    hard_return: {
+      id: 'hard_return',
+      name: 'Hard return',
+      hint: 'Set up a strong cadence home',
+      prefer: { diatonic: 0.15, secondary: 0.35, interchange: 0.05, chromatic: 0.0, tritone: 0.2, parallel: 0.05 },
+      wantTension: 0.75,
+      wantReturn: 0.7,
+    },
+  };
+
+  const JOB_LABELS = {
+    push: 'Push / tension',
+    float: 'Float',
+    darken: 'Darken',
+    brighten: 'Brighten',
+    cadence: 'Cadence home',
+    colour: 'Colour',
+    continue: 'Continue',
+    surprise: 'Surprise',
+    land: 'Land soft',
+  };
+
+  // ─── Bass / inversions ───────────────────────────────────
+
+  function chordTones(chord) {
+    return (chord.notes || []).map((n) => ((n % 12) + 12) % 12);
+  }
+
+  function formatChordName(chord) {
+    const music = M();
+    const q = music.QUALITIES[chord.quality] || music.QUALITIES.maj;
+    let name = music.noteName(chord.root) + (q.symbol || q.label || '');
+    const bass = chord.bassPc != null ? ((chord.bassPc % 12) + 12) % 12 : chord.root;
+    if (bass !== chord.root) name += '/' + music.noteName(bass);
+    return name;
+  }
+
+  function withBass(chord, bassPc) {
+    const b = ((bassPc % 12) + 12) % 12;
+    const tones = chordTones(chord);
+    let inversion = 0;
+    const idx = tones.indexOf(b);
+    if (idx >= 0) inversion = idx;
+    const next = {
+      ...chord,
+      notes: tones.slice(),
+      intervals: (chord.intervals || []).slice(),
+      bassPc: b,
+      inversion,
+    };
+    next.name = formatChordName(next);
+    return next;
+  }
+
+  function withInversion(chord, inv) {
+    const tones = chordTones(chord);
+    if (!tones.length) return chord;
+    const i = ((inv % tones.length) + tones.length) % tones.length;
+    return withBass(chord, tones[i]);
+  }
+
+  function effectiveBass(chord) {
+    if (chord.bassPc != null) return ((chord.bassPc % 12) + 12) % 12;
+    return chord.root;
+  }
+
+  function bassInterval(fromChord, toChord) {
+    const a = effectiveBass(fromChord);
+    const b = effectiveBass(toChord);
+    return Math.min(Math.abs(a - b), 12 - Math.abs(a - b));
+  }
+
+  function bassMotionLabel(semis) {
+    if (semis === 0) return 'pedal';
+    if (semis === 1 || semis === 2) return 'step';
+    if (semis === 3 || semis === 4) return '3rd';
+    if (semis === 5) return '4th/5th';
+    if (semis === 6) return 'tritone';
+    return 'leap';
+  }
+
+  /** 0–1 quality: stepwise and fifths good; leaps mixed; pedal ok */
+  function bassMotionScore(fromChord, toChord) {
+    const d = bassInterval(fromChord, toChord);
+    if (d === 0) return 0.7;
+    if (d === 1 || d === 2) return 1.0;
+    if (d === 5) return 0.95;
+    if (d === 3 || d === 4) return 0.75;
+    if (d === 6) return 0.45;
+    return 0.35;
+  }
+
+  /**
+   * Best inversion of candidate relative to previous chord (smooth bass + VL).
+   */
+  function bestInversion(prevChord, candidate) {
+    const tones = chordTones(candidate);
+    if (!tones.length) return candidate;
+    let best = withBass(candidate, candidate.root);
+    let bestScore = -Infinity;
+    // Root + each chord-tone bass
+    const basses = [candidate.root, ...tones];
+    const seen = new Set();
+    basses.forEach((b) => {
+      if (seen.has(b)) return;
+      seen.add(b);
+      const c = withBass(candidate, b);
+      let score = 0;
+      if (prevChord) {
+        score += bassMotionScore(prevChord, c) * 1.2;
+        score += M().voiceLeadingQuality(prevChord, c);
+      } else {
+        score += b === candidate.root ? 0.5 : 0.2;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    });
+    return best;
+  }
+
+  function smoothCellVoicings(chords) {
+    if (!chords.length) return [];
+    const out = [];
+    for (let i = 0; i < chords.length; i++) {
+      const prev = i ? out[i - 1] : null;
+      const smoothed = bestInversion(prev, chords[i]);
+      out.push({
+        ...smoothed,
+        duration: chords[i].duration,
+        id: chords[i].id,
+        roman: chords[i].roman,
+        tag: chords[i].tag,
+        region: chords[i].region,
+      });
+    }
+    return out;
+  }
+
+  // ─── Tension ─────────────────────────────────────────────
+
+  function chordTension(chord, tonic, modeKey) {
+    const music = M();
+    const t = music.pc(tonic);
+    const dist = music.harmonicDistance(chord, tonic, modeKey);
+    let ten = Math.min(1, dist / 3.2);
+
+    const regionBoost = {
+      diatonic: 0,
+      secondary: 0.25,
+      interchange: 0.2,
+      chromatic: 0.3,
+      tritone: 0.4,
+      parallel: 0.15,
+    };
+    ten += regionBoost[chord.region] || 0.1;
+
+    if (chord.quality === 'dom7') ten += 0.2;
+    if (chord.quality === 'dim' || chord.quality === 'dim7' || chord.quality === 'halfdim') ten += 0.25;
+    if (chord.quality === 'aug') ten += 0.2;
+
+    // Tonic low
+    const isTonic =
+      chord.root === t &&
+      ['min', 'maj', 'min7', 'maj7', 'minmaj7', 'min9', 'maj9'].includes(chord.quality);
+    if (isTonic) ten = Math.min(ten, 0.12);
+
+    // Dominant high
+    if (chord.root === (t + 7) % 12 && (chord.quality === 'dom7' || chord.quality === 'maj')) {
+      ten = Math.max(ten, 0.75);
+    }
+
+    return Math.max(0, Math.min(1, ten));
+  }
+
+  function tensionCurve(chords, tonic, modeKey) {
+    return chords.map((c) => chordTension(c, tonic, modeKey));
+  }
+
+  // ─── Job / function of a move ────────────────────────────
+
+  function describeJob(from, to, tonic, modeKey) {
+    const music = M();
+    const t = music.pc(tonic);
+    const isTonic =
+      to.root === t &&
+      ['min', 'maj', 'min7', 'maj7', 'minmaj7'].includes(to.quality);
+    if (isTonic) return 'cadence';
+
+    if (to.region === 'tritone' || to.quality === 'dom7') return 'push';
+    if (to.region === 'secondary') return 'push';
+    if (to.region === 'chromatic') return 'surprise';
+    if (to.region === 'interchange' || to.region === 'parallel') {
+      const homeMinor = (music.MODES[modeKey] || music.MODES.minor).romanBase === 'minor';
+      const darker = to.quality.includes('min') || to.quality.includes('dim');
+      if (homeMinor && !darker) return 'brighten';
+      if (!homeMinor && darker) return 'darken';
+      return 'colour';
+    }
+    if (to.region === 'diatonic') {
+      if (to.root === (t + 7) % 12) return 'push';
+      if (to.root === (t + 5) % 12) return 'land';
+      return 'continue';
+    }
+    return 'colour';
+  }
+
+  // ─── Next-chord suggestions ──────────────────────────────
+
+  function suggestNext(opts) {
+    const music = M();
+    const {
+      fromChord,
+      tonic,
+      modeKey,
+      goalId = 'balanced',
+      sevenths = true,
+      count = 6,
+      taste = null,
+      path = [],
+    } = opts;
+
+    const goal = GOALS[goalId] || GOALS.balanced;
+    const t = music.pc(tonic);
+    const candidates = music.allPaletteChords(tonic, modeKey, sevenths);
+
+    // Enrich with useful inversions of diatonic as separate candidates later via bestInversion
+    const recentKeys = new Set(
+      (path || []).slice(-3).map((c) => c.root + ':' + c.quality)
+    );
+
+    const exoticStreak = countExoticStreak(path || []);
+
+    const scored = candidates.map((raw) => {
+      let ch = raw;
+      if (fromChord) ch = bestInversion(fromChord, raw);
+      else ch = withBass(raw, raw.root);
+
+      const key = raw.root + ':' + raw.quality;
+      const region = raw.region || 'diatonic';
+      const vl = fromChord ? music.voiceLeadingQuality(fromChord, ch) : 0.7;
+      const bass = fromChord ? bassMotionScore(fromChord, ch) : 0.7;
+      const bassSemis = fromChord ? bassInterval(fromChord, ch) : 0;
+      const ten = chordTension(ch, tonic, modeKey);
+      const job = describeJob(fromChord, ch, tonic, modeKey);
+      const dist = music.harmonicDistance(ch, tonic, modeKey);
+
+      let score = 0;
+      score += vl * 1.4;
+      score += bass * 1.1;
+      score += (goal.prefer[region] || 0) * 1.5;
+
+      // Goal tension preference
+      score -= Math.abs(ten - goal.wantTension) * 0.8;
+
+      // Return preference
+      const isHome =
+        ch.root === t &&
+        ['min', 'maj', 'min7', 'maj7', 'minmaj7'].includes(ch.quality);
+      if (isHome) score += goal.wantReturn * 1.2;
+      else if (goal.wantReturn < 0) score += 0.15; // delay home rewards non-home
+
+      // Hard return: boost V and tritone into home setup
+      if (goalId === 'hard_return') {
+        if (ch.quality === 'dom7' && (ch.root === (t + 7) % 12 || region === 'tritone')) score += 0.55;
+        if (job === 'push') score += 0.25;
+      }
+      if (goalId === 'get_darker' && (region === 'interchange' || region === 'tritone')) score += 0.2;
+      if (goalId === 'epic_lift' && (region === 'chromatic' || region === 'parallel')) score += 0.2;
+      if (goalId === 'stay_close' && region === 'diatonic') score += 0.25;
+      if (goalId === 'float' && (ch.quality === 'dom7' || isHome)) score -= 0.35;
+
+      // Avoid immediate repeat of same chord
+      if (fromChord && fromChord.root === ch.root && fromChord.quality === ch.quality) score -= 1.2;
+      if (recentKeys.has(key)) score -= 0.25;
+
+      // Exotic soup guardrail
+      if (exoticStreak >= 2 && region !== 'diatonic' && !isHome) score -= 0.55;
+      if (exoticStreak >= 3 && region !== 'diatonic') score -= 0.9;
+
+      // Taste memory
+      if (taste) {
+        const tk = tasteKey(ch);
+        score += (taste.accepted[tk] || 0) * 0.15;
+        score -= (taste.rejected[tk] || 0) * 0.35;
+      }
+
+      // Prefer common-tone connections slightly
+      if (fromChord) {
+        const common = chordTones(fromChord).filter((n) => chordTones(ch).includes(n)).length;
+        score += common * 0.08;
+      }
+
+      return {
+        chord: ch,
+        score,
+        vl,
+        bass,
+        bassLabel: bassMotionLabel(bassSemis),
+        tension: ten,
+        job,
+        jobLabel: JOB_LABELS[job] || job,
+        region,
+        distance: dist,
+      };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+
+    // Diversify: take top but ensure job/region variety
+    const picked = [];
+    const usedJobs = new Set();
+    const usedKeys = new Set();
+    for (const s of scored) {
+      const k = s.chord.root + ':' + s.chord.quality + ':' + effectiveBass(s.chord);
+      if (usedKeys.has(s.chord.root + ':' + s.chord.quality)) continue;
+      // Allow a bit of job repeat after we have 3
+      if (picked.length < 4 && usedJobs.has(s.job) && s.job !== 'continue') continue;
+      usedKeys.add(s.chord.root + ':' + s.chord.quality);
+      usedJobs.add(s.job);
+      picked.push(s);
+      if (picked.length >= count) break;
+    }
+    // Fill if diversity left gaps
+    for (const s of scored) {
+      if (picked.length >= count) break;
+      if (picked.some((p) => p.chord.root === s.chord.root && p.chord.quality === s.chord.quality)) continue;
+      picked.push(s);
+    }
+
+    return picked;
+  }
+
+  function countExoticStreak(path) {
+    let n = 0;
+    for (let i = path.length - 1; i >= 0; i--) {
+      const r = path[i].region || 'diatonic';
+      if (r === 'diatonic') break;
+      n += 1;
+    }
+    return n;
+  }
+
+  function tasteKey(chord) {
+    return chord.root + ':' + chord.quality;
+  }
+
+  // ─── Cell analysis / critique ────────────────────────────
+
+  function analyzeCell(chords, tonic, modeKey) {
+    const music = M();
+    const t = music.pc(tonic);
+    if (!chords.length) {
+      return {
+        score: 0,
+        grades: { hook: 0, motion: 0, return: 0, rhythm: 0, voice: 0 },
+        tensions: [],
+        bassPath: [],
+        strengths: [],
+        weaknesses: [],
+        tips: ['Add chords to start a cell — four is a strong default.'],
+        guardrail: null,
+      };
+    }
+
+    const tensions = tensionCurve(chords, tonic, modeKey);
+    const avgT = tensions.reduce((a, b) => a + b, 0) / tensions.length;
+    const maxT = Math.max(...tensions);
+    const minT = Math.min(...tensions);
+
+    // Bass path
+    const bassPath = chords.map((c) => ({
+      pc: effectiveBass(c),
+      name: music.noteName(effectiveBass(c)),
+    }));
+    let bassStep = 0;
+    let bassMoves = 0;
+    for (let i = 1; i < chords.length; i++) {
+      const d = bassInterval(chords[i - 1], chords[i]);
+      bassMoves += 1;
+      if (d <= 2 || d === 5) bassStep += 1;
+    }
+    const motionGrade = bassMoves ? bassStep / bassMoves : 0.5;
+
+    // Voice leading average
+    let vlSum = 0;
+    let vlN = 0;
+    for (let i = 1; i < chords.length; i++) {
+      vlSum += music.voiceLeadingQuality(chords[i - 1], chords[i]);
+      vlN += 1;
+    }
+    const voiceGrade = vlN ? vlSum / vlN : 0.7;
+
+    // Return: ends near home or has cadence gesture
+    const last = chords[chords.length - 1];
+    const endsHome =
+      last.root === t &&
+      ['min', 'maj', 'min7', 'maj7', 'minmaj7'].includes(last.quality);
+    const hasDom = chords.some(
+      (c) => c.quality === 'dom7' || (c.root === (t + 7) % 12 && c.region === 'diatonic')
+    );
+    let returnGrade = endsHome ? 0.9 : hasDom ? 0.55 : 0.3;
+    if (!endsHome && chords.some((c) => c.root === t)) returnGrade = Math.max(returnGrade, 0.45);
+
+    // Hook: variety of roots + one distinctive colour
+    const roots = new Set(chords.map((c) => c.root));
+    const regions = new Set(chords.map((c) => c.region || 'diatonic'));
+    let hookGrade = Math.min(1, roots.size / Math.max(3, chords.length * 0.75));
+    if (regions.size > 1) hookGrade = Math.min(1, hookGrade + 0.2);
+    if (roots.size === 1) hookGrade = 0.15;
+
+    // Rhythm interest
+    const durs = chords.map((c) => c.duration || 4);
+    const uniqueDurs = new Set(durs.map((d) => Math.round(d * 2) / 2));
+    const rhythmGrade =
+      uniqueDurs.size === 1 ? (durs[0] === 4 ? 0.35 : 0.55) : Math.min(1, 0.45 + uniqueDurs.size * 0.2);
+    // Long chord on high tension is good
+    let longOnTension = false;
+    durs.forEach((d, i) => {
+      if (d >= 6 && tensions[i] >= 0.65) longOnTension = true;
+    });
+    if (longOnTension) rhythmGrade = Math.min(1, rhythmGrade + 0.15);
+
+    const grades = {
+      hook: round01(hookGrade),
+      motion: round01(motionGrade),
+      return: round01(returnGrade),
+      rhythm: round01(rhythmGrade),
+      voice: round01(voiceGrade),
+    };
+    const score = round01(
+      grades.hook * 0.22 +
+        grades.motion * 0.22 +
+        grades.return * 0.18 +
+        grades.rhythm * 0.18 +
+        grades.voice * 0.2
+    );
+
+    const strengths = [];
+    const weaknesses = [];
+    const tips = [];
+
+    if (grades.voice >= 0.7) strengths.push('Voice-leading between chords is mostly smooth.');
+    if (grades.motion >= 0.7) strengths.push('Bass motion has good steps or fifths.');
+    if (endsHome) strengths.push('Cell lands back at home — clear payoff.');
+    if (regions.size > 1 && regions.size <= 3) strengths.push('Colour leaves the diatonic centre without chaos.');
+    if (uniqueDurs.size > 1) strengths.push('Harmonic rhythm has shape (not all equal).');
+    if (longOnTension) strengths.push('Long chord sits on tension — good storytelling.');
+
+    if (grades.voice < 0.45) {
+      weaknesses.push('Voice-leading is jumpy — try smoother inversions.');
+      tips.push('Use “Smooth voicings” or set bass notes for stepwise motion.');
+    }
+    if (grades.motion < 0.4) {
+      weaknesses.push('Bass leaps a lot — structure may feel random.');
+      tips.push('Try slash chords so the bass walks (e.g. G/B → A → F#).');
+    }
+    if (avgT > 0.72 && minT > 0.4) {
+      weaknesses.push('High tension throughout with little release.');
+      tips.push('Plant a calmer diatonic chord or shorten the dark stretch.');
+    }
+    if (avgT < 0.28 && maxT < 0.4) {
+      weaknesses.push('Stays very close to home — little journey.');
+      tips.push('Borrow one interchange or secondary dominant for colour.');
+    }
+    if (!endsHome && goalHintNeedsReturn(chords)) {
+      weaknesses.push('No clear return home yet.');
+      tips.push('Open “Ways back home” or add V7 / ♭II7 into tonic.');
+    }
+    if (uniqueDurs.size === 1 && chords.length >= 3) {
+      weaknesses.push('Every chord same length — duration is doing no work.');
+      tips.push('Try a rhythm idea: hold the tense chord, or push into the landing.');
+    }
+    // Same function colour twice in a row
+    for (let i = 1; i < chords.length; i++) {
+      if (
+        chords[i].root === chords[i - 1].root &&
+        chords[i].quality === chords[i - 1].quality
+      ) {
+        weaknesses.push('Repeated identical harmony back-to-back.');
+        tips.push('Change inversion/bass, or replace one with a neighbour chord.');
+        break;
+      }
+    }
+    // Reharm tip for bar 3 of 4
+    if (chords.length === 4 && grades.hook < 0.7) {
+      tips.push('Classic move: reharmonise chord 3 only — keep 1, 2, and 4.');
+    }
+
+    if (!strengths.length && chords.length) strengths.push('Skeleton is in place — refine motion and rhythm.');
+    if (!tips.length) tips.push('Duplicate this cell and change only one chord or only the rhythm.');
+
+    const exotic = countExoticStreak(chords);
+    let guardrail = null;
+    if (exotic >= 3) {
+      guardrail = {
+        level: 'warn',
+        message: `${exotic} non-diatonic chords in a row — plant a landmark or open Ways back home.`,
+      };
+    } else if (exotic === 2) {
+      guardrail = {
+        level: 'soft',
+        message: 'Two steps from the diatonic centre — one more exotic is fine if the next move explains it.',
+      };
+    }
+
+    // Distance from home of last chord
+    const lastDist = music.harmonicDistance(last, tonic, modeKey);
+
+    return {
+      score,
+      grades,
+      tensions,
+      bassPath,
+      strengths,
+      weaknesses,
+      tips,
+      guardrail,
+      avgTension: round01(avgT),
+      lastDistance: lastDist,
+      endsHome,
+    };
+  }
+
+  function goalHintNeedsReturn(chords) {
+    return chords.length >= 3;
+  }
+
+  function round01(x) {
+    return Math.round(Math.max(0, Math.min(1, x)) * 100) / 100;
+  }
+
+  // ─── Variations ──────────────────────────────────────────
+
+  function varyOneChord(chords, tonic, modeKey, index) {
+    const music = M();
+    if (!chords.length) return chords.slice();
+    const i = index != null ? index : Math.min(2, chords.length - 1);
+    const copy = chords.map((c) => music.cloneChord(c));
+    const prev = i > 0 ? copy[i - 1] : null;
+    const next = i < copy.length - 1 ? copy[i + 1] : null;
+    const suggestions = suggestNext({
+      fromChord: prev || copy[i],
+      tonic,
+      modeKey,
+      goalId: 'get_darker',
+      count: 8,
+      path: copy.slice(0, i),
+    });
+    // Pick first that isn't the same as current
+    const cur = copy[i];
+    const pick =
+      suggestions.find(
+        (s) => !(s.chord.root === cur.root && s.chord.quality === cur.quality)
+      ) || suggestions[0];
+    if (pick) {
+      copy[i] = {
+        ...music.cloneChord(pick.chord),
+        duration: cur.duration,
+      };
+      // If next exists, maybe smooth bass into it
+      if (next) copy[i] = bestInversion(prev, copy[i]);
+    }
+    return copy;
+  }
+
+  function varyRhythmOnly(chords) {
+    const music = M();
+    const n = chords.length;
+    if (n < 2) return chords.map((c) => music.cloneChord(c));
+    const patterns = music.rhythmSuggestions(n);
+    // Prefer non-even if available
+    const pat =
+      patterns.find((p) => new Set(p.beats).size > 1) || patterns[0];
+    return music.applyRhythm(
+      chords.map((c) => music.cloneChord(c)),
+      pat.beats
+    );
+  }
+
+  function reharmBar(chords, tonic, modeKey, barIndex) {
+    // barIndex 0-based; default bar 3 → index 2
+    const i = barIndex != null ? barIndex : Math.min(2, Math.max(0, chords.length - 2));
+    return varyOneChord(chords, tonic, modeKey, i);
+  }
+
+  function varySameBassNewUpper(chords, tonic, modeKey) {
+    const music = M();
+    if (chords.length < 2) return chords.map((c) => music.cloneChord(c));
+    const copy = chords.map((c) => music.cloneChord(c));
+    // Change the highest-tension non-final chord's quality/colour but keep bass
+    let target = 1;
+    let bestT = -1;
+    copy.forEach((c, i) => {
+      if (i === copy.length - 1) return;
+      const t = chordTension(c, tonic, modeKey);
+      if (t > bestT) {
+        bestT = t;
+        target = i;
+      }
+    });
+    const bass = effectiveBass(copy[target]);
+    const suggestions = suggestNext({
+      fromChord: target ? copy[target - 1] : null,
+      tonic,
+      modeKey,
+      goalId: 'epic_lift',
+      count: 10,
+      path: copy.slice(0, target),
+    });
+    const pick = suggestions.find((s) => {
+      const tones = chordTones(s.chord);
+      return tones.includes(bass) && !(s.chord.root === copy[target].root && s.chord.quality === copy[target].quality);
+    }) || suggestions[0];
+    if (pick) {
+      const dur = copy[target].duration;
+      copy[target] = withBass(music.cloneChord(pick.chord), bass);
+      copy[target].duration = dur;
+    }
+    return copy;
+  }
+
+  function structureABBA(chords) {
+    // If 4 chords A B C D → A B B' A with B' slight rhythm or inversion change
+    const music = M();
+    if (chords.length < 2) return chords.map((c) => music.cloneChord(c));
+    if (chords.length === 4) {
+      const A = music.cloneChord(chords[0]);
+      const B = music.cloneChord(chords[1]);
+      const Bp = withInversion(music.cloneChord(chords[1]), 1);
+      Bp.duration = chords[2].duration;
+      const A2 = music.cloneChord(chords[0]);
+      A2.duration = chords[3].duration;
+      A.duration = chords[0].duration;
+      B.duration = chords[1].duration;
+      return [A, B, Bp, A2];
+    }
+    // General: A B B' A from first two
+    const A = music.cloneChord(chords[0]);
+    const B = music.cloneChord(chords[1] || chords[0]);
+    const Bp = withInversion(music.cloneChord(B), 1);
+    return [A, B, Bp, music.cloneChord(A)];
+  }
+
+  // ─── Taste memory ────────────────────────────────────────
+
+  const TASTE_KEY = 'hl_taste_v1';
+
+  function loadTaste() {
+    try {
+      const raw = localStorage.getItem(TASTE_KEY);
+      if (!raw) return { accepted: {}, rejected: {}, goalCounts: {} };
+      const o = JSON.parse(raw);
+      return {
+        accepted: o.accepted || {},
+        rejected: o.rejected || {},
+        goalCounts: o.goalCounts || {},
+      };
+    } catch (_) {
+      return { accepted: {}, rejected: {}, goalCounts: {} };
+    }
+  }
+
+  function saveTaste(taste) {
+    try {
+      localStorage.setItem(TASTE_KEY, JSON.stringify(taste));
+    } catch (_) { /* ignore */ }
+  }
+
+  function acceptChord(taste, chord) {
+    const k = tasteKey(chord);
+    taste.accepted[k] = (taste.accepted[k] || 0) + 1;
+    if (taste.rejected[k]) taste.rejected[k] = Math.max(0, taste.rejected[k] - 1);
+    saveTaste(taste);
+    return taste;
+  }
+
+  function rejectChord(taste, chord) {
+    const k = tasteKey(chord);
+    taste.rejected[k] = (taste.rejected[k] || 0) + 1;
+    saveTaste(taste);
+    return taste;
+  }
+
+  function noteGoalUse(taste, goalId) {
+    taste.goalCounts[goalId] = (taste.goalCounts[goalId] || 0) + 1;
+    saveTaste(taste);
+  }
+
+  // ─── Modulation helpers ──────────────────────────────────
+
+  /**
+   * Common modulation targets from current writing key.
+   * Chords stay absolute; this only suggests where gravity can move.
+   */
+  function modulationTargets(tonic, modeKey, count = 8) {
+    const music = M();
+    const t = music.pc(tonic);
+    const isMinor = (music.MODES[modeKey] || music.MODES.minor).romanBase === 'minor';
+    const candidates = [];
+
+    function add(pc, mode, relation, character) {
+      candidates.push({
+        tonic: ((pc % 12) + 12) % 12,
+        mode,
+        name: music.noteName(((pc % 12) + 12) % 12) + ' ' + (music.MODES[mode] || music.MODES.minor).name,
+        relation,
+        character,
+      });
+    }
+
+    // Closely related
+    add(t + 7, modeKey, 'Dominant key', 'Strong pull away');
+    add(t + 5, modeKey, 'Subdominant key', 'Softer side-step');
+    if (isMinor) {
+      add(t + 3, 'major', 'Relative major', 'Brighter sibling');
+      add(t, 'major', 'Parallel major', 'Same root, major colour');
+      add(t + 8, 'major', '♭VI major area', 'Cinematic lift');
+      add(t + 10, 'major', '♭VII major area', 'Epic/modal');
+      add(t + 7, 'major', 'V major / dominant region', 'Dominant territory');
+      add(t + 2, 'minor', 'Supertonic minor', 'Dark neighbour');
+    } else {
+      add(t + 9, 'minor', 'Relative minor', 'Darker sibling');
+      add(t, 'minor', 'Parallel minor', 'Same root, minor colour');
+      add(t + 2, 'minor', 'ii minor region', 'Soft minor colour');
+      add(t + 4, 'minor', 'iii minor', 'Mediant shade');
+    }
+    // Chromatic mediant keys
+    add(t + 4, isMinor ? 'minor' : 'major', 'Chromatic mediant', 'Cinematic leap');
+    add(t + 8, isMinor ? 'minor' : 'major', 'Chromatic mediant', 'Cinematic leap');
+    add(t + 6, modeKey, 'Tritone key', 'Maximum distance');
+
+    const seen = new Set();
+    return candidates.filter((c) => {
+      const k = c.tonic + ':' + c.mode;
+      if (c.tonic === t && c.mode === modeKey) return false;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    }).slice(0, count);
+  }
+
+  /**
+   * Pivot chords that belong to both fromKey and toKey (shared diatonic material).
+   */
+  function pivotChords(fromTonic, fromMode, toTonic, toMode, sevenths = true) {
+    const music = M();
+    const a = music.diatonicChords(fromTonic, fromMode, sevenths);
+    const b = music.diatonicChords(toTonic, toMode, sevenths);
+    const bKeys = new Set(b.map((c) => c.root + ':' + roughQuality(c.quality)));
+    const pivots = [];
+    a.forEach((ch) => {
+      const k = ch.root + ':' + roughQuality(ch.quality);
+      if (bKeys.has(k)) {
+        pivots.push({
+          ...ch,
+          tag: 'pivot',
+          roman: (ch.roman || '') + ' →',
+          region: 'diatonic',
+        });
+      }
+    });
+    // Also exact root+quality matches from B side for naming in new key
+    return music.dedupeChords(pivots).slice(0, 8);
+  }
+
+  function roughQuality(q) {
+    if (q === 'maj7' || q === 'maj9' || q === 'add9') return 'maj';
+    if (q === 'min7' || q === 'min9' || q === 'minmaj7') return 'min';
+    if (q === 'dom7') return 'dom';
+    if (q === 'halfdim' || q === 'dim7') return 'dim';
+    return q;
+  }
+
+  /**
+   * Routes into a new key (not back to old home) — establish the modulation.
+   */
+  function waysIntoKey(fromChord, toTonic, toMode, count = 5) {
+    const music = M();
+    const t = music.pc(toTonic);
+    const isMinor = (music.MODES[toMode] || music.MODES.minor).romanBase === 'minor';
+    const tonicChord = music.makeChord(t, isMinor ? 'min' : 'maj', {
+      region: 'diatonic',
+      roman: isMinor ? 'i' : 'I',
+      tag: 'new home',
+    });
+    const dominant = music.makeChord((t + 7) % 12, 'dom7', {
+      region: 'diatonic',
+      roman: 'V7',
+      tag: 'new dominant',
+    });
+    const ii = music.makeChord((t + 2) % 12, isMinor ? 'halfdim' : 'min7', {
+      region: 'diatonic',
+      roman: 'ii',
+      tag: 'ii',
+    });
+    const bII7 = music.makeChord((t + 1) % 12, 'dom7', {
+      region: 'tritone',
+      roman: '♭II7',
+      tag: 'tritone into new key',
+    });
+    const subdom = music.makeChord((t + 5) % 12, isMinor ? 'min' : 'maj', {
+      region: 'diatonic',
+      roman: isMinor ? 'iv' : 'IV',
+      tag: 'subdominant',
+    });
+
+    const routes = [
+      { name: 'V7 → new tonic', character: 'clear cadence in new key', chords: [dominant, tonicChord] },
+      { name: 'ii–V–i into new key', character: 'smooth establishment', chords: [ii, dominant, tonicChord] },
+      { name: 'Direct tonic', character: 'hard cut to new home', chords: [tonicChord] },
+      { name: 'Plagal into new key', character: 'soft land', chords: [subdom, tonicChord] },
+      { name: 'Tritone into new key', character: 'dark surprise', chords: [bII7, tonicChord] },
+    ];
+
+    return routes.slice(0, count).map((r, i) => ({
+      id: `into-${i}`,
+      name: r.name,
+      character: r.character,
+      targetLabel: music.noteName(t) + ' ' + (music.MODES[toMode] || {}).name,
+      chords: r.chords.map((c, j) =>
+        music.withDuration(
+          { ...c, notes: c.notes.slice(), localTonic: t, localMode: toMode },
+          j === r.chords.length - 1 ? 4 : 2
+        )
+      ),
+    }));
+  }
+
+  // ─── Common tones helper for UI ──────────────────────────
+
+  function voiceLeadingDetail(from, to) {
+    const music = M();
+    const a = music.voiceLead(from, null);
+    const b = music.voiceLead(to, a);
+    const fromPcs = new Set(chordTones(from));
+    const toPcs = chordTones(to);
+    const common = toPcs.filter((n) => fromPcs.has(n)).map((n) => music.noteName(n));
+    const moving = toPcs.filter((n) => !fromPcs.has(n)).map((n) => music.noteName(n));
+    return {
+      common,
+      moving,
+      quality: music.voiceLeadingQuality(from, to),
+      fromMidi: a,
+      toMidi: b,
+      bassFrom: music.noteName(effectiveBass(from)),
+      bassTo: music.noteName(effectiveBass(to)),
+      bassMotion: bassMotionLabel(bassInterval(from, to)),
+    };
+  }
+
+  /**
+   * Close alternate versions of a chord for map-drag snapping:
+   * inversions / slash bass, quality family (m↔m7), and near-neighbour colours.
+   */
+  function closeAlternates(chord, tonic, modeKey, limit = 8) {
+    const music = M();
+    const t = music.pc(tonic);
+    const out = [];
+    const push = (ch, label) => {
+      if (!ch) return;
+      const k = ch.root + ':' + ch.quality + ':' + effectiveBass(ch);
+      if (out.some((o) => o.key === k)) return;
+      out.push({
+        key: k,
+        chord: ch,
+        label: label || ch.name,
+      });
+    };
+
+    // Inversions (same quality)
+    const tones = chordTones(chord);
+    tones.forEach((pc, i) => {
+      const c = withBass(chord, pc);
+      c.duration = chord.duration;
+      c.roman = chord.roman;
+      c.tag = chord.tag;
+      c.region = chord.region;
+      push(c, i === 0 ? c.name + ' root' : c.name);
+    });
+
+    // Quality family on same root
+    const fam = {
+      min: ['min', 'min7', 'min9', 'minmaj7'],
+      maj: ['maj', 'maj7', 'add9', 'maj9'],
+      dom7: ['dom7', 'maj', 'sus4'],
+      halfdim: ['halfdim', 'dim', 'min7'],
+    };
+    let family = fam.min;
+    if (chord.quality.startsWith('maj') || chord.quality === 'add9') family = fam.maj;
+    else if (chord.quality === 'dom7' || chord.quality === 'sus4') family = fam.dom7;
+    else if (chord.quality.includes('dim')) family = fam.halfdim;
+    else if (chord.quality.includes('min')) family = fam.min;
+
+    family.forEach((q) => {
+      if (q === chord.quality) return;
+      let c = music.makeChord(chord.root, q, {
+        region: chord.region,
+        roman: chord.roman,
+        tag: 'alt',
+        duration: chord.duration,
+      });
+      c = withBass(c, effectiveBass(chord));
+      c.duration = chord.duration;
+      push(c, c.name);
+    });
+
+    // Near colours: ±1–2 scale steps common dark moves
+    const near = [
+      { d: 0, q: chord.quality },
+      { d: 5, q: 'min' },
+      { d: 8, q: 'maj' },
+      { d: 10, q: 'maj' },
+      { d: 7, q: 'dom7' },
+      { d: 1, q: 'dom7' },
+    ];
+    near.forEach((s) => {
+      const root = (chord.root + s.d) % 12;
+      // relative to tonic for roman-ish labels only
+      let c = music.makeChord(root, s.q, {
+        region: s.d === 1 ? 'tritone' : s.d === 8 || s.d === 10 ? 'interchange' : 'diatonic',
+        tag: 'near',
+        duration: chord.duration,
+      });
+      if (root === chord.root && s.q === chord.quality) return;
+      push(c, c.name);
+    });
+
+    // Prefer ones close to original root
+    out.sort((a, b) => {
+      const da = Math.min(
+        Math.abs(a.chord.root - chord.root),
+        12 - Math.abs(a.chord.root - chord.root)
+      );
+      const db = Math.min(
+        Math.abs(b.chord.root - chord.root),
+        12 - Math.abs(b.chord.root - chord.root)
+      );
+      return da - db;
+    });
+
+    return out.slice(0, limit);
+  }
+
+  // Enhance cloneChord to keep bass
+  const _origClone = M().cloneChord;
+  M().cloneChord = function (c) {
+    const n = _origClone.call(M(), c);
+    n.bassPc = c.bassPc != null ? c.bassPc : c.root;
+    n.inversion = c.inversion || 0;
+    n.name = formatChordName(n);
+    return n;
+  };
+
+  // Export on HLMusic and HLCompose
+  const API = {
+    GOALS,
+    JOB_LABELS,
+    formatChordName,
+    withBass,
+    withInversion,
+    effectiveBass,
+    bassInterval,
+    bassMotionLabel,
+    bassMotionScore,
+    bestInversion,
+    smoothCellVoicings,
+    chordTension,
+    tensionCurve,
+    describeJob,
+    suggestNext,
+    analyzeCell,
+    varyOneChord,
+    varyRhythmOnly,
+    reharmBar,
+    varySameBassNewUpper,
+    structureABBA,
+    loadTaste,
+    saveTaste,
+    acceptChord,
+    rejectChord,
+    noteGoalUse,
+    voiceLeadingDetail,
+    tasteKey,
+    countExoticStreak,
+    modulationTargets,
+    pivotChords,
+    waysIntoKey,
+    closeAlternates,
+  };
+
+  Object.assign(global.HLMusic, API);
+  global.HLCompose = API;
+})(typeof window !== 'undefined' ? window : globalThis);
