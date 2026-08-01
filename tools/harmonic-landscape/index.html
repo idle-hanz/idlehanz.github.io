@@ -321,6 +321,47 @@
       color: var(--gold2);
       background: rgba(196,165,116,0.12);
     }
+    .map-footer {
+      border-top: 1px solid var(--line);
+      background: #0c0b0a;
+      padding: 0.4rem 0.55rem 0.5rem;
+    }
+    .traj-caption {
+      font-family: var(--serif);
+      font-style: italic;
+      font-size: 0.88rem;
+      color: var(--gold);
+      margin-bottom: 0.35rem;
+      min-height: 1.2em;
+    }
+    .time-strip {
+      display: flex;
+      gap: 3px;
+      min-height: 2.4rem;
+      align-items: stretch;
+    }
+    .ts-empty { font-size: 0.75rem; color: var(--muted); font-family: var(--serif); font-style: italic; padding: 0.4rem 0; }
+    .ts-step {
+      flex: 1 1 0;
+      min-width: 2rem;
+      border: 1px solid var(--line);
+      background: var(--elev);
+      border-radius: 6px;
+      color: var(--text);
+      cursor: pointer;
+      padding: 0.25rem 0.2rem;
+      font: inherit;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.05rem;
+    }
+    .ts-step:hover { border-color: var(--gold); }
+    .ts-step.selected { border-color: var(--gold); background: rgba(196,165,116,0.12); }
+    .ts-step.playing { border-color: #c4b5fd; box-shadow: 0 0 0 1px rgba(167,139,250,0.4); }
+    .ts-n { font-size: 0.65rem; color: var(--gold); font-weight: 700; }
+    .ts-name { font-size: 0.68rem; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* Horizon lists */
     .hz {
@@ -382,7 +423,7 @@
         <p>Sequence is the document · space is the compass</p>
       </div>
       <nav class="nav">
-        <button type="button" class="btn primary" <a href="../index.html" style="color:var(--muted);font-size:0.78rem;margin-right:0.4rem">Tools</a> <button type="button" class="btn primary" id="btn-fret" title="Send sequence to Guitar Fretboard">→ Fretboard</button>
+        <button type="button" class="btn primary" id="btn-fret" title="Send sequence to Guitar Fretboard">→ Fretboard</button>
         <button type="button" class="btn" id="btn-arrange" title="Open Arrangement">Arrangement</button>
         <span id="sync-status" class="key" style="font-size:0.72rem;color:var(--muted)"></span>
       </nav>
@@ -458,14 +499,23 @@
         <div class="map-tools">
           <button type="button" class="btn ghost active" id="cam-home" title="Lock camera on home (no jolt)">Home lock</button>
           <button type="button" class="btn ghost" id="cam-fit" title="Frame whole path">Fit</button>
-          <button type="button" class="btn ghost" id="cam-follow" title="Follow playhead (old behaviour)">Follow</button>
+          <button type="button" class="btn ghost" id="cam-follow" title="Follow playhead">Follow</button>
           <button type="button" class="btn ghost" id="btn-home">Recentre</button>
-          <span style="width:0.5rem"></span>
-          <button type="button" class="btn ghost" id="btn-var-reharm" title="Fork linked variation (reharm)">+ Vary reharm</button>
-          <button type="button" class="btn ghost" id="btn-var-parallel" title="Fork parallel major/minor colour">+ Vary parallel</button>
-          <button type="button" class="btn ghost" id="btn-var-darken" title="Fork darker colour">+ Vary darken</button>
+          <span style="width:0.35rem"></span>
+          <button type="button" class="btn ghost" id="btn-swing" title="Add a chord on the opposite side of home">+ Swing</button>
+          <button type="button" class="btn ghost" id="btn-arch" title="Add V7 → home">Arch home</button>
+          <span style="width:0.35rem"></span>
+          <button type="button" class="btn ghost" id="btn-var-reharm" title="Fork linked variation">+ Vary reharm</button>
+          <button type="button" class="btn ghost" id="btn-var-parallel" title="Fork parallel colour">+ Vary parallel</button>
+          <button type="button" class="btn ghost" id="btn-var-darken" title="Fork darker">+ Vary darken</button>
+          <label class="ctl" style="margin-left:0.35rem;color:#c8b8a0"><input type="checkbox" id="tog-horizon" checked> Options</label>
+          <label class="ctl" style="color:#c8b8a0"><input type="checkbox" id="tog-alt" checked> Blue path</label>
         </div>
         <canvas id="map" aria-label="Harmonic path and directions"></canvas>
+        <div class="map-footer">
+          <div id="traj-caption" class="traj-caption">Path shape appears here</div>
+          <div id="time-strip" class="time-strip"></div>
+        </div>
       </div>
 
       <!-- Horizon lists -->

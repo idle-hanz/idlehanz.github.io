@@ -138,11 +138,45 @@
       state.chords[pathIndex] = ch;
       state.selected = pathIndex;
       state.fromPackId = null;
-      // Force map layout refresh after drag
       map._mode = null;
       afterEdit();
       A().ensure();
       A().playChord({ chord: ch });
+    };
+    map.onInsertBetween = (afterIndex) => {
+      // Insert a swing-friendly or smooth neighbour between afterIndex and afterIndex+1
+      pushUndo();
+      const a = state.chords[afterIndex];
+      const b = state.chords[afterIndex + 1];
+      if (!a || !b) return;
+      const midRoot = Math.round((a.root + b.root) / 2) % 12;
+      // Prefer diatonic chord near midpoint
+      let ch = M().makeChord(midRoot, state.mode === 'major' ? 'maj' : 'min', {
+        duration: 2,
+        region: 'diatonic',
+        tag: 'insert',
+        roman: '→',
+      });
+      // If swing continues: try opposite half from a toward home
+      if (C().bestInversion) {
+        ch = C().bestInversion(a, ch);
+        ch.duration = 2;
+        ch.tag = 'insert';
+      }
+      ch.localTonic = state.tonic;
+      ch.localMode = state.mode;
+      state.chords.splice(afterIndex + 1, 0, ch);
+      state.selected = afterIndex + 1;
+      state.fromPackId = null;
+      afterEdit();
+      A().ensure();
+      A().playChord({ chord: ch });
+      setSyncStatus('Inserted between ' + (afterIndex + 1) + ' and ' + (afterIndex + 2));
+    };
+    map.onTrajectory = (info) => {
+      const el = $('#traj-caption');
+      if (el && info) el.textContent = info.caption || '';
+      renderTimeStrip();
     };
     map.setCameraMode('home');
     map.start();
@@ -890,9 +924,11 @@
         map.setPlaying(i);
         state.selected = i;
         renderSlots();
+        renderTimeStrip();
       },
       onEnd: () => {
         map.setPlaying(-1);
+        renderTimeStrip();
         updatePlayBtn();
       },
     });
@@ -1005,6 +1041,115 @@
     map.setOrigin(state.tonic, state.mode);
     map.setPath(state.chords, state.selected);
     map.setHorizon(buildHorizon());
+    renderTimeStrip();
+  }
+
+  function renderTimeStrip() {
+    const host = $('#time-strip');
+    if (!host) return;
+    host.innerHTML = '';
+    if (!state.chords.length) {
+      host.innerHTML = '<span class="ts-empty">Time strip — path steps appear here</span>';
+      return;
+    }
+    const total = state.chords.reduce((s, c) => s + (c.duration || 4), 0) || 1;
+    state.chords.forEach((ch, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      const w = Math.max(8, ((ch.duration || 4) / total) * 100);
+      btn.className =
+        'ts-step' +
+        (i === state.selected ? ' selected' : '') +
+        (map && map.playing === i ? ' playing' : '');
+      btn.style.flex = (ch.duration || 4) + ' 1 0';
+      btn.title = (i + 1) + '. ' + ch.name + ' · ' + (ch.duration || 4) + ' beats';
+      btn.innerHTML = `<span class="ts-n">${i + 1}</span><span class="ts-name">${ch.name}</span>`;
+      btn.addEventListener('click', () => {
+        state.selected = i;
+        A().ensure();
+        A().playChord({ chord: ch });
+        refreshUI();
+      });
+      host.appendChild(btn);
+    });
+  }
+
+  /** Prefer next chords that continue L–R swing or arch home */
+  function suggestSwingNext() {
+    if (!state.chords.length || !map) return;
+    const last = state.chords[state.chords.length - 1];
+    const nodes = map.nodes || [];
+    const lastNode = nodes[nodes.length - 1];
+    const side = lastNode ? (lastNode.x >= 0 ? 1 : -1) : 1;
+    // Want opposite side of home
+    const wantSide = -side;
+    const t = state.tonic;
+    const candidates = [];
+    for (let d = 0; d < 12; d++) {
+      ['min', 'maj', 'dom7', 'min7', 'maj7'].forEach((q) => {
+        const root = (t + d) % 12;
+        let ch = M().makeChord(root, q, { duration: 4, region: d === 0 ? 'diatonic' : 'interchange' });
+        const pos = map._chordPos(ch, 0, 0);
+        const s = pos.x >= 0 ? 1 : -1;
+        if (s !== wantSide) return;
+        const dist = Math.abs(pos.x) + Math.abs(pos.y) * 0.5;
+        candidates.push({ ch, score: dist + (M().voiceLeadingQuality ? M().voiceLeadingQuality(last, ch) * 20 : 0) });
+      });
+    }
+    candidates.sort((a, b) => b.score - a.score);
+    const pick = candidates[0];
+    if (!pick) return;
+    pushUndo();
+    let ch = pick.ch;
+    if (C().bestInversion) ch = C().bestInversion(last, ch);
+    ch.duration = 4;
+    ch.tag = 'swing';
+    ch.localTonic = state.tonic;
+    ch.localMode = state.mode;
+    state.chords.push(ch);
+    state.selected = state.chords.length - 1;
+    state.fromPackId = null;
+    afterEdit();
+    A().ensure();
+    A().playChord({ chord: ch });
+    setSyncStatus('Added swing step · ' + ch.name);
+  }
+
+  function suggestArchHome() {
+    if (!state.chords.length) return;
+    const last = state.chords[state.chords.length - 1];
+    const t = state.tonic;
+    // V7 then will want home — just add V7
+    pushUndo();
+    let ch = M().makeChord((t + 7) % 12, 'dom7', {
+      duration: 2,
+      region: 'diatonic',
+      roman: 'V7',
+      tag: 'arch-home',
+    });
+    if (C().bestInversion) ch = C().bestInversion(last, ch);
+    ch.duration = 2;
+    ch.localTonic = state.tonic;
+    ch.localMode = state.mode;
+    state.chords.push(ch);
+    // Then tonic
+    let home = M().makeChord(t, state.mode === 'major' ? 'maj' : 'min', {
+      duration: 4,
+      region: 'diatonic',
+      roman: 'i',
+      tag: 'home',
+    });
+    if (C().bestInversion) home = C().bestInversion(ch, home);
+    home.duration = 4;
+    home.localTonic = state.tonic;
+    home.localMode = state.mode;
+    state.chords.push(home);
+    state.selected = state.chords.length - 1;
+    state.fromPackId = null;
+    afterEdit();
+    A().ensure();
+    A().playSequence([ch, home], state.bpm, { pulse: false });
+    setSyncStatus('Arch home · V7 → tonic');
   }
 
   function refreshSequence() {
@@ -1315,6 +1460,19 @@
     if ($('#btn-var-reharm')) $('#btn-var-reharm').addEventListener('click', () => createVariation('reharm'));
     if ($('#btn-var-parallel')) $('#btn-var-parallel').addEventListener('click', () => createVariation('parallel'));
     if ($('#btn-var-darken')) $('#btn-var-darken').addEventListener('click', () => createVariation('darken'));
+    if ($('#btn-swing')) $('#btn-swing').addEventListener('click', suggestSwingNext);
+    if ($('#btn-arch')) $('#btn-arch').addEventListener('click', suggestArchHome);
+    if ($('#tog-horizon')) {
+      $('#tog-horizon').addEventListener('change', (e) => {
+        map.setShowHorizon(e.target.checked);
+      });
+      map.setShowHorizon($('#tog-horizon').checked);
+    }
+    if ($('#tog-alt')) {
+      $('#tog-alt').addEventListener('change', (e) => {
+        map.setShowAlt(e.target.checked);
+      });
+    }
 
     function syncCamButtons() {
       const mode = map.cameraMode || 'home';

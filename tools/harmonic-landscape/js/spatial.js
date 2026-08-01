@@ -1,5 +1,5 @@
 /**
- * Path-in-space map: sequence trail, horizon, drag-to-alternate snap
+ * Path-in-space map: fixed home stage, trajectory, dual versions, edit gestures
  */
 (function (global) {
   'use strict';
@@ -27,23 +27,28 @@
     this.origin = { tonic: 11, mode: 'minor' };
     this.path = [];
     this.nodes = [];
-    this.altPath = []; // secondary version path (parallel variation)
+    this.altPath = [];
     this.altNodes = [];
+    this.divergent = []; // indices where alt differs from primary
     this.horizon = [];
-    this.alts = []; // snap targets while dragging a path node
+    this.alts = [];
     this.current = -1;
     this.playing = -1;
-    /** home = lock on tonic (default); follow = pan to current (jarring); fit = frame whole path */
     this.cameraMode = 'home';
+    this.showHorizon = true;
+    this.showAlt = true;
     this.camera = { x: 0, y: 0, zoom: 1, tx: 0, ty: 0, tz: 1 };
     this.hover = null;
     this.snapAlt = null;
+    this.pulseT = 0;
     this.onSelectPath = null;
     this.onSelectHorizon = null;
     this.onHoverHorizon = null;
-    this.onRequestAlts = null; // (pathIndex, chord) => [{chord, label}]
-    this.onSwapChord = null; // (pathIndex, newChord) => void
-    this._mode = null; // pan | node
+    this.onRequestAlts = null;
+    this.onSwapChord = null;
+    this.onInsertBetween = null; // (afterIndex) => void
+    this.onTrajectory = null; // (caption) => void
+    this._mode = null;
     this._dragNode = null;
     this._dragPos = null;
     this._last = null;
@@ -89,12 +94,20 @@
     };
   };
 
+  SpatialMap.prototype.setShowHorizon = function (on) {
+    this.showHorizon = !!on;
+  };
+
+  SpatialMap.prototype.setShowAlt = function (on) {
+    this.showAlt = !!on;
+  };
+
   SpatialMap.prototype.setPath = function (chords, currentIndex) {
-    // Don't clobber mid-drag
     if (this._mode === 'node') return;
     this.path = (chords || []).map((c) => ({ ...c }));
     this.current = currentIndex != null ? currentIndex : this.path.length - 1;
     this._layoutPath();
+    this._emitTrajectory();
   };
 
   SpatialMap.prototype.setHorizon = function (items) {
@@ -138,28 +151,26 @@
 
   SpatialMap.prototype.setPlaying = function (i) {
     this.playing = i;
-    // Only follow playhead if camera mode is "follow"
     if (this.cameraMode === 'follow' && i >= 0 && this.nodes[i] && this._mode !== 'node') {
       this.camera.tx = this.nodes[i].x;
       this.camera.ty = this.nodes[i].y;
     }
   };
 
-  /** Secondary path (e.g. variation v2) drawn under/beside primary. */
   SpatialMap.prototype.setAltPath = function (chords) {
     this.altPath = (chords || []).map((c) => ({ ...c }));
     this._layoutAltPath();
+    this._computeDivergent();
+    this._emitTrajectory();
   };
 
   SpatialMap.prototype._chordPos = function (ch, index, lane) {
     const M = global.HLMusic;
     const R = Math.min(this.w || 500, this.h || 360) * 0.36;
     const dist = M.harmonicDistance(ch, this.origin.tonic, this.origin.mode);
-    // Stable position from root/quality — NO index spiral (keeps variants aligned)
     const ang = M.harmonicAngle(ch, this.origin.tonic);
     const radius = 40 + dist * (R / 2.6);
-    // Slight lane offset so v1/v2 don't fully stack
-    const off = lane === 1 ? 10 : 0;
+    const off = lane === 1 ? 12 : 0;
     return {
       x: Math.cos(ang) * radius + (lane === 1 ? Math.cos(ang + Math.PI / 2) * off : 0),
       y: Math.sin(ang) * radius * 0.72 + (lane === 1 ? Math.sin(ang + Math.PI / 2) * off * 0.72 : 0),
@@ -171,10 +182,11 @@
     if (!M) return;
     this.nodes = this.path.map((ch, i) => {
       const pos = this._chordPos(ch, i, 0);
-      const r = 14 + Math.min(14, (ch.duration || 4) * 1.4);
+      const r = 15 + Math.min(14, (ch.duration || 4) * 1.4);
       return { chord: ch, x: pos.x, y: pos.y, r, i };
     });
     this._layoutAltPath();
+    this._computeDivergent();
     if (this._mode !== 'node') this._applyCameraForMode();
   };
 
@@ -189,6 +201,21 @@
       const r = 12 + Math.min(12, (ch.duration || 4) * 1.2);
       return { chord: ch, x: pos.x, y: pos.y, r, i };
     });
+  };
+
+  SpatialMap.prototype._computeDivergent = function () {
+    this.divergent = [];
+    const n = Math.min(this.nodes.length, this.altNodes.length);
+    for (let i = 0; i < n; i++) {
+      const a = this.nodes[i].chord;
+      const b = this.altNodes[i].chord;
+      if (a.root !== b.root || a.quality !== b.quality) this.divergent.push(i);
+    }
+    // If lengths differ, mark extra indices on the longer path
+    if (this.nodes.length !== this.altNodes.length && this.altNodes.length) {
+      const max = Math.max(this.nodes.length, this.altNodes.length);
+      for (let i = n; i < max; i++) this.divergent.push(i);
+    }
   };
 
   SpatialMap.prototype._applyCameraForMode = function () {
@@ -207,9 +234,8 @@
       }
       return;
     }
-    // fit
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    const all = this.nodes.concat(this.altNodes || []);
+    const all = this.nodes.concat(this.showAlt ? this.altNodes || [] : []);
     all.forEach((n) => {
       minX = Math.min(minX, n.x - n.r);
       maxX = Math.max(maxX, n.x + n.r);
@@ -222,23 +248,64 @@
     this.camera.tz = Math.min(1.3, Math.max(0.55, (Math.min(this.w, this.h) * 0.55) / span));
   };
 
+  /** Analyze path shape for caption + swing suggestions */
+  SpatialMap.prototype.analyzeTrajectory = function () {
+    if (this.nodes.length < 2) {
+      return { caption: 'Add chords to draw a path', swing: 0, arch: 0, returns: false, crosses: 0 };
+    }
+    let crosses = 0;
+    let outMax = 0;
+    let radii = [];
+    for (let i = 0; i < this.nodes.length; i++) {
+      const n = this.nodes[i];
+      const r = Math.sqrt(n.x * n.x + n.y * n.y);
+      radii.push(r);
+      outMax = Math.max(outMax, r);
+    }
+    for (let i = 0; i < this.nodes.length - 1; i++) {
+      const a = this.nodes[i];
+      const b = this.nodes[i + 1];
+      if (a.x * b.x < 0) crosses++;
+    }
+    const first = radii[0];
+    const last = radii[radii.length - 1];
+    const mid = radii[Math.floor(radii.length / 2)] || 0;
+    const arch = mid > first && mid > last ? 1 : mid > (first + last) / 2 ? 0.5 : 0;
+    const returns = last < outMax * 0.55;
+    const swing = crosses / Math.max(1, this.nodes.length - 1);
+
+    let caption = '';
+    if (swing >= 0.45) caption = 'Strong left–right swing';
+    else if (swing >= 0.25) caption = 'Some side-to-side motion';
+    else caption = 'Path stays on one side of home';
+
+    if (arch >= 0.5) caption += ' · arch out then in';
+    if (returns) caption += ' · returns toward home';
+    else if (outMax > 80) caption += ' · stays out far';
+
+    if (this.altNodes.length && this.divergent.length) {
+      caption += ' · variation differs at step(s) ' + this.divergent.map((i) => i + 1).join(', ');
+    } else if (this.altNodes.length) {
+      caption += ' · variation nearly parallel';
+    }
+
+    return { caption, swing, arch, returns, crosses, divergent: this.divergent.slice() };
+  };
+
+  SpatialMap.prototype._emitTrajectory = function () {
+    if (this.onTrajectory) this.onTrajectory(this.analyzeTrajectory());
+  };
+
   SpatialMap.prototype._layoutAlts = function (pathIndex, alts) {
     const origin = this.nodes[pathIndex] || { x: 0, y: 0 };
     const n = (alts || []).length || 1;
     this.alts = (alts || []).map((a, i) => {
       const ang = -Math.PI / 2 + (i / n) * Math.PI * 2;
       const rad = 48 + (i % 3) * 10;
-      // Prefer natural harmonic position blended with ring around node
-      const natural = this._chordPos(a.chord, pathIndex);
+      const natural = this._chordPos(a.chord, pathIndex, 0);
       const x = origin.x * 0.25 + natural.x * 0.35 + Math.cos(ang) * rad;
       const y = origin.y * 0.25 + natural.y * 0.35 + Math.sin(ang) * rad * 0.75;
-      return {
-        chord: a.chord,
-        label: a.label || a.chord.name,
-        x,
-        y,
-        r: 13,
-      };
+      return { chord: a.chord, label: a.label || a.chord.name, x, y, r: 13 };
     });
   };
 
@@ -247,6 +314,25 @@
       x: (sx - this.w / 2) / this.camera.zoom + this.camera.x,
       y: (sy - this.h / 2) / this.camera.zoom + this.camera.y,
     };
+  };
+
+  SpatialMap.prototype._hitEdge = function (sx, sy) {
+    const w = this.screenToWorld(sx, sy);
+    const thresh = 14 / this.camera.zoom;
+    for (let i = 0; i < this.nodes.length - 1; i++) {
+      const a = this.nodes[i];
+      const b = this.nodes[i + 1];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len2 = dx * dx + dy * dy || 1;
+      let t = ((w.x - a.x) * dx + (w.y - a.y) * dy) / len2;
+      t = Math.max(0.15, Math.min(0.85, t));
+      const px = a.x + t * dx;
+      const py = a.y + t * dy;
+      const d = Math.hypot(w.x - px, w.y - py);
+      if (d < thresh) return { type: 'edge', afterIndex: i, x: px, y: py };
+    }
+    return null;
   };
 
   SpatialMap.prototype._hit = function (sx, sy) {
@@ -259,11 +345,13 @@
         if (dx * dx + dy * dy <= 18 * 18) return { type: 'alt', item: a };
       }
     }
-    for (let i = this.horizon.length - 1; i >= 0; i--) {
-      const h = this.horizon[i];
-      const dx = w.x - h.x;
-      const dy = w.y - h.y;
-      if (dx * dx + dy * dy <= 16 * 16) return { type: 'horizon', item: h };
+    if (this.showHorizon && this._mode !== 'node') {
+      for (let i = this.horizon.length - 1; i >= 0; i--) {
+        const h = this.horizon[i];
+        const dx = w.x - h.x;
+        const dy = w.y - h.y;
+        if (dx * dx + dy * dy <= 16 * 16) return { type: 'horizon', item: h };
+      }
     }
     for (let i = this.nodes.length - 1; i >= 0; i--) {
       const n = this.nodes[i];
@@ -271,6 +359,8 @@
       const dy = w.y - n.y;
       if (dx * dx + dy * dy <= (n.r + 6) * (n.r + 6)) return { type: 'path', item: n };
     }
+    const edge = this._hitEdge(sx, sy);
+    if (edge) return edge;
     return null;
   };
 
@@ -288,7 +378,6 @@
       this._dragPos = { x: hit.item.x, y: hit.item.y };
       this.current = hit.item.i;
       if (this.onSelectPath) this.onSelectPath(hit.item.i, hit.item.chord);
-      // Request alternate close versions
       let alts = [];
       if (this.onRequestAlts) alts = this.onRequestAlts(hit.item.i, hit.item.chord) || [];
       this._layoutAlts(hit.item.i, alts);
@@ -298,6 +387,10 @@
     }
     if (hit && hit.type === 'horizon') {
       if (this.onSelectHorizon) this.onSelectHorizon(hit.item);
+      return;
+    }
+    if (hit && hit.type === 'edge' && this.onInsertBetween) {
+      this.onInsertBetween(hit.afterIndex);
       return;
     }
     this._mode = 'pan';
@@ -324,7 +417,6 @@
       const w = this.screenToWorld(sx, sy);
       this._dragPos = { x: w.x, y: w.y };
       this._moved = true;
-      // Snap to nearest alt
       let best = null;
       let bestD = 28 * 28;
       this.alts.forEach((a) => {
@@ -348,13 +440,14 @@
     const hit = this._hit(sx, sy);
     const prev = this.hover;
     this.hover = hit;
-    this.canvas.style.cursor = hit ? 'pointer' : 'grab';
+    if (hit && hit.type === 'edge') this.canvas.style.cursor = 'copy';
+    else this.canvas.style.cursor = hit ? 'pointer' : 'grab';
     if (hit && hit.type === 'horizon' && (!prev || prev.item !== hit.item)) {
       if (this.onHoverHorizon) this.onHoverHorizon(hit.item);
     }
   };
 
-  SpatialMap.prototype._up = function (e) {
+  SpatialMap.prototype._up = function () {
     if (this._mode === 'node' && this._dragNode) {
       if (this.snapAlt && this._moved && this.onSwapChord) {
         this.onSwapChord(this._dragNode.i, this.snapAlt.chord);
@@ -374,6 +467,7 @@
   SpatialMap.prototype.start = function () {
     const loop = () => {
       requestAnimationFrame(loop);
+      this.pulseT += 0.05;
       const cam = this.camera;
       if (this._mode !== 'pan') {
         cam.x += (cam.tx - cam.x) * 0.1;
@@ -385,13 +479,25 @@
     loop();
   };
 
+  SpatialMap.prototype._edgeStyle = function (a, b) {
+    const dx = Math.abs(a.chord.root - b.chord.root);
+    const rootDist = Math.min(dx, 12 - dx);
+    const cross = a.x * b.x < 0;
+    // Motion type colour
+    if (rootDist === 6) return { color: 'rgba(232,93,76,0.85)', w: 3.2, kind: 'tritone' };
+    if (rootDist === 5 || rootDist === 7) return { color: 'rgba(126,184,218,0.85)', w: 3, kind: 'fifth' };
+    if (rootDist <= 2) return { color: 'rgba(125,186,146,0.8)', w: 2.6, kind: 'step' };
+    if (cross) return { color: 'rgba(232,201,138,0.9)', w: 3.4, kind: 'swing' };
+    return { color: 'rgba(196,165,116,0.55)', w: 2.5, kind: 'leap' };
+  };
+
   SpatialMap.prototype.draw = function () {
     const ctx = this.ctx;
     const w = this.w;
     const h = this.h;
     if (!w) return;
 
-    const g = ctx.createRadialGradient(w * 0.5, h * 0.45, 10, w * 0.5, h * 0.5, Math.max(w, h) * 0.65);
+    const g = ctx.createRadialGradient(w * 0.5, h * 0.42, 10, w * 0.5, h * 0.5, Math.max(w, h) * 0.7);
     g.addColorStop(0, '#1a1410');
     g.addColorStop(0.5, '#0c0b0a');
     g.addColorStop(1, '#050505');
@@ -404,76 +510,99 @@
     ctx.translate(-this.camera.x, -this.camera.y);
 
     const R = Math.min(w, h) * 0.36;
+    // Function wedges (subtle)
+    const wedges = [
+      { a0: -0.6, a1: 0.6, c: 'rgba(196,165,116,0.04)' }, // near tonic angles rough
+    ];
     [0.35, 0.6, 0.9].forEach((f, i) => {
       ctx.beginPath();
       ctx.ellipse(0, 0, R * f, R * f * 0.72, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(196,165,116,${0.1 - i * 0.02})`;
+      ctx.strokeStyle = `rgba(196,165,116,${0.12 - i * 0.025})`;
       ctx.lineWidth = 1.2 / this.camera.zoom;
       ctx.stroke();
     });
 
     // Home
-    const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 50);
-    glow.addColorStop(0, 'rgba(255,200,120,0.35)');
+    const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 55);
+    glow.addColorStop(0, 'rgba(255,200,120,0.4)');
     glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(0, 0, 50, 0, Math.PI * 2);
+    ctx.arc(0, 0, 55, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(0, 0, 9, 0, Math.PI * 2);
+    ctx.arc(0, 0, 10, 0, Math.PI * 2);
     ctx.fillStyle = '#e8c98a';
     ctx.fill();
     const M = global.HLMusic;
-    ctx.fillStyle = 'rgba(232,201,138,0.9)';
-    ctx.font = `${11 / this.camera.zoom}px Cinzel, serif`;
+    ctx.fillStyle = 'rgba(232,201,138,0.95)';
+    ctx.font = `${12 / this.camera.zoom}px Cinzel, serif`;
     ctx.textAlign = 'center';
-    ctx.fillText(M ? M.noteName(this.origin.tonic) + ' home' : 'home', 0, 26 / this.camera.zoom);
+    ctx.fillText(M ? M.noteName(this.origin.tonic) + ' home' : 'home', 0, 28 / this.camera.zoom);
 
-    // Horizon (hidden while dragging node for clarity)
-    if (this._mode !== 'node') {
+    // Horizon
+    if (this.showHorizon && this._mode !== 'node') {
       this.horizon.forEach((h) => {
         const col = REGION[h.kind] || REGION.flavour;
         const isH = this.hover && this.hover.type === 'horizon' && this.hover.item === h;
         ctx.beginPath();
-        ctx.arc(h.x, h.y, isH ? 14 : 11, 0, Math.PI * 2);
+        ctx.arc(h.x, h.y, isH ? 14 : 10, 0, Math.PI * 2);
         ctx.fillStyle = col.ghost;
         ctx.fill();
         ctx.strokeStyle = col.fill;
-        ctx.lineWidth = (isH ? 2 : 1.2) / this.camera.zoom;
+        ctx.lineWidth = (isH ? 2 : 1) / this.camera.zoom;
         ctx.stroke();
-        ctx.fillStyle = isH ? '#fff' : 'rgba(230,220,200,0.85)';
-        ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
-        ctx.fillText(h.label, h.x, h.y + 20 / this.camera.zoom);
+        ctx.fillStyle = isH ? '#fff' : 'rgba(230,220,200,0.75)';
+        ctx.font = `${8 / this.camera.zoom}px DM Sans, sans-serif`;
+        ctx.fillText(h.label, h.x, h.y + 18 / this.camera.zoom);
       });
     }
 
-    // Alt path (variation) — blue ribbon under gold
-    for (let i = 0; i < this.altNodes.length - 1; i++) {
-      const a = this.altNodes[i];
-      const b = this.altNodes[i + 1];
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.strokeStyle = 'rgba(126,184,218,0.55)';
-      ctx.lineWidth = 3 / this.camera.zoom;
-      ctx.stroke();
+    // Alt path
+    if (this.showAlt) {
+      for (let i = 0; i < this.altNodes.length - 1; i++) {
+        const a = this.altNodes[i];
+        const b = this.altNodes[i + 1];
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.strokeStyle = 'rgba(126,184,218,0.5)';
+        ctx.lineWidth = 3.5 / this.camera.zoom;
+        ctx.setLineDash([6 / this.camera.zoom, 4 / this.camera.zoom]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      this.altNodes.forEach((n, i) => {
+        const div = this.divergent.indexOf(i) >= 0;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r * (div ? 1.05 : 0.85), 0, Math.PI * 2);
+        ctx.fillStyle = div ? 'rgba(126,184,218,0.55)' : 'rgba(126,184,218,0.28)';
+        ctx.fill();
+        ctx.strokeStyle = div ? '#b8e0f5' : '#7eb8da';
+        ctx.lineWidth = (div ? 2.5 : 1.2) / this.camera.zoom;
+        ctx.stroke();
+        if (div) {
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, n.r + 6 / this.camera.zoom, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(126,184,218,0.45)';
+          ctx.lineWidth = 1.5 / this.camera.zoom;
+          ctx.stroke();
+        }
+      });
     }
-    this.altNodes.forEach((n) => {
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, n.r * 0.85, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(126,184,218,0.35)';
-      ctx.fill();
-      ctx.strokeStyle = '#7eb8da';
-      ctx.lineWidth = 1.5 / this.camera.zoom;
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(180,220,240,0.9)';
-      ctx.font = `${8 / this.camera.zoom}px DM Sans, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText(n.chord.name, n.x, n.y + n.r + 10 / this.camera.zoom);
-    });
 
-    // Path threads (primary) — colour by root motion
+    // Hover edge marker
+    if (this.hover && this.hover.type === 'edge') {
+      ctx.beginPath();
+      ctx.arc(this.hover.x, this.hover.y, 8 / this.camera.zoom, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(125,186,146,0.85)';
+      ctx.fill();
+      ctx.fillStyle = '#0a0a0a';
+      ctx.font = `bold ${11 / this.camera.zoom}px DM Sans, sans-serif`;
+      ctx.fillText('+', this.hover.x, this.hover.y + 1);
+    }
+
+    // Primary path edges
     for (let i = 0; i < this.nodes.length - 1; i++) {
       const a = this.nodes[i];
       const b = this.nodes[i + 1];
@@ -481,19 +610,27 @@
       const ay = this._mode === 'node' && this._dragNode && this._dragNode.i === i ? this._dragPos.y : a.y;
       const bx = this._mode === 'node' && this._dragNode && this._dragNode.i === i + 1 ? this._dragPos.x : b.x;
       const by = this._mode === 'node' && this._dragNode && this._dragNode.i === i + 1 ? this._dragPos.y : b.y;
-      // Side alternation: opposite half-planes around home → brighter
-      const cross = a.x * b.x < 0 || a.y * b.y < 0;
+      const st = this._edgeStyle(a, b);
       ctx.beginPath();
-      const mx = (ax + bx) / 2 + (by - ay) * 0.1;
-      const my = (ay + by) / 2 - (bx - ax) * 0.1;
+      const mx = (ax + bx) / 2 + (by - ay) * 0.08;
+      const my = (ay + by) / 2 - (bx - ax) * 0.08;
       ctx.moveTo(ax, ay);
       ctx.quadraticCurveTo(mx, my, bx, by);
-      ctx.strokeStyle = cross ? 'rgba(232,201,138,0.75)' : 'rgba(232,201,138,0.4)';
-      ctx.lineWidth = (cross ? 3.2 : 2.4) / this.camera.zoom;
+      ctx.strokeStyle = st.color;
+      ctx.lineWidth = st.w / this.camera.zoom;
+      ctx.lineCap = 'round';
       ctx.stroke();
+      // direction tick
+      const t = 0.55;
+      const px = (1 - t) * (1 - t) * ax + 2 * (1 - t) * t * mx + t * t * bx;
+      const py = (1 - t) * (1 - t) * ay + 2 * (1 - t) * t * my + t * t * by;
+      ctx.beginPath();
+      ctx.arc(px, py, 2.5 / this.camera.zoom, 0, Math.PI * 2);
+      ctx.fillStyle = st.color;
+      ctx.fill();
     }
 
-    // Alt snap targets
+    // Drag alts
     if (this._mode === 'node') {
       this.alts.forEach((a) => {
         const isSnap = this.snapAlt === a;
@@ -509,23 +646,39 @@
         ctx.textAlign = 'center';
         ctx.fillText(a.label, a.x, a.y + 22 / this.camera.zoom);
       });
-      // guide text in world? skip
     }
 
-    // Path nodes
+    // Primary nodes
     this.nodes.forEach((n) => {
       const reg = n.chord.region || 'diatonic';
       const col = REGION[reg] || REGION.diatonic;
       const isCur = n.i === this.current;
       const isPlay = n.i === this.playing;
       const dragging = this._mode === 'node' && this._dragNode && this._dragNode.i === n.i;
+      const div = this.divergent.indexOf(n.i) >= 0 && this.showAlt && this.altNodes.length;
       const x = dragging ? this._dragPos.x : n.x;
       const y = dragging ? this._dragPos.y : n.y;
-      const r = n.r * (isPlay || isCur || dragging ? 1.12 : 1);
+      const pulse = isPlay ? 1 + 0.08 * Math.sin(this.pulseT * 2) : 1;
+      const r = n.r * (isPlay || isCur || dragging ? 1.12 : 1) * pulse;
 
-      if (dragging) {
-        ctx.globalAlpha = 0.95;
+      // Playhead / selection ring
+      if (isPlay || isCur) {
+        ctx.beginPath();
+        ctx.arc(x, y, r + 8 / this.camera.zoom, 0, Math.PI * 2);
+        ctx.strokeStyle = isPlay ? 'rgba(255,244,214,0.75)' : 'rgba(232,201,138,0.45)';
+        ctx.lineWidth = 2.5 / this.camera.zoom;
+        ctx.stroke();
       }
+      if (div) {
+        ctx.beginPath();
+        ctx.arc(x, y, r + 12 / this.camera.zoom, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(126,184,218,0.55)';
+        ctx.lineWidth = 2 / this.camera.zoom;
+        ctx.setLineDash([4 / this.camera.zoom, 3 / this.camera.zoom]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fillStyle = col.fill;
@@ -535,30 +688,60 @@
         ctx.lineWidth = 2.5 / this.camera.zoom;
         ctx.stroke();
       }
-      ctx.fillStyle = '#0a0a0a';
-      ctx.font = `bold ${Math.max(9, 10 / this.camera.zoom)}px DM Sans, sans-serif`;
+
+      // Step number badge
+      ctx.beginPath();
+      ctx.arc(x - r * 0.75, y - r * 0.75, 9 / this.camera.zoom, 0, Math.PI * 2);
+      ctx.fillStyle = isPlay ? '#fff4d6' : 'rgba(20,16,12,0.85)';
+      ctx.fill();
+      ctx.fillStyle = isPlay ? '#1a1410' : '#e8c98a';
+      ctx.font = `bold ${10 / this.camera.zoom}px DM Sans, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      ctx.fillText(String(n.i + 1), x - r * 0.75, y - r * 0.75);
+
+      ctx.fillStyle = '#0a0a0a';
+      ctx.font = `bold ${Math.max(9, 11 / this.camera.zoom)}px DM Sans, sans-serif`;
+      ctx.textBaseline = 'middle';
       ctx.fillText(dragging && this.snapAlt ? this.snapAlt.label : n.chord.name, x, y);
-      ctx.fillStyle = 'rgba(200,184,160,0.75)';
-      ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
+
+      // Duration tail hint
+      ctx.fillStyle = 'rgba(200,184,160,0.65)';
+      ctx.font = `${8 / this.camera.zoom}px DM Sans, sans-serif`;
       ctx.textBaseline = 'alphabetic';
-      ctx.fillText(String(n.i + 1), x, y - r - 6 / this.camera.zoom);
-      ctx.globalAlpha = 1;
+      ctx.fillText((n.chord.duration || 4) + 'b', x, y + r + 11 / this.camera.zoom);
     });
 
     ctx.restore();
 
+    // Legend + tip (screen space)
     ctx.fillStyle = 'rgba(180,168,150,0.55)';
     ctx.font = '11px Crimson Text, Georgia, serif';
     ctx.textAlign = 'left';
-    const tip =
+    let tip =
       this._mode === 'node'
-        ? 'Drag onto a gold alternate to swap · release to commit'
-        : this.altNodes.length
-          ? 'Gold = this version · blue = sibling variation · camera: ' + this.cameraMode
-          : 'Gold path · pale = options · camera: ' + this.cameraMode + ' (Home lock = no jolt)';
-    ctx.fillText(tip, 10, h - 10);
+        ? 'Drag onto gold alternate to swap'
+        : this.hover && this.hover.type === 'edge'
+          ? 'Click edge to insert a chord between'
+          : 'Home-locked map · gold path · blue = variation · bright edges = swing/fifths';
+    ctx.fillText(tip, 10, h - 12);
+
+    // Edge colour legend
+    ctx.font = '9px DM Sans, sans-serif';
+    const legs = [
+      ['#7dba92', 'step'],
+      ['#7eb8da', '5th'],
+      ['#e8c98a', 'swing'],
+      ['#e85d4c', 'tritone'],
+    ];
+    let lx = 10;
+    legs.forEach(([col, lab]) => {
+      ctx.fillStyle = col;
+      ctx.fillRect(lx, h - 28, 10, 3);
+      ctx.fillStyle = 'rgba(180,168,150,0.7)';
+      ctx.fillText(lab, lx + 12, h - 24);
+      lx += 52;
+    });
   };
 
   SpatialMap.prototype.focusHome = function () {
