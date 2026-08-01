@@ -455,6 +455,166 @@
     return M().noteName(state.tonic) + ' ' + (M().MODES[state.mode] || {}).name;
   }
 
+  /**
+   * Writing home = compass centre + From here gravity.
+   * By default does NOT move absolute chord roots (modulation-friendly).
+   */
+  function setWritingHome(tonic, mode, opts) {
+    opts = opts || {};
+    const prevT = state.tonic;
+    const prevM = state.mode;
+    const nextT = ((tonic % 12) + 12) % 12;
+    const nextM = mode || state.mode;
+    const delta = (nextT - prevT + 12) % 12;
+
+    if (opts.transpose && delta && state.chords.length) {
+      pushUndo();
+      state.chords = state.chords.map((ch) => transposeChord(ch, delta, nextT, nextM));
+    }
+
+    state.tonic = nextT;
+    state.mode = nextM;
+    if ($('#tonic')) $('#tonic').value = String(state.tonic);
+    if ($('#mode')) $('#mode').value = state.mode;
+    if (map) map.setOrigin(state.tonic, state.mode);
+
+    // Tag local key on chords when only the compass moves (modulation)
+    if (!opts.transpose && state.chords.length) {
+      state.chords.forEach((ch) => {
+        ch.localTonic = nextT;
+        ch.localMode = nextM;
+      });
+    }
+
+    if (opts.skipEdit) {
+      if (map) {
+        map.setOrigin(state.tonic, state.mode);
+        map.setHorizon(buildHorizon());
+      }
+      renderTitle();
+      renderHorizonLists();
+      updateMapStatus();
+    } else {
+      afterEdit();
+    }
+    return { prevT, prevM, delta, transposed: !!opts.transpose };
+  }
+
+  function transposeChord(ch, delta, newTonic, newMode) {
+    // Preserve custom pitch sets by rotating notes
+    if (ch.custom || ch.quality === 'custom') {
+      const notes = (ch.notes || []).map((n) => (n + delta) % 12);
+      const root = (ch.root + delta) % 12;
+      const bass = ch.bassPc != null ? (ch.bassPc + delta) % 12 : root;
+      return M().makeCustomChord
+        ? M().makeCustomChord(root, notes, {
+            duration: ch.duration,
+            roman: ch.roman,
+            region: ch.region,
+            tag: ch.tag,
+            name: null,
+            bassPc: bass,
+          })
+        : (() => {
+            const n = M().cloneChord(ch);
+            n.root = root;
+            n.notes = notes;
+            n.bassPc = bass;
+            n.localTonic = newTonic;
+            n.localMode = newMode;
+            return n;
+          })();
+    }
+    let n = M().makeChord((ch.root + delta) % 12, ch.quality, {
+      duration: ch.duration,
+      roman: ch.roman,
+      tag: ch.tag,
+      region: ch.region,
+    });
+    if (ch.bassPc != null && C().withBass) {
+      n = C().withBass(n, (ch.bassPc + delta) % 12);
+      n.duration = ch.duration;
+      n.roman = ch.roman;
+      n.tag = ch.tag;
+      n.region = ch.region;
+    }
+    n.localTonic = newTonic != null ? newTonic : state.tonic;
+    n.localMode = newMode || state.mode;
+    return n;
+  }
+
+  /** Transpose whole sequence by delta semitones (keeps writing home fixed unless opts.moveHome). */
+  function transposeSequence(delta, opts) {
+    opts = opts || {};
+    delta = ((delta % 12) + 12) % 12;
+    if (!delta || !state.chords.length) return;
+    pushUndo();
+    state.chords = state.chords.map((ch) =>
+      transposeChord(ch, delta, opts.moveHome ? (state.tonic + delta) % 12 : state.tonic, state.mode)
+    );
+    if (opts.moveHome) {
+      state.tonic = (state.tonic + delta) % 12;
+      if ($('#tonic')) $('#tonic').value = String(state.tonic);
+      if (map) map.setOrigin(state.tonic, state.mode);
+    }
+    afterEdit();
+    setSyncStatus(
+      'Transposed ' +
+        (delta > 6 ? delta - 12 : delta) +
+        ' semitones' +
+        (opts.moveHome ? ' · write home moved' : ' · write home still ' + keyLabel())
+    );
+  }
+
+  /**
+   * Modulation: set writing home from the selected chord (chords stay absolute).
+   * Map / From here now treat that chord as the new centre of gravity.
+   */
+  function landSelectionAsHome() {
+    const ch =
+      state.selected >= 0 && state.chords[state.selected]
+        ? state.chords[state.selected]
+        : state.chords[state.chords.length - 1];
+    if (!ch) {
+      setSyncStatus('Select a chord first, then Land here');
+      return;
+    }
+    let mode = state.mode;
+    const q = ch.quality || '';
+    if (q.indexOf('min') === 0 || q === 'halfdim' || q === 'dim') mode = 'minor';
+    else if (q.indexOf('maj') === 0 || q === 'dom7' || q === 'sus4' || q === 'add9') {
+      // dom7 often dominant of a major/minor — keep major-ish as major home
+      mode = q === 'dom7' ? state.mode : 'major';
+      if (q.indexOf('maj') === 0 || q === 'add9') mode = 'major';
+    }
+    setWritingHome(ch.root, mode, { transpose: false });
+    setSyncStatus(
+      'Modulate · write home now ' +
+        keyLabel() +
+        ' (from ' +
+        ch.name +
+        ') · chords unchanged · map + From here re-centred'
+    );
+  }
+
+  /** Old behaviour: move every chord so they follow the Write home dropdown. */
+  function transposeAllToWriteHome(fromTonic) {
+    const prev = fromTonic != null ? fromTonic : state._prevTonicForTranspose;
+    if (prev == null || prev === state.tonic) {
+      setSyncStatus('Pick a new Write home first, then Transpose all — or use Land here to modulate without moving chords');
+      return;
+    }
+    const delta = (state.tonic - prev + 12) % 12;
+    if (!delta) return;
+    // Temporarily set tonic back to compute... actually chords still at old pitch,
+    // write home already at new. Transpose chords by delta from prev to current home.
+    pushUndo();
+    state.chords = state.chords.map((ch) => transposeChord(ch, delta, state.tonic, state.mode));
+    afterEdit();
+    setSyncStatus('Transposed sequence into ' + keyLabel() + ' · all chords moved');
+    state._prevTonicForTranspose = state.tonic;
+  }
+
   function uniqueCellName(base) {
     if (!S()) return base;
     const song = S().loadSong();
@@ -2956,35 +3116,64 @@
   }
 
   function wire() {
+    // Track last write-home for optional "Transpose all" after a home change
+    state._prevTonicForTranspose = state.tonic;
+
     $('#tonic').addEventListener('change', (e) => {
       const prev = state.tonic;
       const next = parseInt(e.target.value, 10);
-      const delta = (next - prev + 12) % 12;
-      if (delta && state.chords.length) {
-        state.chords = state.chords.map((ch) => {
-          let n = M().makeChord((ch.root + delta) % 12, ch.quality, {
-            duration: ch.duration,
-            roman: ch.roman,
-            tag: ch.tag,
-            region: ch.region,
-          });
-          if (ch.bassPc != null && C().withBass) {
-            n = C().withBass(n, (ch.bassPc + delta) % 12);
-            n.duration = ch.duration;
-          }
-          n.localTonic = next;
-          n.localMode = state.mode;
-          return n;
-        });
-      }
-      state.tonic = next;
-      map.setOrigin(state.tonic, state.mode);
-      afterEdit();
+      state._prevTonicForTranspose = prev;
+      // Default: move compass only (modulation / re-centre) — do NOT transpose
+      setWritingHome(next, state.mode, { transpose: false });
+      setSyncStatus(
+        'Write home → ' +
+          keyLabel() +
+          (state.chords.length
+            ? ' · chords stay put · Land here = from selection · Transpose all = move pitches'
+            : ' · empty path · Home centre is this tonic')
+      );
     });
     $('#mode').addEventListener('change', (e) => {
-      state.mode = e.target.value;
-      afterEdit();
+      const next = e.target.value;
+      setWritingHome(state.tonic, next, { transpose: false });
+      setSyncStatus(
+        'Write mode → ' +
+          keyLabel() +
+          ' · From here + map colours update · chords unchanged (use Parallel vary to flip qualities)'
+      );
     });
+    if ($('#btn-land-home')) {
+      $('#btn-land-home').addEventListener('click', landSelectionAsHome);
+    }
+    if ($('#btn-transpose-all')) {
+      $('#btn-transpose-all').addEventListener('click', () => {
+        if (!state.chords.length) {
+          setSyncStatus('Nothing to transpose');
+          return;
+        }
+        // If user just changed write home, transpose from previous; else ask delta via confirm
+        const prev = state._prevTonicForTranspose;
+        if (prev != null && prev !== state.tonic) {
+          transposeAllToWriteHome(prev);
+          return;
+        }
+        // No pending home change: transpose so first chord / selected becomes write home pitch?
+        const ch =
+          state.selected >= 0 && state.chords[state.selected]
+            ? state.chords[state.selected]
+            : state.chords[0];
+        if (!ch) return;
+        const delta = (state.tonic - ch.root + 12) % 12;
+        if (!delta) {
+          setSyncStatus('Already aligned with write home root');
+          return;
+        }
+        pushUndo();
+        state.chords = state.chords.map((c) => transposeChord(c, delta, state.tonic, state.mode));
+        afterEdit();
+        setSyncStatus('Transposed so selection/path aligns with write home ' + keyLabel());
+      });
+    }
     $('#bpm').addEventListener('change', (e) => {
       state.bpm = Math.max(40, Math.min(200, parseInt(e.target.value, 10) || 96));
     });

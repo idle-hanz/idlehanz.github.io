@@ -675,12 +675,14 @@
         <span id="sync-status" class="key" style="font-size:0.72rem;color:var(--muted)"></span>
       </nav>
       <div class="ctrls">
-        <label class="ctl">Home
+        <label class="ctl" title="Writing home — map centre &amp; From here gravity. Does not move your chords.">Write home
           <select id="tonic"></select>
         </label>
-        <label class="ctl">Mode
+        <label class="ctl" title="Mode of the writing home (major/minor colour of the compass)">Mode
           <select id="mode"></select>
         </label>
+        <button type="button" class="btn ghost" id="btn-land-home" title="Set writing home from the selected chord (modulation — chords stay put)">Land here</button>
+        <button type="button" class="btn ghost" id="btn-transpose-all" title="Transpose the whole sequence so it follows Write home (old behaviour)">Transpose all</button>
         <label class="ctl">BPM
           <input type="number" id="bpm" min="40" max="200" value="96">
         </label>
