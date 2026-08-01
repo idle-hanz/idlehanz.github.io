@@ -1102,8 +1102,76 @@
   }
 
   /**
+   * Map a quality to its parallel (maj↔min family). Returns null if no flip.
+   * Does not touch dom7 / sus / fully chromatic colours.
+   */
+  function parallelQualityOf(q) {
+    const map = {
+      min: 'maj',
+      min7: 'maj7',
+      min9: 'maj9',
+      minmaj7: 'maj7',
+      maj: 'min',
+      maj7: 'min7',
+      maj9: 'min9',
+      add9: 'min',
+      // dim/halfdim stay dark; aug stays bright
+    };
+    return map[q] || null;
+  }
+
+  /**
+   * Infer maj/min-ish family from pitch set (for custom frets).
+   * Returns flipped quality or null.
+   */
+  function parallelFromNotes(root, notes, quality) {
+    const flipped = parallelQualityOf(quality);
+    if (flipped) return flipped;
+    if (!notes || !notes.length) return null;
+    const r = ((root % 12) + 12) % 12;
+    const set = new Set(notes.map((n) => ((n - r) % 12 + 12) % 12));
+    const has3 = set.has(3);
+    const has4 = set.has(4);
+    const has7 = set.has(7);
+    const has10 = set.has(10);
+    const has11 = set.has(11);
+    if (has3 && !has4) {
+      // minor family → major family
+      if (has7 && has10) return 'maj7'; // rough: min7-ish → maj7
+      if (has7 && has11) return 'maj7';
+      if (has7) return 'maj';
+      return 'maj';
+    }
+    if (has4 && !has3) {
+      if (has7 && has11) return 'min7';
+      if (has7 && has10) return 'min7';
+      if (has7) return 'min';
+      return 'min';
+    }
+    return null;
+  }
+
+  /**
+   * Session chord rebuilt for a named quality — strip notes/custom so Landscape
+   * cannot rehydrate the old pitch set (that made Parallel look like a copy).
+   */
+  function sessionChordWithQuality(c, quality, extra) {
+    extra = extra || {};
+    return {
+      root: c.root,
+      quality,
+      duration: c.duration != null ? c.duration : 4,
+      bass: c.root, // reset bass; inversions of the old triad no longer apply
+      roman: extra.roman != null ? extra.roman : c.roman || '',
+      region: extra.region != null ? extra.region : c.region || 'parallel',
+      tag: extra.tag || 'parallel',
+      // intentionally omit notes / custom / name
+    };
+  }
+
+  /**
    * Fork current sequence as a linked variation (same family).
-   * kind: reharm | parallel | darken
+   * kind: copy | reharm | parallel | darken
    */
   function createVariation(kind) {
     if (!state.chords.length) {
@@ -1118,20 +1186,38 @@
     let song = S().loadSong();
     if (!song || !state.cellId) return;
 
-    // Mutate a copy of chords for the variation
+    // Start from clean session chords
     let newChords = state.chords.map((c) => S().fromLandscapeChord(c));
+    let changed = 0;
+
     if (kind === 'copy') {
-      // Exact fork — user edits manually
+      // Exact fork — keep notes/custom as-is
     } else if (kind === 'parallel') {
-      // Flip maj/min quality on non-dominant chords
       newChords = newChords.map((c) => {
-        let q = c.quality;
-        if (q === 'min' || q === 'min7') q = q === 'min' ? 'maj' : 'maj7';
-        else if (q === 'maj' || q === 'maj7') q = q === 'maj' ? 'min' : 'min7';
-        return { ...c, quality: q, tag: 'parallel' };
+        const q2 = parallelFromNotes(c.root, c.notes, c.quality);
+        if (!q2 || q2 === c.quality) {
+          // Still strip notes if quality was already "maj" with stale custom notes
+          if (c.custom || (c.notes && c.notes.length)) {
+            // try hard flip from notes only
+            const forced = parallelFromNotes(c.root, c.notes, c.quality === 'custom' ? '' : c.quality);
+            if (forced) {
+              changed += 1;
+              return sessionChordWithQuality(c, forced, { tag: 'parallel', region: 'parallel' });
+            }
+          }
+          return sessionChordWithQuality(c, c.quality || 'maj', {
+            tag: c.tag || 'parallel',
+            region: c.region || 'diatonic',
+          });
+        }
+        changed += 1;
+        return sessionChordWithQuality(c, q2, { tag: 'parallel', region: 'parallel' });
       });
+      if (!changed) {
+        setSyncStatus('Parallel: nothing to flip (need maj/min family chords)');
+        // Still create the version so the button does something visible
+      }
     } else if (kind === 'darken' || kind === 'reharm') {
-      // Change middle chord(s) toward darker colours
       if (newChords.length >= 3) {
         const t = state.tonic;
         const i = Math.min(2, newChords.length - 1);
@@ -1144,6 +1230,7 @@
           region: 'interchange',
           tag: kind,
         };
+        changed += 1;
       }
       if (kind === 'reharm' && newChords.length >= 4) {
         const t = state.tonic;
@@ -1157,17 +1244,21 @@
           region: 'tritone',
           tag: 'reharm',
         };
+        changed += 1;
       }
+      // Strip notes on untouched chords so names stay honest
+      newChords = newChords.map((c) => {
+        if (c.tag === kind) return c;
+        if (c.custom || c.quality === 'custom') return c;
+        return sessionChordWithQuality(c, c.quality || 'maj', {
+          tag: c.tag || '',
+          region: c.region || 'diatonic',
+          roman: c.roman,
+        });
+      });
     }
 
-    const nameOpt =
-      kind === 'copy'
-        ? undefined // default vN name
-        : undefined;
-    const newId = S().createVariation(song, state.cellId, {
-      chords: newChords,
-      name: nameOpt,
-    });
+    const newId = S().createVariation(song, state.cellId, { chords: newChords });
     if (!newId) return;
     // Keep previous as blue compare when forking
     state.compareCellId = state.cellId;
@@ -1185,12 +1276,13 @@
     });
     state.nameLocked = true;
     refreshAll();
-    setSyncStatus(
-      'Created ' +
-        cell.name +
-        (kind === 'copy' ? ' (duplicate)' : ' · ' + kind) +
-        ' · gold=this · blue=compare'
-    );
+    const detail =
+      kind === 'copy'
+        ? ' (exact copy — tweak freely)'
+        : kind === 'parallel'
+          ? ' · parallel maj↔min (' + changed + ' flipped)'
+          : ' · ' + kind;
+    setSyncStatus('Created ' + cell.name + detail + ' · gold=this · blue=compare');
     playSeq({ once: true, force: true });
   }
 
