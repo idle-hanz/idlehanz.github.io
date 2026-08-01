@@ -148,6 +148,12 @@
       A().ensure();
       A().playChord({ chord: item.chord, soft: true, duration: 0.45 });
     };
+    // Click the gold home disc to start (or land) on the tonic
+    map.onSelectHome = () => startAtHome();
+    map.onHoverHome = () => {
+      A().ensure();
+      A().playChord({ chord: makeHomeChord(), soft: true, duration: 0.4 });
+    };
     map.onRequestAlts = (pathIndex, chord) => buildAimTargets(pathIndex, chord);
     map.onSwapChord = (pathIndex, newChord) => {
       applyChordAtIndex(pathIndex, newChord, { pullNeighbors: false });
@@ -1903,10 +1909,45 @@
   }
 
   function regionFromKind(kind) {
+    if (kind === 'home') return 'diatonic';
     if (kind === 'cadence') return 'diatonic';
     if (kind === 'modulate') return 'chromatic';
     if (kind === 'flavour') return 'interchange';
     return 'diatonic';
+  }
+
+  /** Tonic / home chord for current writing key */
+  function makeHomeChord(opts) {
+    opts = opts || {};
+    const music = M();
+    const t = state.tonic;
+    const isMin = state.mode === 'minor' || (music.MODES[state.mode] || {}).romanBase === 'minor';
+    const q = isMin ? 'min' : 'maj';
+    let ch = music.makeChord(t, q, {
+      duration: opts.duration != null ? opts.duration : 4,
+      region: 'diatonic',
+      roman: isMin ? 'i' : 'I',
+      tag: 'home',
+    });
+    ch.localTonic = state.tonic;
+    ch.localMode = state.mode;
+    return ch;
+  }
+
+  /** Place or jump to home as the first / next step (explicit start-at-home). */
+  function startAtHome() {
+    const home = makeHomeChord({ duration: 4 });
+    // Same fitting rules as From here
+    commitHorizon(
+      {
+        chord: home,
+        kind: 'home',
+        label: home.name + ' home',
+        job: 'start at tonic',
+      },
+      { mode: state.chords.length ? 'auto' : 'auto' }
+    );
+    setSyncStatus('Home · ' + home.name + ' (' + (state.mode === 'major' ? 'I' : 'i') + ')');
   }
 
   // ─── Horizon builders ────────────────────────────────────
@@ -1920,6 +1961,25 @@
         : state.chords[state.chords.length - 1] || null;
 
     const items = [];
+
+    // Always offer home / tonic first (start empty path or return to centre)
+    {
+      const home = makeHomeChord({ duration: 4 });
+      const alreadyOnHome =
+        from &&
+        from.root === home.root &&
+        (from.quality === home.quality ||
+          (from.quality || '').indexOf(home.quality === 'min' ? 'min' : 'maj') === 0);
+      // Still show when empty, or when not already resting on tonic
+      if (!from || !alreadyOnHome || !state.chords.length) {
+        items.push({
+          chord: home,
+          kind: 'home',
+          label: home.name,
+          job: state.chords.length ? 'land home' : 'start here',
+        });
+      }
+    }
 
     // Flavours — colour family moves
     const flavourSeeds = [
@@ -2823,7 +2883,7 @@
 
     const items = buildHorizon();
     // Prefer directions first, then flavours, cadences, modulate
-    const order = { direction: 0, flavour: 1, cadence: 2, modulate: 3 };
+    const order = { home: -1, direction: 0, flavour: 1, cadence: 2, modulate: 3 };
     items.sort((a, b) => (order[a.kind] != null ? order[a.kind] : 9) - (order[b.kind] != null ? order[b.kind] : 9));
 
     const hasNext =
@@ -2832,6 +2892,7 @@
       ? 'Click = replace next · Shift+click = insert · hover = audition'
       : 'Click = append · Shift+click = insert · hover = audition';
     const kindLabel = {
+      home: 'Home',
       direction: 'Dir',
       flavour: 'Colour',
       cadence: 'Cadence',
@@ -3002,6 +3063,7 @@
         syncCamButtons();
       });
     }
+    if ($('#btn-start-home')) $('#btn-start-home').addEventListener('click', startAtHome);
     if ($('#btn-swing')) $('#btn-swing').addEventListener('click', suggestSwingNext);
     if ($('#btn-arch')) $('#btn-arch').addEventListener('click', suggestArchHome);
     if ($('#tog-horizon')) {

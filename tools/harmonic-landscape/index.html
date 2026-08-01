@@ -757,6 +757,7 @@
           <button type="button" class="btn ghost" id="cam-follow" title="Follow playhead">Follow</button>
           <button type="button" class="btn ghost" id="btn-home">Recentre</button>
           <span style="width:0.35rem"></span>
+          <button type="button" class="btn primary" id="btn-start-home" title="Start (or land) on the tonic chord">+ Home</button>
           <button type="button" class="btn ghost" id="btn-swing" title="Add a chord on the opposite side of home">+ Swing</button>
           <button type="button" class="btn ghost" id="btn-arch" title="Add V7 → home">Arch home</button>
           <label class="ctl" style="margin-left:0.35rem;color:#c8b8a0" title="Show next-move dots around home (same ideas as From here)"><input type="checkbox" id="tog-horizon" checked> Next-move dots</label>
@@ -765,7 +766,7 @@
         <canvas id="map" aria-label="Harmonic path and directions"></canvas>
         <div class="map-footer">
           <div id="map-status" class="map-status">Select a step</div>
-          <div class="map-legend-line"><strong>How to use:</strong> gold centre = home key · <em>coloured dots around it</em> = next-move options (hover = hear, click = write — same as From here) · <em>numbered path dots</em> = your sequence · <em>drag a path chord</em> to aim a swap · path edge = insert</div>
+          <div class="map-legend-line"><strong>How to use:</strong> click gold <em>HOME</em> centre (or + Home) to start on tonic · outer coloured dots = other next moves · numbered path = your sequence · drag a path chord to swap · edge = insert</div>
           <div class="map-legend-line">Angle ≈ root · radius ≈ distance from home · blue = compare version · green = aim lock</div>
           <div id="traj-caption" class="traj-caption">Path shape appears here</div>
           <div id="time-strip" class="time-strip" title="Click select · drag edge to resize · double-click split"></div>

@@ -15,6 +15,7 @@
     modulate:    { fill: '#a78bfa', ghost: 'rgba(167,139,250,0.45)' },
     flavour:     { fill: '#f0a070', ghost: 'rgba(240,160,112,0.4)' },
     direction:   { fill: '#7eb8da', ghost: 'rgba(126,184,218,0.35)' },
+    home:        { fill: '#e8c98a', ghost: 'rgba(232,201,138,0.65)' },
     alt:         { fill: '#e8c98a', ghost: 'rgba(232,201,138,0.55)' },
   };
 
@@ -44,6 +45,8 @@
     this.onSelectPath = null;
     this.onSelectHorizon = null;
     this.onHoverHorizon = null;
+    this.onSelectHome = null; // click gold home disc → start/land on tonic
+    this.onHoverHome = null;
     this.onRequestAlts = null;
     this.onSwapChord = null;
     this.onPullChord = null; // (pathIndex, chord, meta) only when aimed at a target
@@ -124,8 +127,24 @@
         ? this.nodes[this.current]
         : { x: 0, y: 0 };
 
+    let homePlaced = false;
     this.horizon = (items || []).map((it, i) => {
       const ch = it.chord;
+      // Explicit home option sits just above the gold centre — easy to find
+      if (it.kind === 'home' && !homePlaced) {
+        homePlaced = true;
+        return {
+          chord: ch,
+          kind: 'home',
+          label: it.label || ch.name,
+          job: it.job || 'home',
+          route: it.route,
+          modulateTo: it.modulateTo,
+          x: 0,
+          y: -38,
+          r: 14,
+        };
+      }
       const dist = M.harmonicDistance(ch, this.origin.tonic, this.origin.mode);
       const ang = M.harmonicAngle(ch, this.origin.tonic) + i * 0.11;
       const radius = 55 + dist * (R / 2.6);
@@ -381,8 +400,14 @@
         const h = this.horizon[i];
         const dx = w.x - h.x;
         const dy = w.y - h.y;
-        if (dx * dx + dy * dy <= 16 * 16) return { type: 'horizon', item: h };
+        const rr = (h.r || 12) + 6;
+        if (dx * dx + dy * dy <= rr * rr) return { type: 'horizon', item: h };
       }
+    }
+    // Gold home disc — start / land on tonic
+    if (this._mode !== 'node') {
+      const dHome = w.x * w.x + w.y * w.y;
+      if (dHome <= 18 * 18) return { type: 'home' };
     }
     for (let i = this.nodes.length - 1; i >= 0; i--) {
       const n = this.nodes[i];
@@ -419,6 +444,10 @@
     }
     if (hit && hit.type === 'horizon') {
       if (this.onSelectHorizon) this.onSelectHorizon(hit.item);
+      return;
+    }
+    if (hit && hit.type === 'home') {
+      if (this.onSelectHome) this.onSelectHome();
       return;
     }
     if (hit && hit.type === 'edge' && this.onInsertBetween) {
@@ -495,6 +524,10 @@
     else this.canvas.style.cursor = hit ? 'pointer' : 'grab';
     if (hit && hit.type === 'horizon' && (!prev || prev.item !== hit.item)) {
       if (this.onHoverHorizon) this.onHoverHorizon(hit.item);
+    }
+    if (hit && hit.type === 'home' && (!prev || prev.type !== 'home')) {
+      if (this.onHoverHome) this.onHoverHome();
+      this.canvas.style.cursor = 'pointer';
     }
   };
 
@@ -651,16 +684,22 @@
 
     // Empty-path coaching near home
     if ((!this.nodes || !this.nodes.length) && this._mode !== 'node') {
-      ctx.fillStyle = 'rgba(200,184,160,0.7)';
+      const pulse = 1 + 0.08 * Math.sin((this.pulseT || 0) * 2.2);
+      ctx.beginPath();
+      ctx.arc(0, 0, 16 * pulse, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(232,201,138,0.55)';
+      ctx.lineWidth = 2 / this.camera.zoom;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(200,184,160,0.85)';
       ctx.font = `${10 / this.camera.zoom}px Crimson Text, Georgia, serif`;
-      ctx.fillText('Start: click a coloured dot (next move)', 0, -42 / this.camera.zoom);
+      ctx.fillText('Click gold HOME to start on tonic', 0, 48 / this.camera.zoom);
       ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
       ctx.fillStyle = 'rgba(180,168,150,0.55)';
-      ctx.fillText('or Add a chord / load a Feel', 0, -28 / this.camera.zoom);
+      ctx.fillText('or pick another option / load a Feel', 0, 62 / this.camera.zoom);
     } else if (this.nodes && this.nodes.length === 1 && this.showHorizon && this._mode !== 'node') {
       ctx.fillStyle = 'rgba(200,184,160,0.55)';
       ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
-      ctx.fillText('Click a dot = next chord · drag your chord to swap', 0, -40 / this.camera.zoom);
+      ctx.fillText('Click a dot = next · drag path chord to swap', 0, 48 / this.camera.zoom);
     }
 
     // Horizon = “From here” options placed in space (not your path yet)
@@ -686,15 +725,17 @@
 
         // Kind badge
         const kindTag =
-          h.kind === 'direction'
-            ? 'next'
-            : h.kind === 'cadence'
-              ? 'home'
-              : h.kind === 'modulate'
-                ? 'key'
-                : h.kind === 'flavour'
-                  ? 'colour'
-                  : '';
+          h.kind === 'home'
+            ? 'HOME'
+            : h.kind === 'direction'
+              ? 'next'
+              : h.kind === 'cadence'
+                ? 'cadence'
+                : h.kind === 'modulate'
+                  ? 'key'
+                  : h.kind === 'flavour'
+                    ? 'colour'
+                    : '';
         ctx.fillStyle = isH ? '#0a0a0a' : 'rgba(230,220,200,0.9)';
         ctx.font = `bold ${9 / this.camera.zoom}px DM Sans, sans-serif`;
         ctx.textBaseline = 'middle';
@@ -991,19 +1032,21 @@
         ? this.snapAlt
           ? 'Release to set · audition: prev → ' + this.snapAlt.label + ' → next'
           : 'Move crosshair onto a labelled target to audition · release off-target = cancel'
-        : this.hover && this.hover.type === 'horizon'
-          ? 'Click to write this next move (same as From here list)'
-          : this.hover && this.hover.type === 'edge'
-            ? 'Click edge to insert (steals time from neighbors)'
-            : this.nodes && this.nodes.length
-              ? 'Path dots = your sequence · outer dots = next-move options · drag a path chord to swap'
-              : 'Coloured dots around home = possible next chords — click one to start';
+        : this.hover && this.hover.type === 'home'
+          ? 'Click home = start / land on the tonic chord'
+          : this.hover && this.hover.type === 'horizon'
+            ? 'Click to write this next move (same as From here list)'
+            : this.hover && this.hover.type === 'edge'
+              ? 'Click edge to insert (steals time from neighbors)'
+              : this.nodes && this.nodes.length
+                ? 'Path dots = your sequence · outer dots = next-move options · drag a path chord to swap'
+                : 'Click the gold HOME centre (or HOME dot / + Home) to start on tonic';
     ctx.fillText(tip, 10, h - 12);
 
     // Map reading legend (top-left)
     ctx.font = '9px DM Sans, sans-serif';
     ctx.fillStyle = 'rgba(180,168,150,0.5)';
-    ctx.fillText('Home = key centre · outer dots = options · path = your sequence', 10, 14);
+    ctx.fillText('Click HOME = tonic · outer dots = options · path = your sequence', 10, 14);
 
     // Edge colour legend
     const legs = [
