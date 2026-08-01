@@ -127,24 +127,10 @@
         ? this.nodes[this.current]
         : { x: 0, y: 0 };
 
-    let homePlaced = false;
-    this.horizon = (items || []).map((it, i) => {
+    // Home is the centre disc itself — never place a second "HOME" satellite
+    const orbitItems = (items || []).filter((it) => it.kind !== 'home');
+    this.horizon = orbitItems.map((it, i) => {
       const ch = it.chord;
-      // Explicit home option sits just above the gold centre — easy to find
-      if (it.kind === 'home' && !homePlaced) {
-        homePlaced = true;
-        return {
-          chord: ch,
-          kind: 'home',
-          label: it.label || ch.name,
-          job: it.job || 'home',
-          route: it.route,
-          modulateTo: it.modulateTo,
-          x: 0,
-          y: -38,
-          r: 14,
-        };
-      }
       const dist = M.harmonicDistance(ch, this.origin.tonic, this.origin.mode);
       const ang = M.harmonicAngle(ch, this.origin.tonic) + i * 0.11;
       const radius = 55 + dist * (R / 2.6);
@@ -404,10 +390,10 @@
         if (dx * dx + dy * dy <= rr * rr) return { type: 'horizon', item: h };
       }
     }
-    // Gold home disc — start / land on tonic
+    // Centre disc IS home (start / land on tonic) — generous hit
     if (this._mode !== 'node') {
       const dHome = w.x * w.x + w.y * w.y;
-      if (dHome <= 18 * 18) return { type: 'home' };
+      if (dHome <= 28 * 28) return { type: 'home' };
     }
     for (let i = this.nodes.length - 1; i >= 0; i--) {
       const n = this.nodes[i];
@@ -653,15 +639,17 @@
       ctx.stroke();
     });
 
-    // Home
+    // Home = the centre disc (clickable tonic). Outer orbit = other options only.
+    const homeHover = this.hover && this.hover.type === 'home';
+    const empty = !this.nodes || !this.nodes.length;
     const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 55);
-    glow.addColorStop(0, 'rgba(255,200,120,0.4)');
+    glow.addColorStop(0, homeHover ? 'rgba(255,220,140,0.55)' : 'rgba(255,200,120,0.4)');
     glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glow;
     ctx.beginPath();
     ctx.arc(0, 0, 55, 0, Math.PI * 2);
     ctx.fill();
-    // Orbit guide — “options live on this ring”
+    // Orbit guide — “other options live on this ring”
     if (this.showHorizon && this.horizon.length && this._mode !== 'node') {
       ctx.beginPath();
       ctx.arc(0, 0, 72, 0, Math.PI * 2);
@@ -671,45 +659,64 @@
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    ctx.beginPath();
-    ctx.arc(0, 0, 10, 0, Math.PI * 2);
-    ctx.fillStyle = '#e8c98a';
-    ctx.fill();
     const M = global.HLMusic;
-    ctx.fillStyle = 'rgba(232,201,138,0.95)';
-    ctx.font = `${12 / this.camera.zoom}px Cinzel, serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(M ? M.noteName(this.origin.tonic) + ' home' : 'home', 0, 28 / this.camera.zoom);
-
-    // Empty-path coaching near home
-    if ((!this.nodes || !this.nodes.length) && this._mode !== 'node') {
-      const pulse = 1 + 0.08 * Math.sin((this.pulseT || 0) * 2.2);
+    const homeName = M ? M.noteName(this.origin.tonic) : '';
+    const homeR = homeHover || empty ? 18 : 14;
+    if (empty || homeHover) {
+      const pulse = empty ? 1 + 0.1 * Math.sin((this.pulseT || 0) * 2.2) : 1;
       ctx.beginPath();
-      ctx.arc(0, 0, 16 * pulse, 0, Math.PI * 2);
+      ctx.arc(0, 0, (homeR + 6) * pulse, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(232,201,138,0.55)';
       ctx.lineWidth = 2 / this.camera.zoom;
       ctx.stroke();
-      ctx.fillStyle = 'rgba(200,184,160,0.85)';
-      ctx.font = `${10 / this.camera.zoom}px Crimson Text, Georgia, serif`;
-      ctx.fillText('Click gold HOME to start on tonic', 0, 48 / this.camera.zoom);
-      ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
+    }
+    ctx.beginPath();
+    ctx.arc(0, 0, homeR, 0, Math.PI * 2);
+    ctx.fillStyle = homeHover ? '#fff4d6' : '#e8c98a';
+    ctx.fill();
+    ctx.strokeStyle = homeHover ? '#fff' : 'rgba(255,244,214,0.65)';
+    ctx.lineWidth = 2 / this.camera.zoom;
+    ctx.stroke();
+    // Chord name in the centre — this is the tonic you start with
+    ctx.fillStyle = '#1a1410';
+    ctx.font = `bold ${11 / this.camera.zoom}px DM Sans, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const isMinHome =
+      this.origin.mode === 'minor' ||
+      (M && M.MODES && M.MODES[this.origin.mode] && M.MODES[this.origin.mode].romanBase === 'minor');
+    const homeChordLabel = homeName + (isMinHome ? 'm' : '');
+    ctx.fillText(homeChordLabel || 'I', 0, -1 / this.camera.zoom);
+    ctx.fillStyle = homeHover ? 'rgba(26,20,16,0.75)' : 'rgba(26,20,16,0.55)';
+    ctx.font = `${7.5 / this.camera.zoom}px DM Sans, sans-serif`;
+    ctx.fillText('HOME', 0, 11 / this.camera.zoom);
+
+    ctx.fillStyle = 'rgba(232,201,138,0.75)';
+    ctx.font = `${10 / this.camera.zoom}px Cinzel, serif`;
+    ctx.fillText(
+      empty ? 'click to start' : 'click = tonic',
+      0,
+      homeR + 16 / this.camera.zoom
+    );
+
+    if (empty && this._mode !== 'node') {
       ctx.fillStyle = 'rgba(180,168,150,0.55)';
-      ctx.fillText('or pick another option / load a Feel', 0, 62 / this.camera.zoom);
+      ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
+      ctx.fillText('outer dots = other first moves', 0, homeR + 30 / this.camera.zoom);
     } else if (this.nodes && this.nodes.length === 1 && this.showHorizon && this._mode !== 'node') {
       ctx.fillStyle = 'rgba(200,184,160,0.55)';
       ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
-      ctx.fillText('Click a dot = next · drag path chord to swap', 0, 48 / this.camera.zoom);
+      ctx.fillText('Click outer dots for next · drag path to swap', 0, homeR + 30 / this.camera.zoom);
     }
 
-    // Horizon = “From here” options placed in space (not your path yet)
+    // Horizon = other options only (not home — home is the centre)
     if (this.showHorizon && this._mode !== 'node') {
       this.horizon.forEach((h) => {
+        if (h.kind === 'home') return;
         const col = REGION[h.kind] || REGION[h.chord && h.chord.region] || REGION.flavour;
         const isH = this.hover && this.hover.type === 'horizon' && this.hover.item === h;
-        // Stem toward home so they read as “around home”
         ctx.beginPath();
-        ctx.moveTo(h.x * 0.15, h.y * 0.15);
+        ctx.moveTo(h.x * 0.2, h.y * 0.2);
         ctx.lineTo(h.x, h.y);
         ctx.strokeStyle = isH ? 'rgba(255,244,214,0.35)' : 'rgba(180,168,150,0.12)';
         ctx.lineWidth = 1 / this.camera.zoom;
@@ -723,19 +730,16 @@
         ctx.lineWidth = (isH ? 2.4 : 1.3) / this.camera.zoom;
         ctx.stroke();
 
-        // Kind badge
         const kindTag =
-          h.kind === 'home'
-            ? 'HOME'
-            : h.kind === 'direction'
-              ? 'next'
-              : h.kind === 'cadence'
-                ? 'cadence'
-                : h.kind === 'modulate'
-                  ? 'key'
-                  : h.kind === 'flavour'
-                    ? 'colour'
-                    : '';
+          h.kind === 'direction'
+            ? 'next'
+            : h.kind === 'cadence'
+              ? 'cadence'
+              : h.kind === 'modulate'
+                ? 'key'
+                : h.kind === 'flavour'
+                  ? 'colour'
+                  : '';
         ctx.fillStyle = isH ? '#0a0a0a' : 'rgba(230,220,200,0.9)';
         ctx.font = `bold ${9 / this.camera.zoom}px DM Sans, sans-serif`;
         ctx.textBaseline = 'middle';
@@ -1033,20 +1037,20 @@
           ? 'Release to set · audition: prev → ' + this.snapAlt.label + ' → next'
           : 'Move crosshair onto a labelled target to audition · release off-target = cancel'
         : this.hover && this.hover.type === 'home'
-          ? 'Click home = start / land on the tonic chord'
+          ? 'Centre = home chord — click to start or land on tonic'
           : this.hover && this.hover.type === 'horizon'
             ? 'Click to write this next move (same as From here list)'
             : this.hover && this.hover.type === 'edge'
               ? 'Click edge to insert (steals time from neighbors)'
               : this.nodes && this.nodes.length
-                ? 'Path dots = your sequence · outer dots = next-move options · drag a path chord to swap'
-                : 'Click the gold HOME centre (or HOME dot / + Home) to start on tonic';
+                ? 'Centre = home · path = sequence · outer dots = other options · drag path to swap'
+                : 'Click the centre gold disc to start on the home chord';
     ctx.fillText(tip, 10, h - 12);
 
     // Map reading legend (top-left)
     ctx.font = '9px DM Sans, sans-serif';
     ctx.fillStyle = 'rgba(180,168,150,0.5)';
-    ctx.fillText('Click HOME = tonic · outer dots = options · path = your sequence', 10, 14);
+    ctx.fillText('Centre disc = home tonic · outer dots = other moves · path = your sequence', 10, 14);
 
     // Edge colour legend
     const legs = [
