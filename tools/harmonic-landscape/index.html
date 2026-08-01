@@ -310,9 +310,16 @@
       position: absolute;
       top: 0.5rem;
       left: 0.5rem;
+      right: 0.5rem;
       display: flex;
+      flex-wrap: wrap;
       gap: 0.3rem;
       z-index: 2;
+    }
+    .map-tools .btn.active {
+      border-color: var(--gold);
+      color: var(--gold2);
+      background: rgba(196,165,116,0.12);
     }
 
     /* Horizon lists */
@@ -375,7 +382,7 @@
         <p>Sequence is the document · space is the compass</p>
       </div>
       <nav class="nav">
-        <button type="button" class="btn primary" <a href="../index.html" style="color:var(--muted);font-size:0.78rem;margin-right:0.4rem">Tools</a>`n        <button type="button" class="btn primary" id="btn-fret" title="Send sequence to Guitar Fretboard">→ Fretboard</button>
+        <button type="button" class="btn primary" <a href="../index.html" style="color:var(--muted);font-size:0.78rem;margin-right:0.4rem">Tools</a> <button type="button" class="btn primary" id="btn-fret" title="Send sequence to Guitar Fretboard">→ Fretboard</button>
         <button type="button" class="btn" id="btn-arrange" title="Open Arrangement">Arrangement</button>
         <span id="sync-status" class="key" style="font-size:0.72rem;color:var(--muted)"></span>
       </nav>
@@ -449,7 +456,14 @@
       <!-- Spatial compass (main stage) -->
       <div class="map-wrap">
         <div class="map-tools">
-          <button type="button" class="btn ghost" id="btn-home">Home</button>
+          <button type="button" class="btn ghost active" id="cam-home" title="Lock camera on home (no jolt)">Home lock</button>
+          <button type="button" class="btn ghost" id="cam-fit" title="Frame whole path">Fit</button>
+          <button type="button" class="btn ghost" id="cam-follow" title="Follow playhead (old behaviour)">Follow</button>
+          <button type="button" class="btn ghost" id="btn-home">Recentre</button>
+          <span style="width:0.5rem"></span>
+          <button type="button" class="btn ghost" id="btn-var-reharm" title="Fork linked variation (reharm)">+ Vary reharm</button>
+          <button type="button" class="btn ghost" id="btn-var-parallel" title="Fork parallel major/minor colour">+ Vary parallel</button>
+          <button type="button" class="btn ghost" id="btn-var-darken" title="Fork darker colour">+ Vary darken</button>
         </div>
         <canvas id="map" aria-label="Harmonic path and directions"></canvas>
       </div>

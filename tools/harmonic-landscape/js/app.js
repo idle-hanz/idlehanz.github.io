@@ -144,6 +144,7 @@
       A().ensure();
       A().playChord({ chord: ch });
     };
+    map.setCameraMode('home');
     map.start();
 
     fillControls();
@@ -152,6 +153,7 @@
     const loaded = ingestHandoffOrSession();
     if (!loaded) loadPack('home-grit', { silent: true });
     refreshAll();
+    refreshAltPath();
     setSyncStatus(loaded ? 'Loaded shared session' : 'Local pack · not yet sent');
 
     document.body.addEventListener('pointerdown', () => A().ensure(), { once: true });
@@ -279,10 +281,13 @@
       cellName = existing.name;
       state.title = existing.name;
     }
+    const prevCell = song.cells[cellId];
     song.cells[cellId] = {
       id: cellId,
       name: cellName,
       packId: state.fromPackId || null,
+      familyId: prevCell && prevCell.familyId ? prevCell.familyId : null,
+      versionIndex: prevCell && prevCell.versionIndex ? prevCell.versionIndex : 1,
       chords: state.chords.map((c) => S().fromLandscapeChord(c)),
     };
     song.focus = {
@@ -492,13 +497,121 @@
   }
 
   function afterEdit() {
-    recognize();
+    recognize({ preserveName: state.nameLocked });
     refreshAll();
     if (S() && state.chords.length) {
       try {
         pushToSharedSession('landscape');
       } catch (_) {}
     }
+    refreshAltPath();
+  }
+
+  /** Draw sibling variation (v2) in blue if this cell is in a family. */
+  function refreshAltPath() {
+    if (!map || !S()) {
+      if (map) map.setAltPath([]);
+      return;
+    }
+    const song = S().loadSong();
+    if (!song || !state.cellId) {
+      map.setAltPath([]);
+      return;
+    }
+    const sibs = S().siblingsOfCell(song, state.cellId);
+    const other = sibs.find((c) => c.id !== state.cellId);
+    if (!other || !other.chords || !other.chords.length) {
+      map.setAltPath([]);
+      return;
+    }
+    // Convert session chords to landscape chord objects for layout
+    const alt = other.chords.map((sc) => {
+      let ch = M().makeChord(sc.root, sc.quality || 'maj', {
+        duration: sc.duration || 4,
+        region: sc.region || 'diatonic',
+      });
+      if (sc.bass != null && C().withBass) ch = C().withBass(ch, sc.bass);
+      return ch;
+    });
+    map.setAltPath(alt);
+  }
+
+  /**
+   * Fork current sequence as a linked variation (same family).
+   * kind: reharm | parallel | darken
+   */
+  function createVariation(kind) {
+    if (!state.chords.length) {
+      alert('Add chords first.');
+      return;
+    }
+    if (!S()) {
+      alert('Session module missing.');
+      return;
+    }
+    pushToSharedSession('landscape');
+    let song = S().loadSong();
+    if (!song || !state.cellId) return;
+
+    // Mutate a copy of chords for the variation
+    let newChords = state.chords.map((c) => S().fromLandscapeChord(c));
+    if (kind === 'parallel') {
+      // Flip maj/min quality on non-dominant chords
+      newChords = newChords.map((c) => {
+        let q = c.quality;
+        if (q === 'min' || q === 'min7') q = q === 'min' ? 'maj' : 'maj7';
+        else if (q === 'maj' || q === 'maj7') q = q === 'maj' ? 'min' : 'min7';
+        return { ...c, quality: q, tag: 'parallel' };
+      });
+    } else if (kind === 'darken' || kind === 'reharm') {
+      // Change middle chord(s) toward darker colours
+      if (newChords.length >= 3) {
+        const t = state.tonic;
+        const i = Math.min(2, newChords.length - 1);
+        newChords[i] = {
+          root: (t + 8) % 12,
+          quality: 'maj',
+          duration: newChords[i].duration,
+          bass: (t + 8) % 12,
+          roman: 'bVI',
+          region: 'interchange',
+          tag: kind,
+        };
+      }
+      if (kind === 'reharm' && newChords.length >= 4) {
+        const t = state.tonic;
+        const j = newChords.length - 2;
+        newChords[j] = {
+          root: (t + 1) % 12,
+          quality: 'dom7',
+          duration: newChords[j].duration,
+          bass: (t + 1) % 12,
+          roman: 'bII7',
+          region: 'tritone',
+          tag: 'reharm',
+        };
+      }
+    }
+
+    const newId = S().createVariation(song, state.cellId, { chords: newChords });
+    if (!newId) return;
+    S().saveSong(song, 'landscape');
+
+    // Switch to the new version for editing
+    const cell = song.cells[newId];
+    applySessionChords(cell.chords, {
+      title: cell.name,
+      cellId: newId,
+      packId: cell.packId,
+      tonic: song.key && song.key.tonic,
+      mode: song.key && song.key.mode,
+      bpm: song.bpm,
+    });
+    state.nameLocked = true;
+    refreshAll();
+    refreshAltPath();
+    setSyncStatus('Created ' + cell.name + ' · gold=this · blue=sibling');
+    playSeq({ once: true });
   }
 
   /**
@@ -1176,7 +1289,41 @@
         else window.location.href = url;
       });
     }
-    $('#btn-home').addEventListener('click', () => map.focusHome());
+    $('#btn-home').addEventListener('click', () => {
+      map.setCameraMode('home');
+      map.focusHome();
+      syncCamButtons();
+    });
+    if ($('#cam-home')) {
+      $('#cam-home').addEventListener('click', () => {
+        map.setCameraMode('home');
+        syncCamButtons();
+      });
+    }
+    if ($('#cam-fit')) {
+      $('#cam-fit').addEventListener('click', () => {
+        map.setCameraMode('fit');
+        syncCamButtons();
+      });
+    }
+    if ($('#cam-follow')) {
+      $('#cam-follow').addEventListener('click', () => {
+        map.setCameraMode('follow');
+        syncCamButtons();
+      });
+    }
+    if ($('#btn-var-reharm')) $('#btn-var-reharm').addEventListener('click', () => createVariation('reharm'));
+    if ($('#btn-var-parallel')) $('#btn-var-parallel').addEventListener('click', () => createVariation('parallel'));
+    if ($('#btn-var-darken')) $('#btn-var-darken').addEventListener('click', () => createVariation('darken'));
+
+    function syncCamButtons() {
+      const mode = map.cameraMode || 'home';
+      ['home', 'fit', 'follow'].forEach((m) => {
+        const el = $('#cam-' + m);
+        if (el) el.classList.toggle('active', mode === m);
+      });
+    }
+    syncCamButtons();
 
     document.addEventListener('keydown', (e) => {
       if (e.target.matches('input, textarea, select')) return;

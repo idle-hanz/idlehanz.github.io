@@ -70,6 +70,13 @@
     }
     .cell-actions .btn { font-size: 0.72rem; padding: 0.2rem 0.5rem; }
     .btn-del-cell:hover { border-color: var(--red); color: #f0a090; }
+    .chain-line { font-size: 0.72rem; margin-top: 0.2rem; color: var(--gold); }
+    .chain-box { display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; margin-top: 0.25rem; }
+    .chain-check { font-size: 0.72rem; color: var(--muted); display: flex; align-items: center; gap: 0.2rem; cursor: pointer; }
+    .seam-row td { background: rgba(126,184,218,0.06); border-bottom: 1px dashed var(--line); font-size: 0.78rem; }
+    .seam-label { color: var(--blue); }
+    .seam-type { max-width: 12rem; }
+    .seam-chords { margin-left: 0.4rem; }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     th { text-align: left; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 0.35rem 0.4rem; border-bottom: 1px solid var(--line); }
     td { padding: 0.4rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
@@ -138,14 +145,14 @@
 
       <section class="col">
         <h2>Form</h2>
-        <p class="hint">Drag ⋮⋮ to reorder. Each row plays a cell N times.</p>
+        <p class="hint">Drag ⋮⋮ to reorder. Check version boxes to play v1→v2 in one section (e.g. 4+4). Seams control flow into the next section.</p>
         <table>
           <thead>
             <tr>
               <th></th>
               <th>#</th>
               <th>Section</th>
-              <th>Cell</th>
+              <th>Cell / versions</th>
               <th>Reps</th>
               <th>Bars</th>
               <th></th>
@@ -155,6 +162,7 @@
         </table>
         <div style="margin-top:0.55rem;display:flex;gap:0.35rem;flex-wrap:wrap">
           <button type="button" class="btn primary" id="btn-add-sec">+ Section</button>
+          <button type="button" class="btn" id="btn-chain-family" title="Selected section: play all family versions in order">Chain family (v1→v2…)</button>
         </div>
 
         <div class="timeline">

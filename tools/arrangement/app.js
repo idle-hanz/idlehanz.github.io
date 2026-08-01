@@ -82,6 +82,7 @@
   }
 
   function addSection() {
+    S().ensureSongShape(song);
     const cellIds = Object.keys(song.cells);
     const cellId = (song.focus && song.focus.cellId && song.cells[song.focus.cellId])
       ? song.focus.cellId
@@ -94,7 +95,9 @@
       id: 'sec-' + Date.now().toString(36),
       name: nextSectionName(),
       cellId,
+      chain: [cellId],
       reps: 1,
+      seam: S().defaultSeam(),
     };
     song.arrangement.push(sec);
     selectedSecId = sec.id;
@@ -105,11 +108,55 @@
   function newCell() {
     const id = S().newCellId('cell');
     const name = 'Cell ' + (Object.keys(song.cells).length + 1);
-    song.cells[id] = { id, name, packId: null, chords: [] };
+    song.cells[id] = { id, name, packId: null, familyId: null, versionIndex: 1, chords: [] };
     song.focus = { cellId: id, sectionId: null, chordIndex: 0 };
     save();
-    // Open landscape with empty focus
     openLandscapeForCell(id, name);
+    render();
+  }
+
+  /** Chain all family versions into selected section (v1→v2→…). */
+  function chainFamilyIntoSection() {
+    const sec = song.arrangement.find((s) => s.id === selectedSecId);
+    if (!sec) {
+      alert('Select a section first.');
+      return;
+    }
+    const primary = sec.chain && sec.chain[0] ? sec.chain[0] : sec.cellId;
+    const cell = song.cells[primary];
+    if (!cell) return;
+    if (!cell.familyId) {
+      alert('This cell has no linked versions yet. In Landscape use “+ Vary …” to create v2.');
+      return;
+    }
+    const vers = S().familyVersions(song, cell.familyId);
+    S().setSectionChain(
+      sec,
+      vers.map((v) => v.id)
+    );
+    save();
+    render();
+    setStatus('Section plays ' + vers.map((v) => v.name).join(' → '));
+  }
+
+  function setSeamType(secId, type) {
+    const sec = song.arrangement.find((s) => s.id === secId);
+    if (!sec) return;
+    if (!sec.seam) sec.seam = S().defaultSeam();
+    sec.seam.type = type;
+    if (type === 'turnaround') {
+      const chain = S().sectionChain(sec);
+      const next = song.arrangement[song.arrangement.indexOf(sec) + 1];
+      const cellA = song.cells[chain[chain.length - 1]];
+      const chainB = next ? S().sectionChain(next) : [];
+      const cellB = chainB[0] ? song.cells[chainB[0]] : null;
+      const fromCh = cellA && cellA.chords[cellA.chords.length - 1];
+      const toCh = cellB && cellB.chords[0];
+      sec.seam.chords = S().suggestSeamChords(fromCh, toCh, song.key);
+    } else {
+      sec.seam.chords = [];
+    }
+    save();
     render();
   }
 
@@ -117,7 +164,9 @@
   function deleteCell(cellId) {
     const cell = song.cells[cellId];
     if (!cell) return;
-    const used = (song.arrangement || []).filter((s) => s.cellId === cellId);
+    const used = (song.arrangement || []).filter(
+      (s) => s.cellId === cellId || (s.chain && s.chain.indexOf(cellId) >= 0)
+    );
     const label = cell.name || cellId;
     let msg = 'Delete cell “' + label + '”?';
     if (used.length) {
@@ -131,7 +180,16 @@
     if (!confirm(msg)) return;
 
     delete song.cells[cellId];
-    song.arrangement = (song.arrangement || []).filter((s) => s.cellId !== cellId);
+    // Remove from family lists
+    Object.keys(song.families || {}).forEach((fid) => {
+      const fam = song.families[fid];
+      if (fam.versionIds) fam.versionIds = fam.versionIds.filter((id) => id !== cellId);
+    });
+    song.arrangement = (song.arrangement || []).filter((s) => {
+      if (s.chain) s.chain = s.chain.filter((id) => id !== cellId);
+      if (s.cellId === cellId) s.cellId = s.chain && s.chain[0] ? s.chain[0] : null;
+      return s.cellId || (s.chain && s.chain.length);
+    });
     if (selectedSecId && !song.arrangement.find((s) => s.id === selectedSecId)) {
       selectedSecId = song.arrangement[0] ? song.arrangement[0].id : null;
     }
@@ -304,23 +362,46 @@
     const body = $('#form-body');
     body.innerHTML = '';
     const cellIds = Object.keys(song.cells || {});
+    S().ensureSongShape(song);
+
     song.arrangement.forEach((sec, idx) => {
-      const cell = song.cells[sec.cellId];
+      const chain = S().sectionChain(sec);
+      const cell = song.cells[sec.cellId] || song.cells[chain[0]];
       const bars = S().sectionBars(song, sec);
       const tr = document.createElement('tr');
       if (sec.id === selectedSecId) tr.className = 'selected';
       tr.draggable = true;
       tr.dataset.id = sec.id;
 
+      const chainLabel = chain
+        .map((id) => (song.cells[id] ? song.cells[id].name : '?'))
+        .join(' → ');
+
       const cellOpts = cellIds
-        .map((id) => `<option value="${id}"${id === sec.cellId ? ' selected' : ''}>${song.cells[id].name || id}</option>`)
+        .map((id) => `<option value="${id}"${id === (sec.cellId || chain[0]) ? ' selected' : ''}>${song.cells[id].name || id}</option>`)
         .join('');
+
+      // Multi-select chain checkboxes for family versions
+      let chainChecks = '';
+      if (cell && cell.familyId) {
+        const vers = S().familyVersions(song, cell.familyId);
+        chainChecks = vers
+          .map((v) => {
+            const on = chain.indexOf(v.id) >= 0;
+            return `<label class="chain-check"><input type="checkbox" data-vid="${v.id}" ${on ? 'checked' : ''}/> ${escapeAttr(v.name)}</label>`;
+          })
+          .join('');
+      }
 
       tr.innerHTML = `
         <td class="grip" title="Drag">⋮⋮</td>
         <td>${idx + 1}</td>
         <td><input type="text" class="sec-name" value="${escapeAttr(sec.name || '')}" /></td>
-        <td><select class="sec-cell">${cellOpts || '<option value="">—</option>'}</select></td>
+        <td>
+          <select class="sec-cell">${cellOpts || '<option value="">—</option>'}</select>
+          <div class="chain-line status">${escapeAttr(chainLabel)}</div>
+          <div class="chain-box">${chainChecks}</div>
+        </td>
         <td><input type="number" class="sec-reps" min="1" max="32" value="${sec.reps || 1}" style="width:3.5rem" /></td>
         <td>${bars % 1 === 0 ? bars : bars.toFixed(1)}</td>
         <td class="row-actions">
@@ -331,7 +412,7 @@
       `;
 
       tr.addEventListener('click', (e) => {
-        if (e.target.closest('button, input, select')) return;
+        if (e.target.closest('button, input, select, label')) return;
         selectSection(sec.id);
       });
       tr.querySelector('.sec-name').addEventListener('change', (e) => {
@@ -341,9 +422,24 @@
         renderTimeline();
       });
       tr.querySelector('.sec-cell').addEventListener('change', (e) => {
-        sec.cellId = e.target.value;
+        const id = e.target.value;
+        sec.cellId = id;
+        // Reset chain to this cell only (user can re-check versions)
+        S().setSectionChain(sec, [id]);
         save();
         render();
+      });
+      tr.querySelectorAll('.chain-box input[type=checkbox]').forEach((cb) => {
+        cb.addEventListener('change', () => {
+          const ids = [];
+          tr.querySelectorAll('.chain-box input[type=checkbox]').forEach((c) => {
+            if (c.checked) ids.push(c.dataset.vid);
+          });
+          if (!ids.length && sec.cellId) ids.push(sec.cellId);
+          S().setSectionChain(sec, ids);
+          save();
+          render();
+        });
       });
       tr.querySelector('.sec-reps').addEventListener('change', (e) => {
         sec.reps = Math.max(1, parseInt(e.target.value, 10) || 1);
@@ -356,11 +452,11 @@
       });
       tr.querySelector('.btn-land').addEventListener('click', (e) => {
         e.stopPropagation();
-        openLandscapeForCell(sec.cellId, cell && cell.name);
+        openLandscapeForCell(sec.cellId || chain[0], cell && cell.name);
       });
       tr.querySelector('.btn-fret').addEventListener('click', (e) => {
         e.stopPropagation();
-        openFretboardForCell(sec.cellId);
+        openFretboardForCell(sec.cellId || chain[0]);
       });
 
       tr.addEventListener('dragstart', (e) => {
@@ -379,6 +475,34 @@
       });
 
       body.appendChild(tr);
+
+      // Seam row into next section
+      if (idx < song.arrangement.length - 1) {
+        const next = song.arrangement[idx + 1];
+        const seam = sec.seam || S().defaultSeam();
+        const seamTr = document.createElement('tr');
+        seamTr.className = 'seam-row';
+        const seamCh =
+          seam.chords && seam.chords.length
+            ? seam.chords.map((c) => (M() ? M().noteName(c.root) : c.root) + (c.quality === 'dom7' ? '7' : c.quality || '')).join(' ')
+            : '—';
+        seamTr.innerHTML = `
+          <td colspan="3" class="seam-label">↘ seam into <strong>${escapeAttr(next.name || '')}</strong></td>
+          <td colspan="2">
+            <select class="seam-type">
+              <option value="none"${seam.type === 'none' ? ' selected' : ''}>None</option>
+              <option value="smooth"${seam.type === 'smooth' ? ' selected' : ''}>Smooth VL only</option>
+              <option value="turnaround"${seam.type === 'turnaround' ? ' selected' : ''}>Turnaround (V7→)</option>
+            </select>
+            <span class="status seam-chords">${escapeAttr(seamCh)}</span>
+          </td>
+          <td colspan="2" class="status">flow between sections</td>
+        `;
+        seamTr.querySelector('.seam-type').addEventListener('change', (e) => {
+          setSeamType(sec.id, e.target.value);
+        });
+        body.appendChild(seamTr);
+      }
     });
   }
 
@@ -410,10 +534,12 @@
       $('#focus-chords').textContent = '—';
       return;
     }
-    const cell = song.cells[sec.cellId];
+    const chain = S().sectionChain(sec);
     const bars = S().sectionBars(song, sec);
-    $('#focus-title').textContent = `${sec.name} · ${cell ? cell.name : '?'} · ${bars % 1 === 0 ? bars : bars.toFixed(1)} bars (${sec.reps || 1}×)`;
-    $('#focus-chords').textContent = cell ? cellLabel(cell) : 'Empty cell';
+    const names = chain.map((id) => (song.cells[id] ? song.cells[id].name : '?')).join(' → ');
+    $('#focus-title').textContent = `${sec.name} · ${names} · ${bars % 1 === 0 ? bars : bars.toFixed(1)} bars (${sec.reps || 1}×)`;
+    const labels = chain.map((id) => (song.cells[id] ? cellLabel(song.cells[id]) : '')).filter(Boolean);
+    $('#focus-chords').textContent = labels.join('  |  ') || 'Empty';
   }
 
   function escapeAttr(s) {
@@ -494,15 +620,19 @@
       '',
     ];
     song.arrangement.forEach((sec, i) => {
-      const cell = song.cells[sec.cellId];
+      const chain = S().sectionChain(sec);
       const bars = S().sectionBars(song, sec);
-      lines.push(`## ${i + 1}. ${sec.name} — ${cell ? cell.name : '?'} ×${sec.reps || 1} (${bars} bars)`);
-      if (cell && cell.chords) {
-        lines.push(cellLabel(cell));
-        lines.push(M() ? M().formatChordList(cell.chords.map((c) => {
-          let ch = M().makeChord(c.root, c.quality, { duration: c.duration });
-          return ch;
-        }), song.bpm) : '');
+      const names = chain.map((id) => (song.cells[id] ? song.cells[id].name : '?')).join(' → ');
+      lines.push(`## ${i + 1}. ${sec.name} — ${names} ×${sec.reps || 1} (${bars} bars)`);
+      chain.forEach((cid) => {
+        const cell = song.cells[cid];
+        if (cell && cell.chords) {
+          lines.push('### ' + (cell.name || cid));
+          lines.push(cellLabel(cell));
+        }
+      });
+      if (sec.seam && sec.seam.type && sec.seam.type !== 'none') {
+        lines.push('Seam: ' + sec.seam.type + (sec.seam.chords && sec.seam.chords.length ? ' · ' + sec.seam.chords.map((c) => c.quality).join(' ') : ''));
       }
       lines.push('');
     });
@@ -562,6 +692,7 @@
     $('#bpm').addEventListener('change', () => save());
     $('#btn-add-sec').addEventListener('click', addSection);
     $('#btn-new-cell').addEventListener('click', newCell);
+    if ($('#btn-chain-family')) $('#btn-chain-family').addEventListener('click', chainFamilyIntoSection);
     $('#btn-refresh').addEventListener('click', () => {
       load();
       render();

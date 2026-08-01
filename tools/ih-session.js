@@ -63,9 +63,37 @@
       updatedAt: now(),
       updatedBy: opts.updatedBy || 'system',
       cells: {},
+      /** familyId -> { id, name, versionIds: [cellId, ...] } */
+      families: {},
       arrangement: [],
       focus: { cellId: null, sectionId: null, chordIndex: 0 },
     };
+  }
+
+  function ensureSongShape(song) {
+    if (!song) return song;
+    if (!song.cells) song.cells = {};
+    if (!song.families) song.families = {};
+    if (!song.arrangement) song.arrangement = [];
+    if (!song.focus) song.focus = { cellId: null, sectionId: null, chordIndex: 0 };
+    // Migrate cells: familyId / versionIndex
+    Object.keys(song.cells).forEach((id) => {
+      const c = song.cells[id];
+      if (c.familyId == null) c.familyId = null;
+      if (c.versionIndex == null) c.versionIndex = 1;
+    });
+    // Migrate sections: chain + seam
+    song.arrangement.forEach((sec) => {
+      if (!sec.chain || !sec.chain.length) {
+        sec.chain = sec.cellId ? [sec.cellId] : [];
+      }
+      if (!sec.cellId && sec.chain[0]) sec.cellId = sec.chain[0];
+      if (!sec.seam) {
+        sec.seam = { type: 'none', chords: [] };
+      }
+      if (sec.reps == null) sec.reps = 1;
+    });
+    return song;
   }
 
   function loadSong() {
@@ -74,14 +102,135 @@
       if (!raw) return null;
       const o = JSON.parse(raw);
       if (!o || o.version !== 1) return null;
-      return o;
+      return ensureSongShape(o);
     } catch (_) {
       return null;
     }
   }
 
+  function newFamilyId() {
+    return 'fam-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+  }
+
+  /**
+   * Create a variation cell linked to the same family as sourceCellId.
+   * Copies chords (caller may mutate), returns new cell id.
+   */
+  function createVariation(song, sourceCellId, opts) {
+    opts = opts || {};
+    ensureSongShape(song);
+    const src = song.cells[sourceCellId];
+    if (!src) return null;
+
+    let familyId = src.familyId;
+    if (!familyId) {
+      familyId = newFamilyId();
+      src.familyId = familyId;
+      src.versionIndex = 1;
+      const famName = (src.name || 'Cell').replace(/\s*v\d+\s*$/i, '').trim() || 'Cell';
+      song.families[familyId] = {
+        id: familyId,
+        name: famName,
+        versionIds: [sourceCellId],
+      };
+      // Rename v1 for clarity if still generic pack name only
+      if (!/v\d+/i.test(src.name || '')) {
+        src.name = famName + ' v1';
+      }
+    }
+
+    const fam = song.families[familyId];
+    const nextIdx = (fam.versionIds || []).length + 1;
+    const newId = newCellId('cell');
+    const baseName = (fam.name || src.name || 'Cell').replace(/\s*v\d+\s*$/i, '').trim();
+    const chords = (opts.chords || src.chords || []).map((c) => ({ ...c }));
+    song.cells[newId] = {
+      id: newId,
+      name: opts.name || baseName + ' v' + nextIdx,
+      packId: src.packId || null,
+      familyId,
+      versionIndex: nextIdx,
+      chords,
+    };
+    fam.versionIds = fam.versionIds || [];
+    fam.versionIds.push(newId);
+    fam.name = baseName;
+    return newId;
+  }
+
+  function familyVersions(song, familyId) {
+    ensureSongShape(song);
+    const fam = song.families[familyId];
+    if (!fam) return [];
+    return (fam.versionIds || [])
+      .map((id) => song.cells[id])
+      .filter(Boolean)
+      .sort((a, b) => (a.versionIndex || 0) - (b.versionIndex || 0));
+  }
+
+  function siblingsOfCell(song, cellId) {
+    const cell = song.cells[cellId];
+    if (!cell || !cell.familyId) return cell ? [cell] : [];
+    return familyVersions(song, cell.familyId);
+  }
+
+  /** Cell ids played for a section (chain or single cellId). */
+  function sectionChain(sec) {
+    if (sec.chain && sec.chain.length) return sec.chain.slice();
+    return sec.cellId ? [sec.cellId] : [];
+  }
+
+  function defaultSeam() {
+    return { type: 'none', chords: [] };
+  }
+
+  /**
+   * Build a short turnaround from last chord of A toward first of B (session chord objects).
+   */
+  function suggestSeamChords(fromChord, toChord, key) {
+    if (!fromChord || !toChord) return [];
+    const t = key && key.tonic != null ? key.tonic : 11;
+    const mode = (key && key.mode) || 'minor';
+    const isMinor = mode !== 'major' && mode !== 'lydian' && mode !== 'mixolydian';
+    // V7 of next chord's root, or V7 of home into next
+    const targetRoot = toChord.root;
+    const domRoot = (targetRoot + 7) % 12;
+    return [
+      {
+        root: domRoot,
+        quality: 'dom7',
+        duration: 2,
+        bass: domRoot,
+        roman: 'V7→',
+        region: 'secondary',
+        tag: 'seam',
+      },
+    ];
+  }
+
+  /** Smooth: copy last chord with bass toward next root if possible — returns empty (voicing-only at play time). */
+  function applySeam(out, seam, fromChord, toChord, key, secName) {
+    if (!seam || !seam.type || seam.type === 'none') return;
+    if (seam.type === 'turnaround' || seam.type === 'custom') {
+      const list =
+        seam.chords && seam.chords.length
+          ? seam.chords
+          : suggestSeamChords(fromChord, toChord, key);
+      list.forEach((ch) => {
+        out.push({
+          ...ch,
+          _section: secName || '',
+          _cell: 'seam',
+          _seam: true,
+        });
+      });
+    }
+    // type === 'smooth' → no extra chords; play engine can VL across boundary
+  }
+
   function saveSong(song, by) {
     if (!song) return false;
+    ensureSongShape(song);
     song.updatedAt = now();
     song.updatedBy = by || song.updatedBy || 'unknown';
     try {
@@ -93,11 +242,14 @@
   }
 
   function ensureCell(song, cellId, name) {
+    ensureSongShape(song);
     if (!song.cells[cellId]) {
       song.cells[cellId] = {
         id: cellId,
         name: name || 'Cell',
         packId: null,
+        familyId: null,
+        versionIndex: 1,
         chords: [],
       };
     }
@@ -462,38 +614,83 @@
     return resolvePaths();
   }
 
-  /** Flatten arrangement to ordered chords with durations (beats). */
+  /** Flatten arrangement to ordered chords with durations (beats). Includes chain + seams. */
   function flattenArrangement(song) {
     if (!song) return [];
+    ensureSongShape(song);
     const out = [];
-    (song.arrangement || []).forEach((sec) => {
-      const cell = song.cells && song.cells[sec.cellId];
-      if (!cell || !cell.chords) return;
+    const secs = song.arrangement || [];
+    secs.forEach((sec, secIdx) => {
+      const chain = sectionChain(sec);
       const reps = Math.max(1, +(sec.reps || 1));
       for (let r = 0; r < reps; r++) {
-        cell.chords.forEach((ch) => {
-          out.push({
-            ...ch,
-            _section: sec.name || '',
-            _cell: cell.name || '',
-            _rep: r,
+        chain.forEach((cid) => {
+          const cell = song.cells[cid];
+          if (!cell || !cell.chords) return;
+          cell.chords.forEach((ch) => {
+            out.push({
+              ...ch,
+              _section: sec.name || '',
+              _cell: cell.name || '',
+              _rep: r,
+              _version: cell.versionIndex || 1,
+            });
           });
         });
+      }
+      // Seam into next section (once, after all reps)
+      const next = secs[secIdx + 1];
+      if (next) {
+        const chainA = sectionChain(sec);
+        const chainB = sectionChain(next);
+        const cellA = song.cells[chainA[chainA.length - 1]];
+        const cellB = song.cells[chainB[0]];
+        const fromCh = cellA && cellA.chords && cellA.chords[cellA.chords.length - 1];
+        const toCh = cellB && cellB.chords && cellB.chords[0];
+        applySeam(out, sec.seam || defaultSeam(), fromCh, toCh, song.key, (sec.name || '') + '→' + (next.name || ''));
       }
     });
     return out;
   }
 
+  function chainBeats(song, chain) {
+    let beats = 0;
+    (chain || []).forEach((cid) => {
+      const cell = song.cells[cid];
+      if (!cell || !cell.chords) return;
+      beats += cell.chords.reduce((s, c) => s + (c.duration || 4), 0);
+    });
+    return beats;
+  }
+
   function sectionBars(song, sec) {
-    const cell = song.cells && song.cells[sec.cellId];
-    if (!cell || !cell.chords) return 0;
-    const beats = cell.chords.reduce((s, c) => s + (c.duration || 4), 0);
+    ensureSongShape(song);
+    const chain = sectionChain(sec);
+    const beats = chainBeats(song, chain);
+    // seam beats not counted in section bars display (they're between)
     const reps = Math.max(1, +(sec.reps || 1));
     return (beats * reps) / 4;
   }
 
   function totalBars(song) {
-    return (song.arrangement || []).reduce((s, sec) => s + sectionBars(song, sec), 0);
+    ensureSongShape(song);
+    let bars = (song.arrangement || []).reduce((s, sec) => s + sectionBars(song, sec), 0);
+    // add seam durations
+    const flat = flattenArrangement(song);
+    const seamBeats = flat.filter((c) => c._seam).reduce((s, c) => s + (c.duration || 0), 0);
+    return bars + seamBeats / 4;
+  }
+
+  /** Set section to play multiple versions in order (e.g. v1 then v2). */
+  function setSectionChain(sec, cellIds) {
+    sec.chain = (cellIds || []).filter(Boolean);
+    sec.cellId = sec.chain[0] || null;
+  }
+
+  function appendVersionToSectionChain(sec, cellId) {
+    if (!sec.chain) sec.chain = sec.cellId ? [sec.cellId] : [];
+    if (cellId && sec.chain.indexOf(cellId) < 0) sec.chain.push(cellId);
+    sec.cellId = sec.chain[0] || cellId;
   }
 
   global.IHSession = {
@@ -502,10 +699,21 @@
     QUALITY_TO_TYPE,
     TYPE_TO_QUALITY,
     emptySong,
+    ensureSongShape,
     loadSong,
     saveSong,
     ensureCell,
     newCellId,
+    newFamilyId,
+    createVariation,
+    familyVersions,
+    siblingsOfCell,
+    sectionChain,
+    defaultSeam,
+    suggestSeamChords,
+    setSectionChain,
+    appendVersionToSectionChain,
+    chainBeats,
     fromLandscapeChord,
     pcFromName,
     qualityToTypeIdx,
