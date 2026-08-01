@@ -124,54 +124,35 @@
       }));
     };
     map.onSwapChord = (pathIndex, newChord) => {
-      if (pathIndex < 0 || pathIndex >= state.chords.length) return;
-      pushUndo();
-      const prev = state.chords[pathIndex];
-      let ch = M().cloneChord(newChord);
-      ch.duration = prev.duration || 4;
-      ch.localTonic = state.tonic;
-      ch.localMode = state.mode;
-      if (C().bestInversion && pathIndex > 0) {
-        ch = C().bestInversion(state.chords[pathIndex - 1], ch);
-        ch.duration = prev.duration || 4;
+      applyChordAtIndex(pathIndex, newChord, { pullNeighbors: false });
+    };
+    map.onPullChord = (pathIndex, pos, origin, snappedChord) => {
+      // Distance pulled in map units → how hard to tug neighbors
+      const dx = pos.x - origin.x;
+      const dy = pos.y - origin.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 8 && !snappedChord) {
+        // tiny move = treat as click already handled
+        return;
       }
-      state.chords[pathIndex] = ch;
-      state.selected = pathIndex;
-      state.fromPackId = null;
-      map._mode = null;
-      afterEdit();
-      A().ensure();
-      A().playChord({ chord: ch });
+      const nearest = snappedChord
+        ? { chord: snappedChord, dist: dist }
+        : map.nearestSensible(pos.x, pos.y, pathIndex);
+      if (!nearest || !nearest.chord) return;
+      // strength 0..1 (short drag = local swap; long drag = pull neighbors)
+      const strength = Math.min(1, dist / 70);
+      applyChordAtIndex(pathIndex, nearest.chord, {
+        pullNeighbors: strength >= 0.35,
+        pullStrength: strength,
+      });
+      setSyncStatus(
+        strength >= 0.35
+          ? 'Pulled chord + neighbors · ' + nearest.chord.name
+          : 'Moved to ' + nearest.chord.name
+      );
     };
     map.onInsertBetween = (afterIndex) => {
-      // Insert a swing-friendly or smooth neighbour between afterIndex and afterIndex+1
-      pushUndo();
-      const a = state.chords[afterIndex];
-      const b = state.chords[afterIndex + 1];
-      if (!a || !b) return;
-      const midRoot = Math.round((a.root + b.root) / 2) % 12;
-      // Prefer diatonic chord near midpoint
-      let ch = M().makeChord(midRoot, state.mode === 'major' ? 'maj' : 'min', {
-        duration: 2,
-        region: 'diatonic',
-        tag: 'insert',
-        roman: '→',
-      });
-      // If swing continues: try opposite half from a toward home
-      if (C().bestInversion) {
-        ch = C().bestInversion(a, ch);
-        ch.duration = 2;
-        ch.tag = 'insert';
-      }
-      ch.localTonic = state.tonic;
-      ch.localMode = state.mode;
-      state.chords.splice(afterIndex + 1, 0, ch);
-      state.selected = afterIndex + 1;
-      state.fromPackId = null;
-      afterEdit();
-      A().ensure();
-      A().playChord({ chord: ch });
-      setSyncStatus('Inserted between ' + (afterIndex + 1) + ' and ' + (afterIndex + 2));
+      insertBetweenWithTiming(afterIndex);
     };
     map.onTrajectory = (info) => {
       const el = $('#traj-caption');
@@ -454,6 +435,171 @@
     refreshAll();
     if (S()) pushToSharedSession('landscape');
     if (!opts || !opts.silent) playSeq({ once: true });
+  }
+
+  /**
+   * Insert between two chords without lengthening the cell:
+   * steal duration from neighbors (prefer previous).
+   */
+  function insertBetweenWithTiming(afterIndex) {
+    pushUndo();
+    const a = state.chords[afterIndex];
+    const b = state.chords[afterIndex + 1];
+    if (!a || !b) return;
+
+    const da = a.duration || 4;
+    const db = b.duration || 4;
+    // Target insert length 1–2 beats, taken from neighbors so total stays constant
+    let takeA = 0;
+    let takeB = 0;
+    let insertDur = 2;
+    if (da >= 3 && db >= 3) {
+      takeA = 1;
+      takeB = 1;
+      insertDur = 2;
+    } else if (da >= 2) {
+      takeA = Math.min(2, da - 1);
+      insertDur = takeA;
+    } else if (db >= 2) {
+      takeB = Math.min(2, db - 1);
+      insertDur = takeB;
+    } else {
+      // Both already short — take 0.5 each if possible
+      takeA = da > 1 ? 0.5 : 0;
+      takeB = db > 1 ? 0.5 : 0;
+      insertDur = Math.max(0.5, takeA + takeB) || 1;
+      if (takeA + takeB === 0) {
+        // last resort: keep total by shortening a slightly
+        takeA = 0.5;
+        insertDur = 0.5;
+      }
+    }
+
+    const midRoot = Math.round((a.root + b.root) / 2) % 12;
+    let ch = M().makeChord(midRoot, state.mode === 'major' ? 'maj' : 'min', {
+      duration: insertDur,
+      region: 'diatonic',
+      tag: 'insert',
+      roman: '→',
+    });
+    if (C().bestInversion) {
+      ch = C().bestInversion(a, ch);
+      ch.duration = insertDur;
+      ch.tag = 'insert';
+    }
+    ch.localTonic = state.tonic;
+    ch.localMode = state.mode;
+
+    state.chords[afterIndex] = M().withDuration(a, Math.max(0.5, da - takeA));
+    state.chords[afterIndex + 1] = M().withDuration(b, Math.max(0.5, db - takeB));
+    state.chords.splice(afterIndex + 1, 0, ch);
+    state.selected = afterIndex + 1;
+    state.fromPackId = null;
+    afterEdit();
+    A().ensure();
+    A().playChord({ chord: ch });
+    const total = state.chords.reduce((s, c) => s + (c.duration || 0), 0);
+    setSyncStatus(
+      'Inserted (timing kept) · ' + insertDur + 'b from neighbors · total ' + total + ' beats'
+    );
+  }
+
+  /** Split a time-strip step into two chords, halving duration. */
+  function splitChordAt(index) {
+    if (index < 0 || index >= state.chords.length) return;
+    const src = state.chords[index];
+    const d = src.duration || 4;
+    if (d < 1) return;
+    pushUndo();
+    const half = Math.max(0.5, Math.round(d * 2) / 4); // prefer .5 steps
+    const d1 = Math.max(0.5, d - half);
+    const d2 = Math.max(0.5, d - d1);
+    state.chords[index] = M().withDuration(src, d1);
+    let ch = M().cloneChord(src);
+    ch.duration = d2;
+    ch.tag = 'split';
+    state.chords.splice(index + 1, 0, ch);
+    state.selected = index + 1;
+    state.fromPackId = null;
+    afterEdit();
+    setSyncStatus('Split step ' + (index + 1) + ' · ' + d1 + 'b + ' + d2 + 'b');
+  }
+
+  function circularBlendRoot(a, b, t) {
+    // shortest arc blend on pitch-class circle
+    let d = ((b - a + 12) % 12);
+    if (d > 6) d -= 12;
+    return ((a + Math.round(d * t)) % 12 + 12) % 12;
+  }
+
+  function applyChordAtIndex(pathIndex, newChord, opts) {
+    opts = opts || {};
+    if (pathIndex < 0 || pathIndex >= state.chords.length) return;
+    pushUndo();
+    const prev = state.chords[pathIndex];
+    let ch = M().cloneChord(newChord);
+    ch.duration = prev.duration || 4;
+    ch.localTonic = state.tonic;
+    ch.localMode = state.mode;
+    ch.tag = ch.tag || 'pulled';
+    if (C().bestInversion && pathIndex > 0) {
+      ch = C().bestInversion(state.chords[pathIndex - 1], ch);
+      ch.duration = prev.duration || 4;
+    }
+    state.chords[pathIndex] = ch;
+
+    if (opts.pullNeighbors && opts.pullStrength > 0) {
+      const t = Math.min(1, opts.pullStrength) * 0.55; // how far neighbors move
+      // Previous: blend root toward new chord
+      if (pathIndex > 0) {
+        const p = state.chords[pathIndex - 1];
+        const newRoot = circularBlendRoot(p.root, ch.root, t);
+        let pq = p.quality;
+        // keep quality family mostly
+        let pn = M().makeChord(newRoot, pq, {
+          duration: p.duration,
+          region: p.region || 'diatonic',
+          roman: p.roman,
+          tag: 'tugged',
+        });
+        if (C().bestInversion && pathIndex > 1) {
+          pn = C().bestInversion(state.chords[pathIndex - 2], pn);
+          pn.duration = p.duration;
+        } else if (C().withBass && p.bassPc != null) {
+          // try keep relative bass if possible
+        }
+        pn.localTonic = state.tonic;
+        pn.localMode = state.mode;
+        pn.tag = 'tugged';
+        state.chords[pathIndex - 1] = pn;
+      }
+      // Next: blend toward new chord from its side
+      if (pathIndex < state.chords.length - 1) {
+        const n = state.chords[pathIndex + 1];
+        const newRoot = circularBlendRoot(n.root, ch.root, t * 0.85);
+        let nn = M().makeChord(newRoot, n.quality, {
+          duration: n.duration,
+          region: n.region || 'diatonic',
+          roman: n.roman,
+          tag: 'tugged',
+        });
+        if (C().bestInversion) {
+          nn = C().bestInversion(ch, nn);
+          nn.duration = n.duration;
+        }
+        nn.localTonic = state.tonic;
+        nn.localMode = state.mode;
+        nn.tag = 'tugged';
+        state.chords[pathIndex + 1] = nn;
+      }
+    }
+
+    state.selected = pathIndex;
+    state.fromPackId = null;
+    map._mode = null;
+    afterEdit();
+    A().ensure();
+    A().playChord({ chord: state.chords[pathIndex] });
   }
 
   function makeEnteredChord(root, q) {
@@ -1069,6 +1215,11 @@
         A().ensure();
         A().playChord({ chord: ch });
         refreshUI();
+      });
+      // Double-click: split this step (timing stays same total)
+      btn.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        splitChordAt(i);
       });
       host.appendChild(btn);
     });

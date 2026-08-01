@@ -46,10 +46,12 @@
     this.onHoverHorizon = null;
     this.onRequestAlts = null;
     this.onSwapChord = null;
+    this.onPullChord = null; // (pathIndex, {x,y}, origin{x,y}, snappedChord|null) => void
     this.onInsertBetween = null; // (afterIndex) => void
     this.onTrajectory = null; // (caption) => void
     this._mode = null;
     this._dragNode = null;
+    this._dragOrigin = null; // original node world pos
     this._dragPos = null;
     this._last = null;
     this._moved = false;
@@ -375,6 +377,7 @@
     if (hit && hit.type === 'path') {
       this._mode = 'node';
       this._dragNode = hit.item;
+      this._dragOrigin = { x: hit.item.x, y: hit.item.y };
       this._dragPos = { x: hit.item.x, y: hit.item.y };
       this.current = hit.item.i;
       if (this.onSelectPath) this.onSelectPath(hit.item.i, hit.item.chord);
@@ -449,19 +452,56 @@
 
   SpatialMap.prototype._up = function () {
     if (this._mode === 'node' && this._dragNode) {
-      if (this.snapAlt && this._moved && this.onSwapChord) {
-        this.onSwapChord(this._dragNode.i, this.snapAlt.chord);
+      if (this._moved && (this.snapAlt || this.onPullChord)) {
+        const pos = this._dragPos || { x: this._dragNode.x, y: this._dragNode.y };
+        const origin = this._dragOrigin || { x: this._dragNode.x, y: this._dragNode.y };
+        const snapped = this.snapAlt ? this.snapAlt.chord : null;
+        if (this.onPullChord) {
+          this.onPullChord(this._dragNode.i, pos, origin, snapped);
+        } else if (snapped && this.onSwapChord) {
+          this.onSwapChord(this._dragNode.i, snapped);
+        }
       } else if (!this._moved && this.onSelectPath) {
         this.onSelectPath(this._dragNode.i, this._dragNode.chord);
       }
     }
     this._mode = null;
     this._dragNode = null;
+    this._dragOrigin = null;
     this._dragPos = null;
     this._last = null;
     this.alts = [];
     this.snapAlt = null;
     this.canvas.style.cursor = 'grab';
+  };
+
+  /** Nearest sensible map position among alts + path-compatible palette ghosts */
+  SpatialMap.prototype.nearestSensible = function (wx, wy, pathIndex) {
+    let best = null;
+    let bestD = Infinity;
+    const consider = (chord, label, x, y) => {
+      const d = (wx - x) * (wx - x) + (wy - y) * (wy - y);
+      if (d < bestD) {
+        bestD = d;
+        best = { chord, label: label || chord.name, x, y, dist: Math.sqrt(d) };
+      }
+    };
+    this.alts.forEach((a) => consider(a.chord, a.label, a.x, a.y));
+    // Also sample common roots around home
+    const M = global.HLMusic;
+    if (M) {
+      const quals = ['min', 'maj', 'dom7', 'min7', 'maj7'];
+      for (let r = 0; r < 12; r++) {
+        quals.forEach((q) => {
+          const ch = M.makeChord(r, q, { region: 'diatonic' });
+          const pos = this._chordPos(ch, pathIndex || 0, 0);
+          consider(ch, ch.name, pos.x, pos.y);
+        });
+      }
+    }
+    // Only accept if reasonably close (not random far drop)
+    if (best && best.dist < 90) return best;
+    return best; // still return nearest even if far — caller uses strength
   };
 
   SpatialMap.prototype.start = function () {
