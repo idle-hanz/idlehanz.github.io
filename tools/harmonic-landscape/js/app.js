@@ -930,6 +930,59 @@
     refreshMap();
   }
 
+  /** Snap duration to half-beat grid, clamp ≥ 0.5 */
+  function snapBeats(b) {
+    return Math.max(0.5, Math.round(b * 2) / 2);
+  }
+
+  /**
+   * Resize from the right edge of step `index`.
+   * Internal border: steal/give beats with the next step (total length kept).
+   * Last step: change its duration alone (cell can grow/shrink).
+   */
+  function resizeStripEdge(index, deltaBeats, opts) {
+    opts = opts || {};
+    if (index < 0 || index >= state.chords.length) return false;
+    const live = !!opts.live;
+    const a = state.chords[index];
+    const da0 = a.duration || 4;
+    const hasNext = index < state.chords.length - 1;
+
+    if (hasNext) {
+      const b = state.chords[index + 1];
+      const db0 = b.duration || 4;
+      // Redistribute; neither side below 0.5
+      let da = snapBeats(da0 + deltaBeats);
+      let db = snapBeats(da0 + db0 - da);
+      if (db < 0.5) {
+        db = 0.5;
+        da = snapBeats(da0 + db0 - db);
+      }
+      if (da < 0.5) {
+        da = 0.5;
+        db = snapBeats(da0 + db0 - da);
+      }
+      // Keep exact total if possible
+      const total = da0 + db0;
+      if (Math.abs(da + db - total) > 0.01) {
+        db = Math.max(0.5, snapBeats(total - da));
+        da = Math.max(0.5, total - db);
+      }
+      if (da === da0 && db === db0) return false;
+      state.chords[index] = M().withDuration(a, da);
+      state.chords[index + 1] = M().withDuration(b, db);
+    } else {
+      const da = snapBeats(da0 + deltaBeats);
+      if (da === da0) return false;
+      state.chords[index] = M().withDuration(a, da);
+    }
+    if (!live) {
+      state.fromPackId = null;
+      if (S()) pushToSharedSession('landscape');
+    }
+    return true;
+  }
+
   function setBass(pc) {
     const i = state.selected;
     if (i < 0 || !state.chords[i] || !C().withBass) return;
@@ -1361,24 +1414,49 @@
   function renderTimeStrip() {
     const host = $('#time-strip');
     if (!host) return;
+    // Don't rebuild DOM mid-drag — live updates tweak flex/labels instead
+    if (host.dataset.resizing === '1') return;
     host.innerHTML = '';
     if (!state.chords.length) {
       host.innerHTML = '<span class="ts-empty">Time strip — path steps appear here</span>';
       return;
     }
-    const total = state.chords.reduce((s, c) => s + (c.duration || 4), 0) || 1;
     state.chords.forEach((ch, i) => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      const w = Math.max(8, ((ch.duration || 4) / total) * 100);
+      btn.dataset.i = String(i);
       btn.className =
         'ts-step' +
         (i === state.selected ? ' selected' : '') +
         (map && map.playing === i ? ' playing' : '');
       btn.style.flex = (ch.duration || 4) + ' 1 0';
-      btn.title = (i + 1) + '. ' + ch.name + ' · ' + (ch.duration || 4) + ' beats';
-      btn.innerHTML = `<span class="ts-n">${i + 1}</span><span class="ts-name">${ch.name}</span>`;
-      btn.addEventListener('click', () => {
+      const beats = ch.duration || 4;
+      btn.title =
+        i + 1 + '. ' + ch.name + ' · ' + beats + ' beats — drag right edge to resize';
+      btn.innerHTML =
+        `<span class="ts-n">${i + 1}</span>` +
+        `<span class="ts-name">${ch.name}</span>` +
+        `<span class="ts-dur">${beats}b</span>`;
+
+      // Resize handle on right edge
+      const handle = document.createElement('span');
+      handle.className = 'ts-handle';
+      handle.title =
+        i < state.chords.length - 1
+          ? 'Drag to redistribute beats with next chord'
+          : 'Drag to change length';
+      handle.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        beginStripResize(i, e, host);
+      });
+      btn.appendChild(handle);
+
+      btn.addEventListener('click', (e) => {
+        if (host.dataset.didResize === '1') {
+          host.dataset.didResize = '';
+          return;
+        }
         state.selected = i;
         A().ensure();
         A().playChord({ chord: ch });
@@ -1392,6 +1470,106 @@
       });
       host.appendChild(btn);
     });
+  }
+
+  /**
+   * Drag the right border of a time-strip step to change durations.
+   */
+  function beginStripResize(index, e, host) {
+    if (index < 0 || !state.chords[index]) return;
+    pushUndo();
+    host.dataset.resizing = '1';
+    host.classList.add('resizing-strip');
+    const startX = e.clientX;
+    const startDur = state.chords[index].duration || 4;
+    const startNext =
+      index < state.chords.length - 1 ? state.chords[index + 1].duration || 4 : null;
+    // Beats per pixel from current strip width / total beats
+    const totalBeats = state.chords.reduce((s, c) => s + (c.duration || 4), 0) || 1;
+    const stripW = Math.max(40, host.getBoundingClientRect().width);
+    const beatsPerPx = totalBeats / stripW;
+    let lastApplied = 0;
+    let moved = false;
+
+    const stepEl = host.querySelector('.ts-step[data-i="' + index + '"]');
+    const nextEl = host.querySelector('.ts-step[data-i="' + (index + 1) + '"]');
+    if (stepEl) stepEl.classList.add('resizing');
+    const handle = stepEl && stepEl.querySelector('.ts-handle');
+    if (handle) handle.classList.add('active');
+
+    const onMove = (ev) => {
+      const dx = ev.clientX - startX;
+      if (Math.abs(dx) > 2) moved = true;
+      const delta = dx * beatsPerPx;
+      // Restore base then apply so snap doesn't accumulate error
+      state.chords[index] = M().withDuration(state.chords[index], startDur);
+      if (startNext != null && state.chords[index + 1]) {
+        state.chords[index + 1] = M().withDuration(state.chords[index + 1], startNext);
+      }
+      resizeStripEdge(index, delta, { live: true });
+      lastApplied = delta;
+      // Live flex update
+      const a = state.chords[index];
+      const da = a.duration || 4;
+      if (stepEl) {
+        stepEl.style.flex = da + ' 1 0';
+        const durEl = stepEl.querySelector('.ts-dur');
+        if (durEl) durEl.textContent = da + 'b';
+        stepEl.title = index + 1 + '. ' + a.name + ' · ' + da + ' beats';
+      }
+      if (nextEl && state.chords[index + 1]) {
+        const b = state.chords[index + 1];
+        const db = b.duration || 4;
+        nextEl.style.flex = db + ' 1 0';
+        const durEl = nextEl.querySelector('.ts-dur');
+        if (durEl) durEl.textContent = db + 'b';
+        nextEl.title = index + 2 + '. ' + b.name + ' · ' + db + ' beats';
+      }
+      const pair =
+        startNext != null && state.chords[index + 1]
+          ? da + 'b + ' + (state.chords[index + 1].duration || 4) + 'b'
+          : da + 'b';
+      setSyncStatus('Resize: ' + a.name + ' · ' + pair);
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      host.dataset.resizing = '';
+      host.classList.remove('resizing-strip');
+      if (stepEl) stepEl.classList.remove('resizing');
+      if (handle) handle.classList.remove('active');
+      if (moved) {
+        host.dataset.didResize = '1';
+        state.selected = index;
+        state.fromPackId = null;
+        afterEdit();
+        const a = state.chords[index];
+        const msg =
+          startNext != null && state.chords[index + 1]
+            ? 'Lengths: ' +
+              a.name +
+              ' ' +
+              (a.duration || 4) +
+              'b · ' +
+              state.chords[index + 1].name +
+              ' ' +
+              (state.chords[index + 1].duration || 4) +
+              'b'
+            : a.name + ' · ' + (a.duration || 4) + ' beats';
+        setSyncStatus(msg);
+      }
+      // Full refresh so inspector + map duration tails match
+      refreshUI();
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    try {
+      handle && handle.setPointerCapture && handle.setPointerCapture(e.pointerId);
+    } catch (_) { /* ignore */ }
   }
 
   /** Prefer next chords that continue L–R swing or arch home */
