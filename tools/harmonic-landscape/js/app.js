@@ -1394,16 +1394,9 @@
       state.selected >= 0 && state.selected < state.chords.length
         ? state.selected
         : state.chords.length - 1;
-    const after = sel + 1; // write starting here
+    const after = sel + 1;
     const hasNext = after >= 0 && after < state.chords.length;
-    // Capture join context before mutating
-    const beforeChord = sel >= 0 && state.chords[sel] ? M().cloneChord(state.chords[sel]) : null;
-    const afterJoinChord =
-      after + pieces.length < state.chords.length
-        ? M().cloneChord(state.chords[after + pieces.length])
-        : modeWillLeaveFollowing(after, pieces.length, hasNext);
 
-    // mode: 'replace' | 'insert' | 'append'
     let mode = opts.mode;
     if (!mode || mode === 'auto') {
       if (opts.insert) mode = 'insert';
@@ -1411,23 +1404,19 @@
       else mode = 'append';
     }
 
+    const beforeChord =
+      sel >= 0 && state.chords[sel] ? M().cloneChord(state.chords[sel]) : null;
+    let afterChordPre = null;
+    if (mode === 'replace' && state.chords[after + pieces.length]) {
+      afterChordPre = M().cloneChord(state.chords[after + pieces.length]);
+    } else if (mode === 'insert' && state.chords[after]) {
+      afterChordPre = M().cloneChord(state.chords[after]);
+    }
+
     let writeAt = after < 0 ? 0 : after;
     if (mode === 'append') writeAt = state.chords.length;
 
-    // Recompute after-join once mode is known
-    let afterChord fores =
-      mode === 'replace'
-        ? state.chords[after + pieces.length]
-          ? M().cloneChord(state.chords[after + pieces.length])
-          : null
-        : mode === 'insert'
-          ? state.chords[after]
-            ? M().cloneChord(state.chords[after])
-            : null
-          : null;
-
     if (mode === 'replace' && hasNext) {
-      // Overwrite following steps; keep their durations so the strip length holds
       for (let i = 0; i < pieces.length; i++) {
         const pos = after + i;
         if (pos < state.chords.length) {
@@ -1440,22 +1429,21 @@
       }
       writeAt = after;
     } else if (mode === 'insert') {
-      // Slide existing next chord(s) right — add between selection and what followed
       state.chords.splice(writeAt, 0, ...pieces);
     } else {
-      // Append at end
       pieces.forEach((p) => state.chords.push(p));
       writeAt = state.chords.length - pieces.length;
     }
 
-    // Modulation: confirm before moving home
     if (item.modulateTo) {
       const dest =
         M().noteName(item.modulateTo.tonic) +
         ' ' +
         (item.modulateTo.mode || 'minor');
       const ok = confirm(
-        'Modulate writing home to ' + dest + '?\n\nOK = change home key · Cancel = write chords only, keep current home'
+        'Modulate writing home to ' +
+          dest +
+          '?\n\nOK = change home key · Cancel = write chords only, keep current home'
       );
       if (ok) {
         state.tonic = item.modulateTo.tonic;
@@ -1466,16 +1454,14 @@
       }
     }
 
-    const beforeChord = sel >= 0 ? state.chords[sel] : null;
-    // After write, what follows the package
-    const afterIdx = writeAt + pieces.length;
-    // Need after from post-mutation — compute after splice
     state.selected = Math.min(writeAt + pieces.length - 1, state.chords.length - 1);
     state.fromPackId = null;
     afterEdit();
 
+    const afterIdx = writeAt + pieces.length;
     const afterChord =
-      afterIdx < state.chords.length ? state.chords[afterIdx] : null;
+      afterChordPre ||
+      (afterIdx < state.chords.length ? state.chords[afterIdx] : null);
     const written = state.chords.slice(writeAt, writeAt + pieces.length);
     A().ensure();
     auditionJoin(beforeChord, written, afterChord);
@@ -1487,9 +1473,10 @@
         : mode === 'insert'
           ? 'inserted after step ' + (sel + 1)
           : 'appended';
-    setSyncStatus(where + ': ' + labels + (item.job ? ' · ' + item.job : '') + ' · hearing join');
+    setSyncStatus(
+      where + ': ' + labels + (item.job ? ' · ' + item.job : '') + ' · hearing join'
+    );
   }
-
   /** Build the chord(s) a horizon item would write into the sequence. */
   function horizonPieces(item) {
     const region = item.chord && (item.chord.region || regionFromKind(item.kind));
