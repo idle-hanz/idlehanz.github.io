@@ -628,6 +628,16 @@
     ctx.beginPath();
     ctx.arc(0, 0, 55, 0, Math.PI * 2);
     ctx.fill();
+    // Orbit guide — “options live on this ring”
+    if (this.showHorizon && this.horizon.length && this._mode !== 'node') {
+      ctx.beginPath();
+      ctx.arc(0, 0, 72, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(232,201,138,0.12)';
+      ctx.lineWidth = 1 / this.camera.zoom;
+      ctx.setLineDash([4 / this.camera.zoom, 6 / this.camera.zoom]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
     ctx.beginPath();
     ctx.arc(0, 0, 10, 0, Math.PI * 2);
     ctx.fillStyle = '#e8c98a';
@@ -636,23 +646,64 @@
     ctx.fillStyle = 'rgba(232,201,138,0.95)';
     ctx.font = `${12 / this.camera.zoom}px Cinzel, serif`;
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     ctx.fillText(M ? M.noteName(this.origin.tonic) + ' home' : 'home', 0, 28 / this.camera.zoom);
 
-    // Horizon
+    // Empty-path coaching near home
+    if ((!this.nodes || !this.nodes.length) && this._mode !== 'node') {
+      ctx.fillStyle = 'rgba(200,184,160,0.7)';
+      ctx.font = `${10 / this.camera.zoom}px Crimson Text, Georgia, serif`;
+      ctx.fillText('Start: click a coloured dot (next move)', 0, -42 / this.camera.zoom);
+      ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
+      ctx.fillStyle = 'rgba(180,168,150,0.55)';
+      ctx.fillText('or Add a chord / load a Feel', 0, -28 / this.camera.zoom);
+    } else if (this.nodes && this.nodes.length === 1 && this.showHorizon && this._mode !== 'node') {
+      ctx.fillStyle = 'rgba(200,184,160,0.55)';
+      ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
+      ctx.fillText('Click a dot = next chord · drag your chord to swap', 0, -40 / this.camera.zoom);
+    }
+
+    // Horizon = “From here” options placed in space (not your path yet)
     if (this.showHorizon && this._mode !== 'node') {
       this.horizon.forEach((h) => {
-        const col = REGION[h.kind] || REGION.flavour;
+        const col = REGION[h.kind] || REGION[h.chord && h.chord.region] || REGION.flavour;
         const isH = this.hover && this.hover.type === 'horizon' && this.hover.item === h;
+        // Stem toward home so they read as “around home”
         ctx.beginPath();
-        ctx.arc(h.x, h.y, isH ? 14 : 10, 0, Math.PI * 2);
-        ctx.fillStyle = col.ghost;
-        ctx.fill();
-        ctx.strokeStyle = col.fill;
-        ctx.lineWidth = (isH ? 2 : 1) / this.camera.zoom;
+        ctx.moveTo(h.x * 0.15, h.y * 0.15);
+        ctx.lineTo(h.x, h.y);
+        ctx.strokeStyle = isH ? 'rgba(255,244,214,0.35)' : 'rgba(180,168,150,0.12)';
+        ctx.lineWidth = 1 / this.camera.zoom;
         ctx.stroke();
-        ctx.fillStyle = isH ? '#fff' : 'rgba(230,220,200,0.75)';
-        ctx.font = `${8 / this.camera.zoom}px DM Sans, sans-serif`;
-        ctx.fillText(h.label, h.x, h.y + 18 / this.camera.zoom);
+
+        ctx.beginPath();
+        ctx.arc(h.x, h.y, isH ? 15 : 11, 0, Math.PI * 2);
+        ctx.fillStyle = isH ? (col.fill || '#c4a574') : col.ghost || 'rgba(196,165,116,0.35)';
+        ctx.fill();
+        ctx.strokeStyle = isH ? '#fff4d6' : col.fill || '#c4a574';
+        ctx.lineWidth = (isH ? 2.4 : 1.3) / this.camera.zoom;
+        ctx.stroke();
+
+        // Kind badge
+        const kindTag =
+          h.kind === 'direction'
+            ? 'next'
+            : h.kind === 'cadence'
+              ? 'home'
+              : h.kind === 'modulate'
+                ? 'key'
+                : h.kind === 'flavour'
+                  ? 'colour'
+                  : '';
+        ctx.fillStyle = isH ? '#0a0a0a' : 'rgba(230,220,200,0.9)';
+        ctx.font = `bold ${9 / this.camera.zoom}px DM Sans, sans-serif`;
+        ctx.textBaseline = 'middle';
+        ctx.fillText(h.label, h.x, h.y - (kindTag || h.job ? 2 / this.camera.zoom : 0));
+        if (kindTag || h.job) {
+          ctx.fillStyle = isH ? 'rgba(10,10,10,0.7)' : 'rgba(180,168,150,0.85)';
+          ctx.font = `${7.5 / this.camera.zoom}px DM Sans, sans-serif`;
+          ctx.fillText(kindTag || h.job, h.x, h.y + 12 / this.camera.zoom);
+        }
       });
     }
 
@@ -940,15 +991,19 @@
         ? this.snapAlt
           ? 'Release to set · audition: prev → ' + this.snapAlt.label + ' → next'
           : 'Move crosshair onto a labelled target to audition · release off-target = cancel'
-        : this.hover && this.hover.type === 'edge'
-          ? 'Click edge to insert (steals time from neighbors)'
-          : 'Grab chord → aim · edge insert · gold path / blue compare';
+        : this.hover && this.hover.type === 'horizon'
+          ? 'Click to write this next move (same as From here list)'
+          : this.hover && this.hover.type === 'edge'
+            ? 'Click edge to insert (steals time from neighbors)'
+            : this.nodes && this.nodes.length
+              ? 'Path dots = your sequence · outer dots = next-move options · drag a path chord to swap'
+              : 'Coloured dots around home = possible next chords — click one to start';
     ctx.fillText(tip, 10, h - 12);
 
     // Map reading legend (top-left)
     ctx.font = '9px DM Sans, sans-serif';
     ctx.fillStyle = 'rgba(180,168,150,0.5)';
-    ctx.fillText('∠ root   ·   radius = distance from home', 10, 14);
+    ctx.fillText('Home = key centre · outer dots = options · path = your sequence', 10, 14);
 
     // Edge colour legend
     const legs = [

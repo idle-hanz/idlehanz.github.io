@@ -2527,13 +2527,14 @@
     const el = $('#map-status');
     if (!el) return;
     if (!state.chords.length) {
-      el.textContent = 'Empty path — add a chord or load a feel';
+      el.textContent =
+        'Empty path — click a coloured dot around home (or use From here / Add) to place the first chord';
       return;
     }
     const i = Math.max(0, Math.min(state.selected, state.chords.length - 1));
     const ch = state.chords[i];
     if (!ch) {
-      el.textContent = 'Select a step';
+      el.textContent = 'Select a step in the list or on the path';
       return;
     }
     let side = '';
@@ -2541,8 +2542,11 @@
       const x = map.nodes[i].x;
       side = x < -12 ? ' · left of home' : x > 12 ? ' · right of home' : ' · near home';
     }
-    const play =
-      map && map.playing === i ? ' · playing' : '';
+    const play = map && map.playing === i ? ' · playing' : '';
+    const coach =
+      state.chords.length < 2
+        ? ' · tip: click another outer dot for the next step, or drag this chord to aim a swap'
+        : '';
     el.textContent =
       'Step ' +
       (i + 1) +
@@ -2554,7 +2558,8 @@
       (ch.duration || 4) +
       'b' +
       side +
-      play;
+      play +
+      coach;
   }
 
   function renderVlReadout() {
