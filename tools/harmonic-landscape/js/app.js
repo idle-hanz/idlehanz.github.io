@@ -777,7 +777,7 @@
     refreshAltPath();
   }
 
-  /** Draw sibling variation (v2) in blue if this cell is in a family. */
+  /** Draw sibling variation (prefer v1, else another version) in blue. */
   function refreshAltPath() {
     if (!map || !S()) {
       if (map) map.setAltPath([]);
@@ -789,21 +789,237 @@
       return;
     }
     const sibs = S().siblingsOfCell(song, state.cellId);
-    const other = sibs.find((c) => c.id !== state.cellId);
+    // Prefer original v1 as the blue comparison path when editing a later version
+    let other =
+      sibs.find((c) => c.id !== state.cellId && (c.versionIndex === 1 || /v1\b/i.test(c.name || ''))) ||
+      sibs.find((c) => c.id !== state.cellId);
     if (!other || !other.chords || !other.chords.length) {
       map.setAltPath([]);
       return;
     }
-    // Convert session chords to landscape chord objects for layout
-    const alt = other.chords.map((sc) => {
-      let ch = M().makeChord(sc.root, sc.quality || 'maj', {
-        duration: sc.duration || 4,
-        region: sc.region || 'diatonic',
-      });
-      if (sc.bass != null && C().withBass) ch = C().withBass(ch, sc.bass);
-      return ch;
-    });
+    const alt = other.chords.map((sc) => sessionChordToLandscape(sc));
     map.setAltPath(alt);
+  }
+
+  /**
+   * Switch Landscape editor to another session cell (saves current first).
+   */
+  function switchToCell(cellId, opts) {
+    opts = opts || {};
+    if (!S() || !cellId) return false;
+    // Persist what you're leaving so variants don't lose edits
+    if (state.chords.length && state.cellId) {
+      pushToSharedSession('landscape');
+    }
+    const song = S().loadSong();
+    if (!song || !song.cells[cellId]) {
+      setSyncStatus('Cell not found');
+      return false;
+    }
+    const cell = song.cells[cellId];
+    song.focus = {
+      cellId,
+      sectionId: song.focus && song.focus.sectionId ? song.focus.sectionId : null,
+      chordIndex: 0,
+    };
+    S().saveSong(song, 'landscape');
+    applySessionChords(cell.chords || [], {
+      title: cell.name || 'Cell',
+      cellId: cell.id,
+      packId: cell.packId,
+      tonic: song.key && song.key.tonic,
+      mode: song.key && song.key.mode,
+      bpm: song.bpm,
+      focusIndex: 0,
+    });
+    state.nameLocked = true;
+    refreshAll();
+    if (!opts.silent) {
+      const v = cell.versionIndex != null ? ' v' + cell.versionIndex : '';
+      setSyncStatus('Editing “' + (cell.name || cellId) + '”' + (cell.familyId ? v : ''));
+      if (cell.chords && cell.chords.length) {
+        A().ensure();
+        const first = state.chords[0];
+        if (first) A().playChord({ chord: first, soft: true, duration: 0.45 });
+      }
+    }
+    return true;
+  }
+
+  /** Short chord path for version chip preview */
+  function cellPreviewLabel(cell) {
+    if (!cell || !cell.chords || !cell.chords.length) return 'empty';
+    const names = cell.chords.slice(0, 4).map((c) => {
+      if (c.name) return c.name;
+      if (c.custom && c.notes && S() && S().customChordLabel) {
+        return S().customChordLabel(c.root, c.notes);
+      }
+      const N = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+      const q =
+        c.quality === 'min' || c.quality === 'min7'
+          ? 'm'
+          : c.quality === 'dom7'
+            ? '7'
+            : c.quality === 'custom'
+              ? '…'
+              : '';
+      return (N[c.root] || '?') + q;
+    });
+    const more = cell.chords.length > 4 ? '…' : '';
+    return names.join('–') + more;
+  }
+
+  /**
+   * Version chips (same family) + all-cells picker so you can leave a variant
+   * and return to v1 / other cells without hunting in Arrangement.
+   */
+  function renderVersionBar() {
+    const host = $('#version-bar');
+    if (!host) return;
+    if (!S()) {
+      host.hidden = true;
+      host.innerHTML = '';
+      return;
+    }
+    const song = S().loadSong();
+    if (!song || !song.cells) {
+      host.hidden = true;
+      host.innerHTML = '';
+      return;
+    }
+
+    const cellIds = Object.keys(song.cells);
+    const cur = state.cellId && song.cells[state.cellId] ? song.cells[state.cellId] : null;
+    const family = cur && cur.familyId ? S().siblingsOfCell(song, state.cellId) : cur ? [cur] : [];
+    const hasFamily = family.length > 1;
+    const hasManyCells = cellIds.length > 1;
+
+    if (!hasFamily && !hasManyCells && !cur) {
+      host.hidden = true;
+      host.innerHTML = '';
+      return;
+    }
+
+    host.hidden = false;
+    let html = '';
+
+    if (hasFamily) {
+      const famName =
+        (song.families[cur.familyId] && song.families[cur.familyId].name) ||
+        (cur.name || '').replace(/\s*v\d+\s*$/i, '') ||
+        'Theme';
+      html +=
+        '<div class="version-bar-label">Versions · ' +
+        escapeHtml(famName) +
+        ' <span style="font-weight:400;text-transform:none;letter-spacing:0">(click to edit)</span></div>';
+      html += '<div class="version-chips" id="version-chips">';
+      family.forEach((c) => {
+        const active = c.id === state.cellId;
+        const vi = c.versionIndex != null ? c.versionIndex : '?';
+        const label = c.name || 'v' + vi;
+        html +=
+          '<button type="button" class="ver-chip' +
+          (active ? ' active' : '') +
+          '" data-cell="' +
+          escapeAttr(c.id) +
+          '" title="' +
+          escapeAttr(label + ' · ' + cellPreviewLabel(c)) +
+          (active ? ' (current)' : ' — switch to this version') +
+          '">' +
+          '<span class="ver-n">v' +
+          vi +
+          '</span>' +
+          escapeHtml(label.replace(/\s*v\d+\s*$/i, '') || label) +
+          '<span class="ver-preview">' +
+          escapeHtml(cellPreviewLabel(c)) +
+          '</span></button>';
+      });
+      html += '</div>';
+    } else if (cur) {
+      html +=
+        '<p class="version-bar-empty">Single version — use <strong>+ Vary</strong> above the map to fork v2, then switch here.</p>';
+    }
+
+    if (hasManyCells) {
+      html += '<div class="cell-switch-row">';
+      html += '<label for="cell-switch">All cells</label>';
+      html += '<select id="cell-switch" title="Jump to any cell in the song session">';
+      // Group family versions together
+      const seen = new Set();
+      const groups = [];
+      cellIds.forEach((id) => {
+        if (seen.has(id)) return;
+        const c = song.cells[id];
+        if (c.familyId) {
+          const vers = S().familyVersions(song, c.familyId);
+          vers.forEach((v) => seen.add(v.id));
+          groups.push({
+            label: (song.families[c.familyId] && song.families[c.familyId].name) || c.name,
+            cells: vers,
+          });
+        } else {
+          seen.add(id);
+          groups.push({ label: null, cells: [c] });
+        }
+      });
+      groups.forEach((g) => {
+        if (g.label && g.cells.length > 1) {
+          html += '<optgroup label="' + escapeAttr(g.label) + '">';
+          g.cells.forEach((c) => {
+            html +=
+              '<option value="' +
+              escapeAttr(c.id) +
+              '"' +
+              (c.id === state.cellId ? ' selected' : '') +
+              '>v' +
+              (c.versionIndex || 1) +
+              ' · ' +
+              escapeHtml(c.name || c.id) +
+              '</option>';
+          });
+          html += '</optgroup>';
+        } else {
+          g.cells.forEach((c) => {
+            html +=
+              '<option value="' +
+              escapeAttr(c.id) +
+              '"' +
+              (c.id === state.cellId ? ' selected' : '') +
+              '>' +
+              escapeHtml(c.name || c.id) +
+              '</option>';
+          });
+        }
+      });
+      html += '</select></div>';
+    }
+
+    host.innerHTML = html;
+
+    host.querySelectorAll('.ver-chip').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-cell');
+        if (id && id !== state.cellId) switchToCell(id);
+      });
+    });
+    const sel = host.querySelector('#cell-switch');
+    if (sel) {
+      sel.addEventListener('change', () => {
+        if (sel.value && sel.value !== state.cellId) switchToCell(sel.value);
+      });
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function escapeAttr(s) {
+    return escapeHtml(s).replace(/'/g, '&#39;');
   }
 
   /**
@@ -1409,6 +1625,7 @@
   // ─── Render ──────────────────────────────────────────────
   function refreshAll() {
     refreshSequence();
+    renderVersionBar();
     renderPacks();
     renderHorizonLists();
     refreshMap();
@@ -1417,6 +1634,7 @@
 
   function refreshUI() {
     refreshSequence();
+    renderVersionBar();
     renderHorizonLists();
     refreshMap();
   }
@@ -1426,6 +1644,7 @@
     map.setPath(state.chords, state.selected);
     map.setHorizon(buildHorizon());
     renderTimeStrip();
+    refreshAltPath();
   }
 
   function renderTimeStrip() {

@@ -197,6 +197,90 @@
       padding: 0.75rem 0.85rem;
       margin-bottom: 0.65rem;
     }
+    /* Version / cell switcher */
+    .version-bar {
+      margin-top: 0.55rem;
+      padding-top: 0.5rem;
+      border-top: 1px solid var(--line);
+    }
+    .version-bar-label {
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.3rem;
+    }
+    .version-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      align-items: center;
+    }
+    .ver-chip {
+      border: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 0.22rem 0.55rem;
+      font: inherit;
+      font-size: 0.72rem;
+      font-weight: 600;
+      cursor: pointer;
+      max-width: 100%;
+    }
+    .ver-chip:hover { border-color: var(--gold); color: var(--gold2); }
+    .ver-chip.active {
+      border-color: var(--gold);
+      background: rgba(196,165,116,0.18);
+      color: var(--gold2);
+      box-shadow: 0 0 0 1px rgba(196,165,116,0.25);
+    }
+    .ver-chip .ver-n {
+      display: inline-block;
+      min-width: 1.1rem;
+      margin-right: 0.2rem;
+      color: var(--gold);
+      font-size: 0.65rem;
+    }
+    .ver-chip.active .ver-n { color: var(--gold2); }
+    .ver-chip .ver-preview {
+      display: block;
+      font-size: 0.58rem;
+      font-weight: 500;
+      color: var(--muted);
+      max-width: 11rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-top: 0.05rem;
+    }
+    .ver-chip.active .ver-preview { color: rgba(232,201,138,0.75); }
+    .cell-switch-row {
+      display: flex;
+      gap: 0.35rem;
+      align-items: center;
+      margin-top: 0.4rem;
+    }
+    .cell-switch-row label {
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .cell-switch-row select {
+      flex: 1;
+      min-width: 0;
+      font-size: 0.75rem;
+    }
+    .version-bar-empty {
+      font-family: var(--serif);
+      font-style: italic;
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin: 0;
+    }
+
     .seq-head h3 {
       margin: 0;
       font-family: var(--display);
@@ -480,6 +564,7 @@
           <div id="canonical-badge" class="badge" hidden></div>
           <p id="seq-why"></p>
           <div id="path-text"></div>
+          <div id="version-bar" class="version-bar" hidden></div>
         </div>
 
         <div class="section">
