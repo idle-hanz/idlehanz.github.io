@@ -718,6 +718,15 @@
             <button type="button" class="btn ghost" id="btn-redo-edit" title="Ctrl+Y">Redo</button>
             <button type="button" class="btn ghost" id="btn-clear">Clear</button>
           </div>
+          <div class="add-row" id="step-dur" style="margin-top:0.3rem;align-items:center" title="Length for new steps (Add, Home, From here when building forward)">
+            <span class="hint" style="margin:0;text-transform:uppercase;font-size:0.62rem;letter-spacing:0.04em">New step</span>
+            <button type="button" class="chip" data-step-dur="0.5" title="Half beat">½</button>
+            <button type="button" class="chip" data-step-dur="1">1</button>
+            <button type="button" class="chip" data-step-dur="2">2</button>
+            <button type="button" class="chip active" data-step-dur="4">4</button>
+            <button type="button" class="chip" data-step-dur="8">8</button>
+            <span class="hint" style="margin:0">beats</span>
+          </div>
           <p class="hint" style="margin-top:0.25rem">Drag ⋮⋮ · ←→ select · <kbd>Space</kbd> play · <kbd>Shift+Space</kbd> from sel · blue edge = differs from compare</p>
           <div id="slots"></div>
           <div id="vl-readout" class="vl-line" hidden></div>

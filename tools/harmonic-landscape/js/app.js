@@ -31,6 +31,8 @@
     redoStack: [],
     /** Cell id drawn as blue comparison path (defaults to v1 sibling) */
     compareCellId: null,
+    /** Default length for newly appended chords (From here / Add / Home start) */
+    defaultDuration: 4,
   };
 
   let map = null;
@@ -700,9 +702,22 @@
     A().playChord({ chord: state.chords[pathIndex] });
   }
 
+  function setDefaultDuration(beats, opts) {
+    opts = opts || {};
+    state.defaultDuration = Math.max(0.5, snapBeats(beats));
+    const host = $('#step-dur');
+    if (host) {
+      host.querySelectorAll('[data-step-dur]').forEach((b) => {
+        b.classList.toggle('active', parseFloat(b.dataset.stepDur) === state.defaultDuration);
+      });
+    }
+    if (!opts.silent) setSyncStatus('New steps · ' + state.defaultDuration + ' beats each');
+  }
+
   function makeEnteredChord(root, q) {
+    const dur = stepDuration();
     let ch = M().makeChord(root, q, {
-      duration: 4,
+      duration: dur,
       region: 'diatonic',
       tag: 'entered',
     });
@@ -712,7 +727,7 @@
         : state.chords[state.chords.length - 1];
     if (prev && C().bestInversion) {
       ch = C().bestInversion(prev, ch);
-      ch.duration = 4;
+      ch.duration = dur;
       ch.tag = 'entered';
     }
     ch.localTonic = state.tonic;
@@ -1647,30 +1662,38 @@
     return durs;
   }
 
+  function stepDuration() {
+    const d = state.defaultDuration != null ? state.defaultDuration : 4;
+    return Math.max(0.5, snapBeats(d));
+  }
+
   /**
-   * Fit a horizon package into the cell without growing total length.
-   * - replace: rewrite continuation after `sel` using budget from the next step(s)
-   * - insert: splice after `sel`, stealing budget from neighbors
-   * - at end: steal budget from the last chord, then append package
-   * Returns { writeAt, pieces, mode, totalBefore, totalAfter }
+   * Fit a horizon package into the sequence.
+   *
+   * Composing forward (empty / at end): APPEND with default step length — cell may grow.
+   * (Old "steal from last" cascaded 4→2→1→0.5 and wrecked new paths.)
+   *
+   * Mid-path replace: keep total length by fitting into next step(s)' budget.
+   * Shift+insert: steal from neighbors.
    */
   function fitHorizonIntoSequence(sel, rawPieces, mode) {
     const pieces = rawPieces.map((p) => M().cloneChord(p));
     const totalBefore = beatSum(state.chords);
     const n = pieces.length;
     if (!n) return null;
+    const step = stepDuration();
 
     let writeAt = Math.max(0, sel + 1);
 
     if (mode === 'insert') {
       // Steal budget from prev (sel) and next (sel+1), like map-edge insert
-      const needHint = Math.min(4, Math.max(1, n * 1.5));
+      const needHint = Math.min(step * n, Math.max(step, n * 1.5));
       let takePrev = 0;
       let takeNext = 0;
       const prev = state.chords[sel];
       const next = state.chords[sel + 1];
-      const dp = prev ? prev.duration || 4 : 0;
-      const dn = next ? next.duration || 4 : 0;
+      const dp = prev ? prev.duration || step : 0;
+      const dn = next ? next.duration || step : 0;
       if (prev && next && dp >= 2 && dn >= 2) {
         takePrev = Math.min(needHint / 2, dp - 0.5);
         takeNext = Math.min(needHint - takePrev, dn - 0.5);
@@ -1683,7 +1706,6 @@
       }
       let budget = snapBeats(takePrev + takeNext);
       if (budget < 0.5 * n) {
-        // Force a little more from the richest neighbor
         const rich = dp >= dn ? 'prev' : 'next';
         if (rich === 'prev' && prev && dp - takePrev > 0.5) {
           takePrev = Math.min(dp - 0.5, takePrev + (0.5 * n - budget));
@@ -1711,14 +1733,10 @@
       };
     }
 
-    // replace continuation (default) — never free-append full 4-beat steps
-    if (writeAt >= state.chords.length) {
-      // Selected is last: steal from it, append package in that budget
-      const last = state.chords[sel];
-      if (!last) {
-        // Empty sequence
-        const durs = splitBudget(Math.max(2, n * 2), n);
-        const fitted = pieces.map((p, i) => M().withDuration(p, durs[i]));
+    // At end or empty: compose forward with full default lengths (do NOT steal)
+    if (writeAt >= state.chords.length || !state.chords.length) {
+      const fitted = pieces.map((p) => M().withDuration(p, step));
+      if (!state.chords.length) {
         state.chords = fitted;
         return {
           writeAt: 0,
@@ -1728,48 +1746,27 @@
           totalAfter: beatSum(state.chords),
         };
       }
-      const ld = last.duration || 4;
-      // Keep at least 0.5 on the selected chord; rest funds the package
-      let budget = Math.max(0.5 * n, snapBeats(Math.min(ld - 0.5, Math.max(n, ld * 0.5))));
-      if (ld - budget < 0.5) budget = Math.max(0.5, ld - 0.5);
-      if (budget < 0.5) {
-        // Can't steal — rewrite last chord as first piece only
-        const one = M().withDuration(pieces[0], ld);
-        state.chords[sel] = one;
-        return {
-          writeAt: sel,
-          pieces: [one],
-          mode: 'replace-last',
-          totalBefore,
-          totalAfter: beatSum(state.chords),
-        };
-      }
-      state.chords[sel] = M().withDuration(last, Math.max(0.5, snapBeats(ld - budget)));
-      const durs = splitBudget(budget, n);
-      const fitted = pieces.map((p, i) => M().withDuration(p, durs[i]));
       writeAt = state.chords.length;
       state.chords.push(...fitted);
       return {
         writeAt,
         pieces: fitted,
-        mode: 'extend-steal',
+        mode: 'append',
         totalBefore,
         totalAfter: beatSum(state.chords),
       };
     }
 
-    // Has chords after selection: take budget from the next span
+    // Mid-path: rewrite continuation — preserve total length of the span we replace
     const remaining = state.chords.length - writeAt;
-    // Prefer span = package length; if not enough slots, use all remaining (budget only)
     const spanCount = Math.min(Math.max(n, 1), remaining);
     let budget = 0;
     for (let i = 0; i < spanCount; i++) {
-      budget += state.chords[writeAt + i].duration || 4;
+      budget += state.chords[writeAt + i].duration || step;
     }
     budget = Math.max(0.5 * n, budget);
     const durs = splitBudget(budget, n);
     const fitted = pieces.map((p, i) => M().withDuration(p, durs[i]));
-    // Replace spanCount steps with n pieces (may increase step count, not total beats)
     state.chords.splice(writeAt, spanCount, ...fitted);
     return {
       writeAt,
@@ -1880,6 +1877,9 @@
         durs +
         ') · ' +
         lenNote +
+        (fit.mode === 'append' || fit.mode === 'seed'
+          ? ' · step ' + stepDuration() + 'b'
+          : '') +
         (item.job ? ' · ' + item.job : '')
     );
   }
@@ -1924,7 +1924,7 @@
     const isMin = state.mode === 'minor' || (music.MODES[state.mode] || {}).romanBase === 'minor';
     const q = isMin ? 'min' : 'maj';
     let ch = music.makeChord(t, q, {
-      duration: opts.duration != null ? opts.duration : 4,
+      duration: opts.duration != null ? opts.duration : stepDuration(),
       region: 'diatonic',
       roman: isMin ? 'i' : 'I',
       tag: 'home',
@@ -1945,9 +1945,8 @@
         label: home.name + ' home',
         job: 'start at tonic',
       },
-      { mode: state.chords.length ? 'auto' : 'auto' }
+      {}
     );
-    setSyncStatus('Home · ' + home.name + ' (' + (state.mode === 'major' ? 'I' : 'i') + ')');
   }
 
   // ─── Horizon builders ────────────────────────────────────
@@ -2810,7 +2809,7 @@
         <span id="dur-v">${ch.duration}</span>
       </label>
       <div class="dur-presets row" style="margin:0.35rem 0">
-        ${[1, 2, 3, 4, 6, 8].map((b) => `<button type="button" class="chip dur-p" data-b="${b}">${b}</button>`).join('')}
+        ${[0.5, 1, 1.5, 2, 3, 4, 6, 8].map((b) => `<button type="button" class="chip dur-p" data-b="${b}">${b}</button>`).join('')}
       </div>
       <div class="field" style="margin-top:0.35rem">Bass</div>
       <div class="bass-row" id="bass-row"></div>
@@ -3064,6 +3063,12 @@
       });
     }
     if ($('#btn-start-home')) $('#btn-start-home').addEventListener('click', startAtHome);
+    if ($('#step-dur')) {
+      $('#step-dur').querySelectorAll('[data-step-dur]').forEach((btn) => {
+        btn.addEventListener('click', () => setDefaultDuration(parseFloat(btn.dataset.stepDur)));
+      });
+      setDefaultDuration(state.defaultDuration, { silent: true });
+    }
     if ($('#btn-swing')) $('#btn-swing').addEventListener('click', suggestSwingNext);
     if ($('#btn-arch')) $('#btn-arch').addEventListener('click', suggestArchHome);
     if ($('#tog-horizon')) {
