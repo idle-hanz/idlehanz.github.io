@@ -89,6 +89,10 @@
   }
 
   function makeChord(root, quality, opts = {}) {
+    // Free pitch-set chords (from fretboard custom mode)
+    if (quality === 'custom' || opts.custom) {
+      return makeCustomChord(root, opts.notes || [root], opts);
+    }
     const q = QUALITIES[quality] || QUALITIES.maj;
     const r = pc(root);
     const notes = q.intervals.map((iv) => (r + iv) % 12);
@@ -111,11 +115,54 @@
       region: opts.region || 'diatonic', // diatonic | secondary | interchange | chromatic | tritone | parallel
       roman: opts.roman || '',
       tag: opts.tag || '',
+      custom: false,
+    };
+  }
+
+  /**
+   * Build a chord from an arbitrary pitch-class set (not forced into a named triad).
+   * e.g. B C D F# stays custom, never collapses to Bm.
+   */
+  function makeCustomChord(root, notes, opts = {}) {
+    const r = pc(root);
+    const preferFlat = opts.preferFlat ?? false;
+    let pcs = [...new Set((notes || []).map((n) => pc(n)))];
+    if (!pcs.length) pcs = [r];
+    if (!pcs.includes(r)) pcs.push(r);
+    pcs.sort((a, b) => ((a - r + 12) % 12) - ((b - r + 12) % 12));
+    const intervals = pcs.map((n) => (n - r + 12) % 12);
+    const bassPc = opts.bassPc != null ? pc(opts.bassPc) : r;
+    let name =
+      opts.name ||
+      pcs.map((n) => noteName(n, preferFlat)).join('·');
+    if (bassPc !== r && name.indexOf('/') < 0) name += '/' + noteName(bassPc, preferFlat);
+    return {
+      id: chordId(r, 'custom') + ':' + pcs.join('.') + (opts.uid ? `:${opts.uid}` : ''),
+      root: r,
+      rootName: noteName(r, preferFlat),
+      quality: 'custom',
+      qualityLabel: 'custom',
+      name,
+      notes: pcs.slice(),
+      intervals,
+      duration: opts.duration != null ? opts.duration : 4,
+      inversion: opts.inversion || 0,
+      bassPc,
+      region: opts.region || 'custom',
+      roman: opts.roman || '',
+      tag: opts.tag || 'custom',
+      custom: true,
     };
   }
 
   function withDuration(chord, beats) {
-    return { ...chord, duration: Math.max(0.25, beats), notes: chord.notes.slice(), intervals: chord.intervals.slice() };
+    const next = {
+      ...chord,
+      duration: Math.max(0.25, beats),
+      notes: chord.notes.slice(),
+      intervals: (chord.intervals || []).slice(),
+    };
+    return next;
   }
 
   function diatonicChords(tonic, modeKey, sevenths = false) {
@@ -658,12 +705,14 @@
   function cloneChord(c) {
     return {
       ...c,
-      notes: c.notes.slice(),
+      notes: (c.notes || []).slice(),
       intervals: (c.intervals || []).slice(),
       bassPc: c.bassPc != null ? c.bassPc : c.root,
       localTonic: c.localTonic,
       localMode: c.localMode,
-      id: c.id + ':' + Math.random().toString(36).slice(2, 7),
+      custom: !!c.custom || c.quality === 'custom',
+      name: c.name,
+      id: (c.id || 'ch') + ':' + Math.random().toString(36).slice(2, 7),
     };
   }
 
@@ -675,6 +724,7 @@
     pc,
     noteName,
     makeChord,
+    makeCustomChord,
     withDuration,
     diatonicChords,
     secondaryDominants,

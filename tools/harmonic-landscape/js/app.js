@@ -52,28 +52,60 @@
 
   function restoreSnapshot(snap) {
     if (!snap) return;
-    state.chords = (snap.chords || []).map((c) => {
-      let ch = M().makeChord(c.root, c.quality, {
-        duration: c.duration,
-        roman: c.roman,
-        region: c.region,
-        tag: c.tag,
-      });
-      if (c.bassPc != null && C().withBass) {
-        ch = C().withBass(ch, c.bassPc);
-        ch.duration = c.duration;
-        ch.roman = c.roman;
-        ch.region = c.region;
-        ch.tag = c.tag;
-      }
-      ch.localTonic = c.localTonic != null ? c.localTonic : state.tonic;
-      ch.localMode = c.localMode || state.mode;
-      return ch;
-    });
+    state.chords = (snap.chords || []).map((c) => sessionChordToLandscape(c));
     state.selected = snap.selected;
     state.title = snap.title;
     state.fromPackId = snap.fromPackId;
     state.cellId = snap.cellId;
+  }
+
+  /**
+   * Session / snapshot chord → Landscape chord object.
+   * Preserves free pitch sets (custom) instead of forcing a named triad.
+   */
+  function sessionChordToLandscape(sc) {
+    const notes = Array.isArray(sc.notes) ? sc.notes.map((n) => ((n % 12) + 12) % 12) : [];
+    const bassPc = sc.bass != null ? sc.bass : sc.bassPc;
+    let isCustom = !!sc.custom || sc.quality === 'custom';
+    // Notes present but not an exact named quality → keep as free pitch set
+    if (!isCustom && notes.length && S() && S().exactQualityFromNotes) {
+      if (!S().exactQualityFromNotes(notes, sc.root)) isCustom = true;
+    }
+    let ch;
+    if (isCustom) {
+      ch = M().makeCustomChord
+        ? M().makeCustomChord(sc.root, notes.length ? notes : [sc.root], {
+            duration: sc.duration != null ? sc.duration : 4,
+            roman: sc.roman || '',
+            region: sc.region || 'custom',
+            tag: sc.tag || 'custom',
+            name: sc.name,
+            bassPc,
+          })
+        : M().makeChord(sc.root, 'custom', {
+            notes: notes.length ? notes : [sc.root],
+            duration: sc.duration,
+            name: sc.name,
+            bassPc,
+          });
+    } else {
+      ch = M().makeChord(sc.root, sc.quality || 'maj', {
+        duration: sc.duration != null ? sc.duration : 4,
+        roman: sc.roman || '',
+        region: sc.region || 'diatonic',
+        tag: sc.tag || '',
+        bassPc,
+      });
+      if (notes.length) ch.notes = notes.slice();
+      if (bassPc != null && bassPc !== sc.root && C().withBass) {
+        ch = C().withBass(ch, bassPc);
+        ch.duration = sc.duration != null ? sc.duration : 4;
+        ch.roman = sc.roman || '';
+      }
+    }
+    ch.localTonic = sc.localTonic != null ? sc.localTonic : state.tonic;
+    ch.localMode = sc.localMode || state.mode;
+    return ch;
   }
 
   function pushUndo() {
@@ -205,22 +237,7 @@
   /** Apply session chords (plain objects) into working Landscape chords */
   function applySessionChords(chords, meta) {
     meta = meta || {};
-    state.chords = (chords || []).map((sc) => {
-      let ch = M().makeChord(sc.root, sc.quality || 'maj', {
-        duration: sc.duration != null ? sc.duration : 4,
-        roman: sc.roman || '',
-        region: sc.region || 'diatonic',
-        tag: sc.tag || '',
-      });
-      if (sc.bass != null && sc.bass !== sc.root && C().withBass) {
-        ch = C().withBass(ch, sc.bass);
-        ch.duration = sc.duration != null ? sc.duration : 4;
-        ch.roman = sc.roman || '';
-      }
-      ch.localTonic = state.tonic;
-      ch.localMode = state.mode;
-      return ch;
-    });
+    state.chords = (chords || []).map((sc) => sessionChordToLandscape(sc));
     // Prefer explicit cell name from session — never overwrite with pack recognition
     if (meta.title) {
       state.title = meta.title;

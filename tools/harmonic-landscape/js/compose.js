@@ -91,9 +91,20 @@
 
   function formatChordName(chord) {
     const music = M();
+    const bass = chord.bassPc != null ? ((chord.bassPc % 12) + 12) % 12 : chord.root;
+    // Preserve free pitch-set labels (e.g. B·C·D·F#)
+    if (chord.custom || chord.quality === 'custom') {
+      let name =
+        chord.name && String(chord.name).indexOf('·') >= 0
+          ? chord.name.split('/')[0]
+          : (chord.notes || [])
+              .map((n) => music.noteName(((n % 12) + 12) % 12))
+              .join('·') || 'Custom ' + music.noteName(chord.root);
+      if (bass !== chord.root) name += '/' + music.noteName(bass);
+      return name;
+    }
     const q = music.QUALITIES[chord.quality] || music.QUALITIES.maj;
     let name = music.noteName(chord.root) + (q.symbol || q.label || '');
-    const bass = chord.bassPc != null ? ((chord.bassPc % 12) + 12) % 12 : chord.root;
     if (bass !== chord.root) name += '/' + music.noteName(bass);
     return name;
   }

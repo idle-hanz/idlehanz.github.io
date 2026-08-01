@@ -260,7 +260,65 @@
     return (prefix || 'cell') + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
   }
 
-  /** Normalize Landscape chord → session chord */
+  /** Normalize pitch-class list (unique, 0–11) */
+  function normalizePcs(notes) {
+    const out = [];
+    const seen = new Set();
+    (notes || []).forEach((n) => {
+      const p = ((Number(n) % 12) + 12) % 12;
+      if (seen.has(p)) return;
+      seen.add(p);
+      out.push(p);
+    });
+    return out;
+  }
+
+  /**
+   * Exact quality match only — extras (e.g. C in a B–D–F♯ set) must NOT
+   * collapse to "min". Returns quality id or null.
+   */
+  function exactQualityFromNotes(notes, root) {
+    const r = ((root % 12) + 12) % 12;
+    const set = new Set(normalizePcs(notes).map((n) => ((n - r) % 12 + 12) % 12));
+    // Known interval sets (must match exactly)
+    const catalog = [
+      ['min7', [0, 3, 7, 10]],
+      ['dom7', [0, 4, 7, 10]],
+      ['maj7', [0, 4, 7, 11]],
+      ['minmaj7', [0, 3, 7, 11]],
+      ['halfdim', [0, 3, 6, 10]],
+      ['dim7', [0, 3, 6, 9]],
+      ['maj9', [0, 2, 4, 7, 11]],
+      ['min9', [0, 2, 3, 7, 10]],
+      ['add9', [0, 2, 4, 7]],
+      ['dim', [0, 3, 6]],
+      ['aug', [0, 4, 8]],
+      ['min', [0, 3, 7]],
+      ['maj', [0, 4, 7]],
+      ['sus2', [0, 2, 7]],
+      ['sus4', [0, 5, 7]],
+    ];
+    for (let i = 0; i < catalog.length; i++) {
+      const q = catalog[i][0];
+      const ivs = catalog[i][1];
+      if (ivs.length !== set.size) continue;
+      if (ivs.every((iv) => set.has(iv))) return q;
+    }
+    return null;
+  }
+
+  /** Display name for an arbitrary pitch set */
+  function customChordLabel(root, notes) {
+    const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const r = ((root % 12) + 12) % 12;
+    const pcs = normalizePcs(notes);
+    if (!pcs.length) return 'Custom ' + NAMES[r];
+    // Order from root around the circle of pitch classes
+    pcs.sort((a, b) => ((a - r + 12) % 12) - ((b - r + 12) % 12));
+    return pcs.map((p) => NAMES[p]).join('·');
+  }
+
+  /** Normalize Landscape chord → session chord (preserves custom pitch sets) */
   function fromLandscapeChord(c) {
     const root = typeof c.root === 'number' ? ((c.root % 12) + 12) % 12 : pcFromName(c.root);
     const bass =
@@ -271,15 +329,33 @@
             ? ((c.bass % 12) + 12) % 12
             : pcFromName(c.bass)
           : root;
-    return {
+    const notes = normalizePcs(c.notes);
+    const isCustom =
+      !!c.custom ||
+      c.quality === 'custom' ||
+      (notes.length > 0 && !exactQualityFromNotes(notes, root));
+    const quality = isCustom
+      ? 'custom'
+      : c.quality && c.quality !== 'custom'
+        ? c.quality
+        : exactQualityFromNotes(notes, root) || 'maj';
+    const out = {
       root,
-      quality: c.quality || 'maj',
+      quality,
       duration: c.duration != null ? c.duration : 4,
       bass,
       roman: c.roman || '',
       region: c.region || '',
       tag: c.tag || '',
     };
+    if (notes.length) out.notes = notes;
+    if (isCustom) {
+      out.custom = true;
+      out.name = c.name || customChordLabel(root, notes.length ? notes : [root]);
+    } else if (c.name) {
+      out.name = c.name;
+    }
+    return out;
   }
 
   function pcFromName(name) {
@@ -293,6 +369,7 @@
   }
 
   function qualityToTypeIdx(q) {
+    if (q === 'custom') return 1; // UI fallback only; tones come from notes
     if (QUALITY_TO_TYPE[q] != null) return QUALITY_TO_TYPE[q];
     if (q && q.indexOf('min') === 0) return 1;
     if (q && q.indexOf('maj') === 0) return 0;
@@ -307,22 +384,58 @@
   /**
    * Session chords → fretboard progression slots
    * Requires fretboard newSlot / chordTypes available if enriching bass tone idx.
+   * Custom / free pitch sets restore as mode: 'custom' with exact notes.
    */
   function chordsToFretboardSlots(chords, newSlotFn, chordTypes) {
     return (chords || []).map((ch) => {
+      const notes = normalizePcs(ch.notes);
       const root = ((ch.root % 12) + 12) % 12;
-      const typeIdx = qualityToTypeIdx(ch.quality);
-      const slot = newSlotFn ? newSlotFn(root, typeIdx) : { root, typeIdx, mode: 'named', customNotes: [0, 4, 7], customRoot: root, bassMode: 'root', bassToneIdx: 0, bassNote: root, visible: true };
-      slot.mode = 'named';
+      const isCustom =
+        !!ch.custom ||
+        ch.quality === 'custom' ||
+        (notes.length > 0 && !exactQualityFromNotes(notes, root));
+      // Fallback named type for UI chrome; custom mode uses customNotes for tones
+      const guessed =
+        (!isCustom && ch.quality && ch.quality !== 'custom'
+          ? ch.quality
+          : exactQualityFromNotes(notes, root)) ||
+        guessQualityFromIntervals(notes.length ? notes : [root], root);
+      const typeIdx = qualityToTypeIdx(isCustom ? guessed : ch.quality || guessed);
+      const slot = newSlotFn
+        ? newSlotFn(root, typeIdx)
+        : {
+            root,
+            typeIdx,
+            mode: 'named',
+            customNotes: [0, 4, 7],
+            customRoot: root,
+            bassMode: 'root',
+            bassToneIdx: 0,
+            bassNote: root,
+            visible: true,
+          };
       slot.root = root;
       slot.typeIdx = typeIdx;
+
+      if (isCustom) {
+        slot.mode = 'custom';
+        slot.customRoot = root;
+        slot.customNotes = notes.length ? notes.slice() : [root];
+        if (slot.customNotes.indexOf(root) < 0) slot.customNotes.push(root);
+      } else {
+        slot.mode = 'named';
+      }
+
       const bass = ch.bass != null ? ((ch.bass % 12) + 12) % 12 : root;
       if (bass === root) {
         slot.bassMode = 'root';
         slot.bassToneIdx = 0;
         slot.bassNote = root;
+      } else if (isCustom && slot.customNotes.indexOf(bass) >= 0) {
+        slot.bassMode = 'note';
+        slot.bassNote = bass;
+        slot.bassToneIdx = 0;
       } else {
-        // Prefer chord-tone inversion if possible
         let intervals = [0, 4, 7];
         if (chordTypes && chordTypes[typeIdx]) intervals = chordTypes[typeIdx].intervals;
         const toneIdx = intervals.findIndex((iv) => (root + iv) % 12 === bass);
@@ -343,10 +456,10 @@
     });
   }
 
-  /** Fretboard progression → session chords */
+  /** Fretboard progression → session chords (keeps custom pitch sets intact) */
   function fretboardSlotsToChords(progression, chordTypes) {
     return (progression || []).map((s) => {
-      const root = ((s.root % 12) + 12) % 12;
+      let root = ((s.root % 12) + 12) % 12;
       let quality = typeIdxToQuality(s.typeIdx);
       let bass = root;
       if (s.bassMode === 'chordTone' && chordTypes && chordTypes[s.typeIdx]) {
@@ -355,11 +468,48 @@
       } else if (s.bassMode === 'note') {
         bass = ((s.bassNote % 12) + 12) % 12;
       }
+
       if (s.mode === 'custom' && Array.isArray(s.customNotes)) {
-        // Keep as min/maj-ish from intervals if possible
-        quality = guessQualityFromIntervals(s.customNotes, s.customRoot != null ? s.customRoot : root);
+        root = s.customRoot != null ? ((s.customRoot % 12) + 12) % 12 : root;
+        const notes = normalizePcs(s.customNotes);
+        if (notes.indexOf(root) < 0) notes.push(root);
+        const exact = exactQualityFromNotes(notes, root);
+        if (exact) {
+          // True named chord (notes match a quality exactly)
+          return {
+            root,
+            quality: exact,
+            duration: s._duration != null ? s._duration : 4,
+            bass,
+            roman: s._roman || '',
+            region: '',
+            tag: 'fretboard',
+            notes,
+          };
+        }
+        // Free pitch set — never force B·C·D·F# → Bm
+        return {
+          root,
+          quality: 'custom',
+          custom: true,
+          notes,
+          name: customChordLabel(root, notes),
+          duration: s._duration != null ? s._duration : 4,
+          bass,
+          roman: s._roman || '',
+          region: 'custom',
+          tag: 'custom',
+        };
       }
-      return {
+
+      // Named chord — still attach derived notes when chordTypes known
+      let notes = null;
+      if (chordTypes && chordTypes[s.typeIdx]) {
+        notes = normalizePcs(
+          chordTypes[s.typeIdx].intervals.map((iv) => (root + iv) % 12)
+        );
+      }
+      const out = {
         root,
         quality,
         duration: s._duration != null ? s._duration : 4,
@@ -368,11 +518,16 @@
         region: '',
         tag: 'fretboard',
       };
+      if (notes && notes.length) out.notes = notes;
+      return out;
     });
   }
 
+  /** Loose guess only for UI typeIdx fallback — not for round-trip identity */
   function guessQualityFromIntervals(notes, root) {
-    const set = new Set(notes.map((n) => ((n - root) % 12 + 12) % 12));
+    const set = new Set(
+      normalizePcs(notes).map((n) => ((n - root) % 12 + 12) % 12)
+    );
     const has = (x) => set.has(x);
     if (has(3) && has(7) && has(10)) return 'min7';
     if (has(4) && has(7) && has(10)) return 'dom7';
@@ -387,7 +542,7 @@
     return 'maj';
   }
 
-  /** Compact handoff for URL hash */
+  /** Compact handoff for URL hash (includes pitch sets for custom chords) */
   function buildHandoffPayload(opts) {
     return {
       v: 1,
@@ -400,26 +555,45 @@
       cellId: opts.cellId || null,
       cellName: opts.cellName || 'Cell',
       focus: opts.focus != null ? opts.focus : 0,
-      chords: (opts.chords || []).map((c) => ({
-        r: c.root,
-        q: c.quality,
-        d: c.duration != null ? c.duration : 4,
-        b: c.bass != null ? c.bass : c.root,
-        n: c.roman || '',
-      })),
+      chords: (opts.chords || []).map((c) => {
+        const row = {
+          r: c.root,
+          q: c.quality,
+          d: c.duration != null ? c.duration : 4,
+          b: c.bass != null ? c.bass : c.root,
+          n: c.roman || '',
+        };
+        const notes = normalizePcs(c.notes);
+        if (notes.length) row.p = notes;
+        if (c.custom || c.quality === 'custom') {
+          row.c = 1;
+          row.nm = c.name || customChordLabel(c.root, notes.length ? notes : [c.root]);
+        }
+        return row;
+      }),
     };
   }
 
   function expandHandoffChords(compact) {
-    return (compact.chords || []).map((c) => ({
-      root: c.r,
-      quality: c.q,
-      duration: c.d != null ? c.d : 4,
-      bass: c.b != null ? c.b : c.r,
-      roman: c.n || '',
-      region: '',
-      tag: 'handoff',
-    }));
+    return (compact.chords || []).map((c) => {
+      const notes = normalizePcs(c.p);
+      const isCustom = !!c.c || c.q === 'custom';
+      const out = {
+        root: c.r,
+        quality: isCustom ? 'custom' : c.q,
+        duration: c.d != null ? c.d : 4,
+        bass: c.b != null ? c.b : c.r,
+        roman: c.n || '',
+        region: isCustom ? 'custom' : '',
+        tag: isCustom ? 'custom' : 'handoff',
+      };
+      if (notes.length) out.notes = notes;
+      if (isCustom) {
+        out.custom = true;
+        out.name = c.nm || customChordLabel(c.r, notes.length ? notes : [c.r]);
+      }
+      return out;
+    });
   }
 
   function encodeHandoff(payload) {
@@ -718,6 +892,9 @@
     pcFromName,
     qualityToTypeIdx,
     typeIdxToQuality,
+    exactQualityFromNotes,
+    customChordLabel,
+    normalizePcs,
     chordsToFretboardSlots,
     fretboardSlotsToChords,
     buildHandoffPayload,
