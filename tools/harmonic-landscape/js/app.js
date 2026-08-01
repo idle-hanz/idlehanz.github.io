@@ -979,39 +979,109 @@
     refreshAll();
   }
 
-  function commitHorizon(item) {
+  /**
+   * Horizon pick = "where do I go from the selected chord?"
+   *
+   * Default (auto):
+   *   - something after selection → replace next step(s)  (edit the continuation)
+   *   - selected is last / none   → append               (compose forward)
+   * Shift-click → always insert after selection (leave the rest intact).
+   *
+   * Cadence / modulate multi-chord routes write the whole path the same way.
+   */
+  function commitHorizon(item, opts) {
+    opts = opts || {};
     pushUndo();
-    const ch = M().cloneChord(item.chord);
-    ch.duration = item.chord.duration || 4;
-    ch.tag = item.kind;
-    ch.region = item.chord.region || regionFromKind(item.kind);
-    ch.localTonic = state.tonic;
-    ch.localMode = state.mode;
-    // If cadence route with multiple chords stored in meta
-    if (item.route && item.route.length) {
-      item.route.forEach((c) => {
-        const x = M().cloneChord(c);
-        x.duration = c.duration || 2;
-        x.localTonic = state.tonic;
-        x.localMode = state.mode;
-        state.chords.push(x);
-      });
-    } else {
-      state.chords.push(ch);
+
+    const pieces = horizonPieces(item);
+    if (!pieces.length) return;
+
+    const sel =
+      state.selected >= 0 && state.selected < state.chords.length
+        ? state.selected
+        : state.chords.length - 1;
+    const after = sel + 1; // write starting here
+    const hasNext = after >= 0 && after < state.chords.length;
+
+    // mode: 'replace' | 'insert' | 'append'
+    let mode = opts.mode;
+    if (!mode || mode === 'auto') {
+      if (opts.insert) mode = 'insert';
+      else if (hasNext) mode = 'replace';
+      else mode = 'append';
     }
+
+    let writeAt = after < 0 ? 0 : after;
+    if (mode === 'append') writeAt = state.chords.length;
+
+    if (mode === 'replace' && hasNext) {
+      // Overwrite following steps; keep their durations so the strip length holds
+      for (let i = 0; i < pieces.length; i++) {
+        const pos = after + i;
+        if (pos < state.chords.length) {
+          const oldDur = state.chords[pos].duration || 4;
+          pieces[i].duration = oldDur;
+          state.chords[pos] = pieces[i];
+        } else {
+          state.chords.push(pieces[i]);
+        }
+      }
+      writeAt = after;
+    } else if (mode === 'insert') {
+      // Slide existing next chord(s) right — add between selection and what followed
+      state.chords.splice(writeAt, 0, ...pieces);
+    } else {
+      // Append at end
+      pieces.forEach((p) => state.chords.push(p));
+      writeAt = state.chords.length - pieces.length;
+    }
+
     // Modulation: update home if marked
     if (item.modulateTo) {
       state.tonic = item.modulateTo.tonic;
       state.mode = item.modulateTo.mode;
-      $('#tonic').value = String(state.tonic);
-      $('#mode').value = state.mode;
-      map.setOrigin(state.tonic, state.mode);
+      if ($('#tonic')) $('#tonic').value = String(state.tonic);
+      if ($('#mode')) $('#mode').value = state.mode;
+      if (map) map.setOrigin(state.tonic, state.mode);
     }
-    state.selected = state.chords.length - 1;
+
+    state.selected = Math.min(writeAt + pieces.length - 1, state.chords.length - 1);
     state.fromPackId = null;
     afterEdit();
     A().ensure();
     A().playChord({ chord: state.chords[state.selected] });
+
+    const labels = pieces.map((p) => p.name).join(' → ');
+    const where =
+      mode === 'replace'
+        ? 'replaced next'
+        : mode === 'insert'
+          ? 'inserted after step ' + (sel + 1)
+          : 'appended';
+    setSyncStatus(where + ': ' + labels + (item.job ? ' · ' + item.job : ''));
+  }
+
+  /** Build the chord(s) a horizon item would write into the sequence. */
+  function horizonPieces(item) {
+    const region = item.chord && (item.chord.region || regionFromKind(item.kind));
+    if (item.route && item.route.length) {
+      return item.route.map((c, i) => {
+        const x = M().cloneChord(c);
+        x.duration = c.duration || (i === item.route.length - 1 ? 4 : 2);
+        x.tag = item.kind || x.tag || 'horizon';
+        x.region = x.region || region;
+        x.localTonic = state.tonic;
+        x.localMode = state.mode;
+        return x;
+      });
+    }
+    const ch = M().cloneChord(item.chord);
+    ch.duration = item.chord.duration || 4;
+    ch.tag = item.kind || 'horizon';
+    ch.region = region;
+    ch.localTonic = state.tonic;
+    ch.localMode = state.mode;
+    return [ch];
   }
 
   function regionFromKind(kind) {
@@ -1572,18 +1642,28 @@
     Object.values(groups).forEach((el) => {
       if (el) el.innerHTML = '';
     });
+    const hasNext =
+      state.selected >= 0 && state.selected < state.chords.length - 1;
+    const tipDefault = hasNext
+      ? 'Click = replace next step · Shift+click = insert between'
+      : 'Click = append after selection · Shift+click = insert after';
+
     items.forEach((it) => {
       const host = groups[it.kind];
       if (!host) return;
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'hz kind-' + it.kind;
+      b.title = tipDefault;
       b.innerHTML = `<strong>${it.label}</strong><span>${it.job || it.chord.name}</span>`;
       b.addEventListener('mouseenter', () => {
         A().ensure();
         A().playChord({ chord: it.chord, soft: true, duration: 0.4 });
       });
-      b.addEventListener('click', () => commitHorizon(it));
+      b.addEventListener('click', (e) => {
+        // Shift = insert between (non-destructive). Default = replace next / append.
+        commitHorizon(it, { insert: !!(e && e.shiftKey) });
+      });
       host.appendChild(b);
     });
   }
