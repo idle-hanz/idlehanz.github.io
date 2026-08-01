@@ -13,6 +13,12 @@
   let selectedSecId = null;
   let dragFrom = null;
   let playing = false;
+  /** Flattened playback cursor */
+  let playList = []; // { chord objects for audio + meta }
+  let playIndex = -1;
+  let playStartOffset = 0; // index into flat list when "from section"
+  let playAccumBeats = 0;
+  let playTotalBeats = 0;
 
   const SECTION_NAMES = ['Intro', 'Verse', 'Chorus', 'Bridge', 'Outro', 'Break', 'Solo'];
 
@@ -547,41 +553,213 @@
   }
 
   // ─── Play / export ───────────────────────────────────────
-  function playSong() {
+  function sessionChordToPlayable(c) {
+    let ch = M().makeChord(c.root, c.quality || 'maj', { duration: c.duration || 4 });
+    if (c.bass != null && c.bass !== c.root && window.HLCompose && HLCompose.withBass) {
+      ch = HLCompose.withBass(ch, c.bass);
+      ch.duration = c.duration || 4;
+    }
+    ch._section = c._section || '';
+    ch._cell = c._cell || '';
+    ch._seam = !!c._seam;
+    ch._rep = c._rep;
+    ch._version = c._version;
+    return ch;
+  }
+
+  function buildPlayList(fromSectionId) {
+    const flat = S().flattenArrangement(song);
+    if (!flat.length) return { list: [], start: 0, totalBeats: 0 };
+
+    let start = 0;
+    if (fromSectionId) {
+      const sec = song.arrangement.find((s) => s.id === fromSectionId);
+      const name = sec ? sec.name : null;
+      if (name) {
+        const idx = flat.findIndex((c) => c._section === name && !c._seam);
+        if (idx >= 0) start = idx;
+      }
+    }
+
+    let totalBeats = 0;
+    const list = flat.map((c) => {
+      totalBeats += c.duration || 4;
+      return sessionChordToPlayable(c);
+    });
+    // beats before start
+    let pre = 0;
+    for (let i = 0; i < start; i++) pre += list[i].duration || 4;
+
+    return { list, start, totalBeats, preBeats: pre };
+  }
+
+  function formatTime(beats, bpm) {
+    const sec = (beats * 60) / (bpm || 96);
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  function updatePositionUI(index, ch) {
+    const bpm = song.bpm || 96;
+    const loop = $('#play-loop') && $('#play-loop').checked;
+
+    if (index < 0 || !ch) {
+      $('#pos-main').textContent = playing ? 'Playing…' : 'Stopped';
+      $('#pos-sub').textContent = '—';
+      $('#pos-bar-fill').style.width = '0%';
+      $('#pos-bar-head').style.left = '0%';
+      $('#pos-time').textContent = '0:00 / ' + formatTime(playTotalBeats, bpm);
+      const ph = $('#tl-playhead');
+      if (ph) {
+        ph.classList.remove('on');
+        ph.style.left = '0%';
+      }
+      document.querySelectorAll('tr.playing-sec').forEach((tr) => tr.classList.remove('playing-sec'));
+      return;
+    }
+
+    // Accumulated beats at start of this chord
+    let acc = playAccumBeats;
+    const pct = playTotalBeats > 0 ? Math.min(100, (acc / playTotalBeats) * 100) : 0;
+    const endPct =
+      playTotalBeats > 0
+        ? Math.min(100, ((acc + (ch.duration || 4)) / playTotalBeats) * 100)
+        : 0;
+
+    const secLabel = ch._seam ? 'Seam' : ch._section || '—';
+    const cellLabelTxt = ch._cell || '';
+    const chordName = ch.name || '';
+    const n = index + 1;
+    const total = playList.length;
+
+    $('#pos-main').textContent = `${secLabel}${cellLabelTxt && !ch._seam ? ' · ' + cellLabelTxt : ''} · ${chordName}`;
+    $('#pos-sub').textContent = `Chord ${n} of ${total}${ch._seam ? ' · transition' : ''}${loop ? ' · LOOP' : ''}`;
+    $('#pos-bar-fill').style.width = endPct + '%';
+    $('#pos-bar-head').style.left = pct + '%';
+    $('#pos-time').textContent =
+      formatTime(acc, bpm) + ' / ' + formatTime(playTotalBeats, bpm);
+
+    const ph = $('#tl-playhead');
+    if (ph) {
+      ph.classList.add('on');
+      ph.style.left = pct + '%';
+    }
+
+    // Highlight section row
+    document.querySelectorAll('tr.playing-sec').forEach((tr) => tr.classList.remove('playing-sec'));
+    if (ch._section && !ch._seam) {
+      document.querySelectorAll('#form-body tr[data-id]').forEach((tr) => {
+        const sec = song.arrangement.find((s) => s.id === tr.dataset.id);
+        if (sec && sec.name === ch._section) tr.classList.add('playing-sec');
+      });
+    }
+
+    // Select section in UI for context
+    if (ch._section && !ch._seam) {
+      const sec = song.arrangement.find((s) => s.name === ch._section);
+      if (sec && sec.id !== selectedSecId) {
+        selectedSecId = sec.id;
+        // light update of focus strip without full re-render (avoids killing play)
+        const chain = S().sectionChain(sec);
+        const names = chain.map((id) => (song.cells[id] ? song.cells[id].name : '?')).join(' → ');
+        $('#focus-title').textContent = `▶ ${sec.name} · ${names}`;
+      }
+    }
+  }
+
+  function stopPlay() {
+    if (A() && A().stopPlayback) A().stopPlayback();
+    playing = false;
+    playIndex = -1;
+    playList = [];
+    playAccumBeats = 0;
+    updateTransportButtons();
+    updatePositionUI(-1, null);
+  }
+
+  function updateTransportButtons() {
+    const playBtn = $('#btn-play');
+    if (playBtn) playBtn.textContent = playing ? '▶ Playing…' : '▶ Play';
+    const stopBtn = $('#btn-stop');
+    if (stopBtn) stopBtn.disabled = !playing;
+  }
+
+  function startPlay(fromSection) {
     if (!A() || !M()) {
       alert('Audio/music engines not loaded.');
       return;
     }
-    if (A().isPlaying && A().isPlaying()) {
-      A().stopPlayback();
-      playing = false;
-      $('#btn-play').textContent = 'Play song';
-      return;
+    if (playing) {
+      stopPlay();
+      // if was playing, stop only (second click on play while playing = stop via dedicated stop)
     }
-    const flat = S().flattenArrangement(song);
-    if (!flat.length) {
+
+    const fromId = fromSection ? selectedSecId : null;
+    const built = buildPlayList(fromId);
+    if (!built.list.length) {
       alert('Nothing to play — add sections with chords.');
       return;
     }
-    const chords = flat.map((c) => {
-      let ch = M().makeChord(c.root, c.quality || 'maj', { duration: c.duration || 4 });
-      if (c.bass != null && c.bass !== c.root && window.HLCompose && HLCompose.withBass) {
-        ch = HLCompose.withBass(ch, c.bass);
-        ch.duration = c.duration || 4;
-      }
-      return ch;
-    });
+
+    playList = built.list;
+    playStartOffset = built.start || 0;
+    playTotalBeats = built.totalBeats;
+    playAccumBeats = built.preBeats || 0;
+
+    // Slice from start for playback
+    const slice = playList.slice(playStartOffset);
+    // Recompute total for progress within full song still uses playTotalBeats
+    // But position index needs offset
+    const bpm = song.bpm || 96;
+    const loop = $('#play-loop') && $('#play-loop').checked;
+    const pulse = !$('#play-pulse') || $('#play-pulse').checked;
+
     A().ensure();
     playing = true;
-    $('#btn-play').textContent = 'Stop';
-    A().playSequence(chords, song.bpm || 96, {
-      loop: false,
-      pulse: true,
+    updateTransportButtons();
+
+    let localI = 0;
+    A().playSequence(slice, bpm, {
+      loop: !!loop,
+      pulse: !!pulse,
+      onStep: (i, ch) => {
+        playIndex = playStartOffset + i;
+        // beats at start of this chord = pre + sum of slice[0..i)
+        let acc = built.preBeats || 0;
+        for (let k = 0; k < i; k++) acc += slice[k].duration || 4;
+        playAccumBeats = acc;
+        updatePositionUI(playIndex, ch);
+        localI = i;
+      },
+      onLoop: () => {
+        playAccumBeats = built.preBeats || 0;
+      },
       onEnd: () => {
         playing = false;
-        $('#btn-play').textContent = 'Play song';
+        playIndex = -1;
+        updateTransportButtons();
+        updatePositionUI(-1, null);
+        $('#pos-main').textContent = 'Finished';
       },
     });
+  }
+
+  function playSong() {
+    if (playing) {
+      stopPlay();
+      return;
+    }
+    startPlay(false);
+  }
+
+  function playFromSection() {
+    if (!selectedSecId) {
+      alert('Select a section in the form first.');
+      return;
+    }
+    if (playing) stopPlay();
+    startPlay(true);
   }
 
   function exportMidi() {
@@ -721,8 +899,23 @@
       else if (song.focus && song.focus.cellId) openFretboardForCell(song.focus.cellId);
     });
     $('#btn-play').addEventListener('click', playSong);
+    if ($('#btn-play-from')) $('#btn-play-from').addEventListener('click', playFromSection);
+    if ($('#btn-stop')) $('#btn-stop').addEventListener('click', stopPlay);
     $('#btn-midi').addEventListener('click', exportMidi);
     $('#btn-text').addEventListener('click', exportText);
+    updateTransportButtons();
+    updatePositionUI(-1, null);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.target.matches('input, textarea, select')) return;
+      if (e.key === ' ') {
+        e.preventDefault();
+        if (playing) stopPlay();
+        else playSong();
+      } else if (e.key === 'Escape') {
+        stopPlay();
+      }
+    });
 
     // Refresh when returning focus to window (after Landscape edit)
     window.addEventListener('focus', () => {

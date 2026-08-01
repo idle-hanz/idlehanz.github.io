@@ -17,7 +17,40 @@
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); }
-    .app { height: 100vh; display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; }
+    .app { height: 100vh; display: grid; grid-template-rows: auto auto 1fr auto; overflow: hidden; }
+    .transport {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.65rem 1rem;
+      padding: 0.5rem 1rem; border-bottom: 1px solid var(--line);
+      background: #0e0c0a;
+    }
+    .transport-btns { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+    .transport-pos { min-width: 12rem; flex: 1; }
+    .pos-main { font-weight: 700; font-size: 0.95rem; color: var(--gold2); }
+    .pos-sub { font-size: 0.78rem; color: var(--muted); margin-top: 0.1rem; font-family: var(--serif); font-style: italic; }
+    .transport-meter { flex: 1.2; min-width: 10rem; max-width: 22rem; }
+    .pos-bar-track {
+      position: relative; height: 10px; background: #1a1612; border-radius: 99px;
+      border: 1px solid var(--line); overflow: hidden; cursor: default;
+    }
+    .pos-bar-fill {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+      background: linear-gradient(90deg, #6b5344, var(--gold));
+      border-radius: 99px; transition: width 0.08s linear;
+    }
+    .pos-bar-head {
+      position: absolute; top: -3px; width: 4px; height: 14px; margin-left: -2px;
+      background: var(--gold2); border-radius: 2px; left: 0%;
+      box-shadow: 0 0 6px rgba(232,201,138,0.6); transition: left 0.08s linear;
+    }
+    .pos-time { font-size: 0.72rem; color: var(--muted); margin-top: 0.25rem; font-variant-numeric: tabular-nums; }
+    tr.playing-sec { outline: 1px solid rgba(232,201,138,0.45); background: rgba(196,165,116,0.1); }
+    .tl-playhead-wrap { position: relative; height: 0; }
+    .tl-playhead {
+      position: absolute; top: -30px; width: 2px; height: 30px; background: #fff4d6;
+      left: 0%; margin-left: -1px; opacity: 0; pointer-events: none;
+      box-shadow: 0 0 8px rgba(255,244,214,0.8);
+    }
+    .tl-playhead.on { opacity: 1; }
     header {
       display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.85rem;
       padding: 0.55rem 1rem; border-bottom: 1px solid var(--line);
@@ -125,11 +158,31 @@
         <span class="status" id="key-label">B minor</span>
         <button type="button" class="btn" id="btn-landscape">Landscape</button>
         <button type="button" class="btn" id="btn-fretboard">Fretboard</button>
-        <button type="button" class="btn primary" id="btn-play">Play song</button>
         <button type="button" class="btn primary" id="btn-midi">Export MIDI</button>
         <button type="button" class="btn" id="btn-text">Export text</button>
       </div>
     </header>
+
+    <div class="transport" id="transport">
+      <div class="transport-btns">
+        <button type="button" class="btn primary" id="btn-play" title="Play from start">▶ Play</button>
+        <button type="button" class="btn" id="btn-play-from" title="Play from selected section">From section</button>
+        <button type="button" class="btn" id="btn-stop" title="Stop">■ Stop</button>
+        <label class="ctl"><input type="checkbox" id="play-loop"> Loop</label>
+        <label class="ctl"><input type="checkbox" id="play-pulse" checked> Pulse</label>
+      </div>
+      <div class="transport-pos">
+        <div class="pos-main" id="pos-main">Stopped</div>
+        <div class="pos-sub" id="pos-sub">—</div>
+      </div>
+      <div class="transport-meter">
+        <div class="pos-bar-track" id="pos-bar-track" title="Song position">
+          <div class="pos-bar-fill" id="pos-bar-fill"></div>
+          <div class="pos-bar-head" id="pos-bar-head"></div>
+        </div>
+        <div class="pos-time" id="pos-time">0:00 / 0:00</div>
+      </div>
+    </div>
 
     <main>
       <aside class="col">
@@ -168,6 +221,7 @@
         <div class="timeline">
           <h2>Timeline</h2>
           <div class="tl-bar" id="tl-bar"></div>
+          <div class="tl-playhead-wrap"><div class="tl-playhead" id="tl-playhead"></div></div>
           <div class="tl-meta" id="tl-meta">0 bars</div>
         </div>
 
