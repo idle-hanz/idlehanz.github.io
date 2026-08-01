@@ -46,15 +46,18 @@
     this.onHoverHorizon = null;
     this.onRequestAlts = null;
     this.onSwapChord = null;
-    this.onPullChord = null; // (pathIndex, {x,y}, origin{x,y}, snappedChord|null) => void
+    this.onPullChord = null; // (pathIndex, chord, meta) only when aimed at a target
+    this.onAimChange = null; // (pathIndex, target|{null}, meta) for live audition
     this.onInsertBetween = null; // (afterIndex) => void
     this.onTrajectory = null; // (caption) => void
+    this.snapRadius = 36; // must aim within this to lock a target
     this._mode = null;
     this._dragNode = null;
     this._dragOrigin = null; // original node world pos
     this._dragPos = null;
     this._last = null;
     this._moved = false;
+    this._aimPreview = null; // { chord, x, y, label, role }
     this._bind();
     this.resize();
   }
@@ -298,16 +301,43 @@
     if (this.onTrajectory) this.onTrajectory(this.analyzeTrajectory());
   };
 
+  /**
+   * Place aim targets at their true harmonic positions (where you should aim),
+   * with a small fan if two land on top of each other.
+   */
   SpatialMap.prototype._layoutAlts = function (pathIndex, alts) {
     const origin = this.nodes[pathIndex] || { x: 0, y: 0 };
-    const n = (alts || []).length || 1;
+    const used = [];
     this.alts = (alts || []).map((a, i) => {
-      const ang = -Math.PI / 2 + (i / n) * Math.PI * 2;
-      const rad = 48 + (i % 3) * 10;
       const natural = this._chordPos(a.chord, pathIndex, 0);
-      const x = origin.x * 0.25 + natural.x * 0.35 + Math.cos(ang) * rad;
-      const y = origin.y * 0.25 + natural.y * 0.35 + Math.sin(ang) * rad * 0.75;
-      return { chord: a.chord, label: a.label || a.chord.name, x, y, r: 13 };
+      let x = natural.x;
+      let y = natural.y;
+      // Nudge if colliding with another target or origin
+      used.forEach((u) => {
+        const d = Math.hypot(x - u.x, y - u.y);
+        if (d < 22) {
+          const ang = Math.atan2(y - origin.y, x - origin.x) + 0.35 * (i + 1);
+          x += Math.cos(ang) * 14;
+          y += Math.sin(ang) * 10;
+        }
+      });
+      // Keep a little clear of the original node
+      const d0 = Math.hypot(x - origin.x, y - origin.y);
+      if (d0 < 28) {
+        const ang = Math.atan2(y - origin.y, x - origin.x) || -Math.PI / 2 + i * 0.5;
+        x = origin.x + Math.cos(ang) * 40;
+        y = origin.y + Math.sin(ang) * 32;
+      }
+      const t = {
+        chord: a.chord,
+        label: a.label || a.chord.name,
+        role: a.role || '',
+        x,
+        y,
+        r: 15,
+      };
+      used.push(t);
+      return t;
     });
   };
 
@@ -420,8 +450,9 @@
       const w = this.screenToWorld(sx, sy);
       this._dragPos = { x: w.x, y: w.y };
       this._moved = true;
+      // Aim: only lock if magnet is within snapRadius of a target
       let best = null;
-      let bestD = 28 * 28;
+      let bestD = this.snapRadius * this.snapRadius;
       this.alts.forEach((a) => {
         const dx = w.x - a.x;
         const dy = w.y - a.y;
@@ -433,10 +464,17 @@
       });
       const prev = this.snapAlt;
       this.snapAlt = best;
-      if (best && best !== prev && this.onHoverHorizon) {
-        this.onHoverHorizon({ chord: best.chord, kind: 'alt', label: best.label });
+      this._aimPreview = best
+        ? { chord: best.chord, x: best.x, y: best.y, label: best.label, role: best.role || '' }
+        : null;
+      if (best !== prev && this.onAimChange) {
+        this.onAimChange(this._dragNode.i, best, {
+          prevChord: this.nodes[this._dragNode.i - 1] && this.nodes[this._dragNode.i - 1].chord,
+          nextChord: this.nodes[this._dragNode.i + 1] && this.nodes[this._dragNode.i + 1].chord,
+          originChord: this._dragNode.chord,
+        });
       }
-      this.canvas.style.cursor = 'grabbing';
+      this.canvas.style.cursor = best ? 'pointer' : 'grabbing';
       return;
     }
 
@@ -452,16 +490,25 @@
 
   SpatialMap.prototype._up = function () {
     if (this._mode === 'node' && this._dragNode) {
-      if (this._moved && (this.snapAlt || this.onPullChord)) {
-        const pos = this._dragPos || { x: this._dragNode.x, y: this._dragNode.y };
-        const origin = this._dragOrigin || { x: this._dragNode.x, y: this._dragNode.y };
-        const snapped = this.snapAlt ? this.snapAlt.chord : null;
-        if (this.onPullChord) {
-          this.onPullChord(this._dragNode.i, pos, origin, snapped);
-        } else if (snapped && this.onSwapChord) {
-          this.onSwapChord(this._dragNode.i, snapped);
+      if (this._moved) {
+        // Only commit if aimed at a target — no free-space "teleport"
+        if (this.snapAlt) {
+          const meta = {
+            prevChord: this.nodes[this._dragNode.i - 1] && this.nodes[this._dragNode.i - 1].chord,
+            nextChord: this.nodes[this._dragNode.i + 1] && this.nodes[this._dragNode.i + 1].chord,
+            pullNeighbors: false, // neighbor tug is explicit later / shift
+            role: this.snapAlt.role || '',
+          };
+          if (this.onPullChord) {
+            this.onPullChord(this._dragNode.i, this.snapAlt.chord, meta);
+          } else if (this.onSwapChord) {
+            this.onSwapChord(this._dragNode.i, this.snapAlt.chord);
+          }
+        } else if (this.onAimChange) {
+          // cancel aim
+          this.onAimChange(this._dragNode.i, null, {});
         }
-      } else if (!this._moved && this.onSelectPath) {
+      } else if (this.onSelectPath) {
         this.onSelectPath(this._dragNode.i, this._dragNode.chord);
       }
     }
@@ -472,6 +519,7 @@
     this._last = null;
     this.alts = [];
     this.snapAlt = null;
+    this._aimPreview = null;
     this.canvas.style.cursor = 'grab';
   };
 
@@ -670,22 +718,104 @@
       ctx.fill();
     }
 
-    // Drag alts
-    if (this._mode === 'node') {
+    // Aim mode: original stays put; targets + magnet + preview edges
+    if (this._mode === 'node' && this._dragNode) {
+      const origin = this._dragOrigin || { x: this._dragNode.x, y: this._dragNode.y };
+      const magnet = this._dragPos || origin;
+      const i = this._dragNode.i;
+
+      // Ghost original
+      ctx.beginPath();
+      ctx.arc(origin.x, origin.y, this._dragNode.r, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(232,201,138,0.35)';
+      ctx.lineWidth = 2 / this.camera.zoom;
+      ctx.setLineDash([4 / this.camera.zoom, 3 / this.camera.zoom]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(232,201,138,0.5)';
+      ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('from', origin.x, origin.y - this._dragNode.r - 8 / this.camera.zoom);
+
+      // Aim targets (always visible while dragging)
       this.alts.forEach((a) => {
         const isSnap = this.snapAlt === a;
+        // snap radius ring when close
+        if (isSnap) {
+          ctx.beginPath();
+          ctx.arc(a.x, a.y, this.snapRadius, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(125,186,146,0.35)';
+          ctx.lineWidth = 1.5 / this.camera.zoom;
+          ctx.stroke();
+        }
         ctx.beginPath();
-        ctx.arc(a.x, a.y, isSnap ? 16 : 12, 0, Math.PI * 2);
-        ctx.fillStyle = isSnap ? 'rgba(232,201,138,0.55)' : 'rgba(232,201,138,0.22)';
+        ctx.arc(a.x, a.y, isSnap ? 17 : 13, 0, Math.PI * 2);
+        ctx.fillStyle = isSnap ? 'rgba(125,186,146,0.55)' : 'rgba(232,201,138,0.2)';
         ctx.fill();
-        ctx.strokeStyle = isSnap ? '#fff4d6' : '#c4a574';
-        ctx.lineWidth = (isSnap ? 2.5 : 1.2) / this.camera.zoom;
+        ctx.strokeStyle = isSnap ? '#9ddea8' : '#c4a574';
+        ctx.lineWidth = (isSnap ? 2.8 : 1.4) / this.camera.zoom;
         ctx.stroke();
-        ctx.fillStyle = isSnap ? '#fff' : 'rgba(232,201,138,0.9)';
-        ctx.font = `${10 / this.camera.zoom}px DM Sans, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.fillText(a.label, a.x, a.y + 22 / this.camera.zoom);
+        ctx.fillStyle = isSnap ? '#fff' : 'rgba(232,201,138,0.95)';
+        ctx.font = `bold ${10 / this.camera.zoom}px DM Sans, sans-serif`;
+        ctx.fillText(a.label, a.x, a.y + 1);
+        if (a.role) {
+          ctx.fillStyle = 'rgba(180,168,150,0.85)';
+          ctx.font = `${8 / this.camera.zoom}px DM Sans, sans-serif`;
+          ctx.fillText(a.role, a.x, a.y + 20 / this.camera.zoom);
+        }
       });
+
+      // Magnet (where you're aiming — not a chord yet)
+      ctx.beginPath();
+      ctx.arc(magnet.x, magnet.y, 6 / this.camera.zoom, 0, Math.PI * 2);
+      ctx.fillStyle = this.snapAlt ? 'rgba(125,186,146,0.9)' : 'rgba(255,255,255,0.45)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(origin.x, origin.y);
+      ctx.lineTo(magnet.x, magnet.y);
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 1.2 / this.camera.zoom;
+      ctx.setLineDash([3 / this.camera.zoom, 3 / this.camera.zoom]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Preview path through aimed target
+      if (this.snapAlt) {
+        const t = this.snapAlt;
+        const prevN = this.nodes[i - 1];
+        const nextN = this.nodes[i + 1];
+        ctx.strokeStyle = 'rgba(125,186,146,0.75)';
+        ctx.lineWidth = 2.8 / this.camera.zoom;
+        if (prevN) {
+          ctx.beginPath();
+          ctx.moveTo(prevN.x, prevN.y);
+          ctx.lineTo(t.x, t.y);
+          ctx.stroke();
+        }
+        if (nextN) {
+          ctx.beginPath();
+          ctx.moveTo(t.x, t.y);
+          ctx.lineTo(nextN.x, nextN.y);
+          ctx.stroke();
+        }
+        // Preview node
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, this._dragNode.r * 1.05, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(125,186,146,0.35)';
+        ctx.fill();
+        ctx.strokeStyle = '#9ddea8';
+        ctx.lineWidth = 2 / this.camera.zoom;
+        ctx.stroke();
+      }
+
+      // HUD in world space near magnet
+      ctx.fillStyle = this.snapAlt ? 'rgba(157,222,168,0.95)' : 'rgba(255,255,255,0.55)';
+      ctx.font = `${10 / this.camera.zoom}px DM Sans, sans-serif`;
+      ctx.fillText(
+        this.snapAlt ? 'Release → ' + this.snapAlt.label : 'Aim at a target…',
+        magnet.x,
+        magnet.y - 16 / this.camera.zoom
+      );
     }
 
     // Primary nodes
@@ -760,10 +890,12 @@
     ctx.textAlign = 'left';
     let tip =
       this._mode === 'node'
-        ? 'Drag onto gold alternate to swap'
+        ? this.snapAlt
+          ? 'Release to commit · green = aimed target (audition playing)'
+          : 'Aim magnet at a labelled target to audition · release outside = cancel'
         : this.hover && this.hover.type === 'edge'
-          ? 'Click edge to insert a chord between'
-          : 'Home-locked map · gold path · blue = variation · bright edges = swing/fifths';
+          ? 'Click edge to insert (steals time from neighbors)'
+          : 'Drag a chord → aim at targets · double-click time strip to split';
     ctx.fillText(tip, 10, h - 12);
 
     // Edge colour legend

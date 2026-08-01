@@ -114,42 +114,51 @@
       A().ensure();
       A().playChord({ chord: item.chord, soft: true, duration: 0.45 });
     };
-    map.onRequestAlts = (pathIndex, chord) => {
-      const alts = C().closeAlternates
-        ? C().closeAlternates(chord, state.tonic, state.mode, 8)
-        : [];
-      return alts.map((a) => ({
-        chord: { ...a.chord, duration: chord.duration || 4 },
-        label: a.label,
-      }));
-    };
+    map.onRequestAlts = (pathIndex, chord) => buildAimTargets(pathIndex, chord);
     map.onSwapChord = (pathIndex, newChord) => {
       applyChordAtIndex(pathIndex, newChord, { pullNeighbors: false });
     };
-    map.onPullChord = (pathIndex, pos, origin, snappedChord) => {
-      // Distance pulled in map units → how hard to tug neighbors
-      const dx = pos.x - origin.x;
-      const dy = pos.y - origin.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 8 && !snappedChord) {
-        // tiny move = treat as click already handled
+    // Only called when user released on a locked aim target
+    map.onPullChord = (pathIndex, chord, meta) => {
+      applyChordAtIndex(pathIndex, chord, {
+        pullNeighbors: !!(meta && meta.pullNeighbors),
+        pullStrength: 0.5,
+      });
+      setSyncStatus('Set to ' + (chord.name || '') + (meta && meta.role ? ' · ' + meta.role : ''));
+    };
+    let aimTimer = null;
+    map.onAimChange = (pathIndex, target, meta) => {
+      if (aimTimer) {
+        clearTimeout(aimTimer);
+        aimTimer = null;
+      }
+      if (!target) {
+        setSyncStatus('Aim cancelled');
         return;
       }
-      const nearest = snappedChord
-        ? { chord: snappedChord, dist: dist }
-        : map.nearestSensible(pos.x, pos.y, pathIndex);
-      if (!nearest || !nearest.chord) return;
-      // strength 0..1 (short drag = local swap; long drag = pull neighbors)
-      const strength = Math.min(1, dist / 70);
-      applyChordAtIndex(pathIndex, nearest.chord, {
-        pullNeighbors: strength >= 0.35,
-        pullStrength: strength,
-      });
-      setSyncStatus(
-        strength >= 0.35
-          ? 'Pulled chord + neighbors · ' + nearest.chord.name
-          : 'Moved to ' + nearest.chord.name
-      );
+      A().ensure();
+      // Immediate soft audition of aimed chord
+      A().playChord({ chord: target.chord, soft: true, duration: 0.55 });
+      setSyncStatus('Aim: ' + target.label + (target.role ? ' · ' + target.role : '') + ' — release to set');
+      // After a short hold, audition prev → target → next
+      aimTimer = setTimeout(() => {
+        if (!map.snapAlt || map.snapAlt !== target) return;
+        const seq = [];
+        if (meta && meta.prevChord) seq.push(meta.prevChord);
+        seq.push(target.chord);
+        if (meta && meta.nextChord) seq.push(meta.nextChord);
+        if (seq.length >= 2) {
+          A().playSequence(
+            seq.map((c) => {
+              const x = M().cloneChord(c);
+              x.duration = 1.5;
+              return x;
+            }),
+            Math.max(state.bpm, 100),
+            { pulse: false, loop: false }
+          );
+        }
+      }, 320);
     };
     map.onInsertBetween = (afterIndex) => {
       insertBetweenWithTiming(afterIndex);
@@ -435,6 +444,51 @@
     refreshAll();
     if (S()) pushToSharedSession('landscape');
     if (!opts || !opts.silent) playSeq({ once: true });
+  }
+
+  /**
+   * Build labelled aim targets for drag (where to aim + what it means).
+   */
+  function buildAimTargets(pathIndex, chord) {
+    const t = state.tonic;
+    const list = [];
+    const seen = new Set();
+    const add = (ch, label, role) => {
+      if (!ch) return;
+      const k = ch.root + ':' + ch.quality;
+      if (seen.has(k)) return;
+      if (ch.root === chord.root && ch.quality === chord.quality) return;
+      seen.add(k);
+      ch = { ...ch, duration: chord.duration || 4 };
+      list.push({ chord: ch, label: label || ch.name, role: role || '' });
+    };
+
+    // Close alternates (inversions / family)
+    if (C().closeAlternates) {
+      C().closeAlternates(chord, state.tonic, state.mode, 6).forEach((a) => {
+        add(a.chord, a.label, a.role || 'near');
+      });
+    }
+
+    // Diatonic set
+    if (M().diatonicChords) {
+      M().diatonicChords(t, state.mode, true).forEach((c) => add(c, c.name, 'diatonic'));
+    }
+
+    // Dark colours
+    [
+      { d: 8, q: 'maj', role: '♭VI' },
+      { d: 10, q: 'maj', role: '♭VII' },
+      { d: 1, q: 'dom7', role: 'noir ♭II7' },
+      { d: 7, q: 'dom7', role: 'V7' },
+      { d: 5, q: 'min', role: 'iv' },
+      { d: 3, q: 'maj', role: 'III' },
+    ].forEach((s) => {
+      add(M().makeChord((t + s.d) % 12, s.q, { region: 'interchange' }), null, s.role);
+    });
+
+    // Cap so the map stays readable
+    return list.slice(0, 12);
   }
 
   /**
@@ -1219,6 +1273,7 @@
       // Double-click: split this step (timing stays same total)
       btn.addEventListener('dblclick', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         splitChordAt(i);
       });
       host.appendChild(btn);
@@ -1432,6 +1487,7 @@
       <div class="bass-row" id="bass-row"></div>
       <div class="row" style="margin-top:0.5rem">
         <button type="button" class="btn ghost" id="insp-dup">Duplicate</button>
+        <button type="button" class="btn ghost" id="insp-split" title="Split duration in half">Split</button>
         <button type="button" class="btn ghost" id="insp-up">↑</button>
         <button type="button" class="btn ghost" id="insp-dn">↓</button>
       </div>
@@ -1465,6 +1521,9 @@
       btn.addEventListener('click', () => setDuration(parseFloat(btn.dataset.b)));
     });
     host.querySelector('#insp-dup').addEventListener('click', duplicateSelected);
+    if (host.querySelector('#insp-split')) {
+      host.querySelector('#insp-split').addEventListener('click', () => splitChordAt(state.selected));
+    }
     host.querySelector('#insp-up').addEventListener('click', () => moveSelected(-1));
     host.querySelector('#insp-dn').addEventListener('click', () => moveSelected(1));
   }
