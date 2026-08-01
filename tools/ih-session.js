@@ -142,11 +142,26 @@
     const fam = song.families[familyId];
     const nextIdx = (fam.versionIds || []).length + 1;
     const newId = newCellId('cell');
-    const baseName = (fam.name || src.name || 'Cell').replace(/\s*v\d+\s*$/i, '').trim();
+    // Family base without trailing "v2" / "· v1 Darken" clutter for storage
+    const baseName = (fam.name || src.name || 'Cell')
+      .replace(/\s*·\s*v\d+.*$/i, '')
+      .replace(/\s*v\d+\s*$/i, '')
+      .trim() || 'Cell';
     const chords = (opts.chords || src.chords || []).map((c) => ({ ...c }));
+    // Prefer caller name (e.g. "Home grit · v1 Darken"); else plain vN
+    let cellName = (opts.name && String(opts.name).trim()) || baseName + ' v' + nextIdx;
+    // Avoid duplicate display names in the song
+    const taken = new Set(
+      Object.keys(song.cells).map((id) => (song.cells[id].name || '').toLowerCase())
+    );
+    if (taken.has(cellName.toLowerCase())) {
+      let n = 2;
+      while (taken.has((cellName + ' ' + n).toLowerCase())) n += 1;
+      cellName = cellName + ' ' + n;
+    }
     song.cells[newId] = {
       id: newId,
-      name: opts.name || baseName + ' v' + nextIdx,
+      name: cellName,
       packId: src.packId || null,
       familyId,
       versionIndex: nextIdx,

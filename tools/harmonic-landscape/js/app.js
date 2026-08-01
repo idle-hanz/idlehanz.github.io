@@ -981,7 +981,14 @@
           '<span class="ver-n">v' +
           vi +
           '</span>' +
-          escapeHtml(label.replace(/\s*v\d+\s*$/i, '') || label) +
+          escapeHtml(
+            // Prefer short chip title: "v1 Darken" from "Theme · v1 Darken"
+            (() => {
+              const m = String(label).match(/·\s*(v\d+\s+.+)$/i);
+              if (m) return m[1].trim();
+              return label.replace(/\s*v\d+\s*$/i, '') || label;
+            })()
+          ) +
           '<span class="ver-preview">' +
           escapeHtml(cellPreviewLabel(c)) +
           (isCompare && !active ? ' · blue' : '') +
@@ -1268,6 +1275,39 @@
     };
   }
 
+  /** Human label for a vary kind */
+  function variationKindLabel(kind) {
+    const map = {
+      copy: 'Copy',
+      parallel: 'Parallel',
+      darken: 'Darken',
+      reharm: 'Reharm',
+    };
+    return map[kind] || String(kind || 'Var');
+  }
+
+  /**
+   * Name a new version from its source + transform, e.g. "Home grit · v1 Darken".
+   */
+  function nameForVariation(song, sourceCellId, kind) {
+    const src = song.cells[sourceCellId];
+    if (!src) return null;
+    const fam =
+      src.familyId && song.families[src.familyId] ? song.families[src.familyId] : null;
+    let base = (fam && fam.name) || src.name || state.title || 'Cell';
+    base = String(base)
+      .replace(/\s*·\s*v\d+.*$/i, '')
+      .replace(/\s*v\d+\s*$/i, '')
+      .trim() || 'Cell';
+    const srcV = src.versionIndex != null ? src.versionIndex : 1;
+    const kindLabel = variationKindLabel(kind);
+    // "Theme · v1 Darken" — clear lineage from which version was transformed
+    if (kind === 'copy') {
+      return base + ' · v' + srcV + ' Copy';
+    }
+    return base + ' · v' + srcV + ' ' + kindLabel;
+  }
+
   /**
    * Fork current sequence as a linked variation (same family).
    * kind: copy | reharm | parallel | darken
@@ -1357,7 +1397,11 @@
       });
     }
 
-    const newId = S().createVariation(song, state.cellId, { chords: newChords });
+    const varName = nameForVariation(song, state.cellId, kind);
+    const newId = S().createVariation(song, state.cellId, {
+      chords: newChords,
+      name: varName,
+    });
     if (!newId) return;
     // Keep previous as blue compare when forking
     state.compareCellId = state.cellId;
@@ -1380,8 +1424,8 @@
         ? ' (exact copy — tweak freely)'
         : kind === 'parallel'
           ? ' · parallel maj↔min (' + changed + ' flipped)'
-          : ' · ' + kind;
-    setSyncStatus('Created ' + cell.name + detail + ' · gold=this · blue=compare');
+          : ' · ' + variationKindLabel(kind);
+    setSyncStatus('Created “' + cell.name + '”' + detail + ' · gold=this · blue=compare');
     playSeq({ once: true, force: true });
   }
 
