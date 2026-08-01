@@ -1564,67 +1564,211 @@
     refreshAll();
   }
 
+  function beatSum(chords) {
+    return (chords || []).reduce((s, c) => s + (c.duration || 4), 0);
+  }
+
+  /** Split budget beats across n steps on a half-beat grid (exact total). */
+  function splitBudget(budget, n) {
+    n = Math.max(1, n | 0);
+    budget = Math.max(0.5 * n, budget);
+    const raw = budget / n;
+    const durs = [];
+    let used = 0;
+    for (let i = 0; i < n; i++) {
+      if (i === n - 1) {
+        durs.push(Math.max(0.5, snapBeats(budget - used)));
+      } else {
+        const d = Math.max(0.5, snapBeats(raw));
+        durs.push(d);
+        used += d;
+      }
+    }
+    // Fix drift so sum === budget
+    let sum = durs.reduce((a, b) => a + b, 0);
+    if (Math.abs(sum - budget) > 0.001) {
+      durs[n - 1] = Math.max(0.5, snapBeats(durs[n - 1] + (budget - sum)));
+      sum = durs.reduce((a, b) => a + b, 0);
+      // If still off due to snap, put remainder on last without re-snap below 0.5
+      if (Math.abs(sum - budget) > 0.001) {
+        durs[n - 1] = Math.max(0.5, durs[n - 1] + (budget - sum));
+      }
+    }
+    return durs;
+  }
+
+  /**
+   * Fit a horizon package into the cell without growing total length.
+   * - replace: rewrite continuation after `sel` using budget from the next step(s)
+   * - insert: splice after `sel`, stealing budget from neighbors
+   * - at end: steal budget from the last chord, then append package
+   * Returns { writeAt, pieces, mode, totalBefore, totalAfter }
+   */
+  function fitHorizonIntoSequence(sel, rawPieces, mode) {
+    const pieces = rawPieces.map((p) => M().cloneChord(p));
+    const totalBefore = beatSum(state.chords);
+    const n = pieces.length;
+    if (!n) return null;
+
+    let writeAt = Math.max(0, sel + 1);
+
+    if (mode === 'insert') {
+      // Steal budget from prev (sel) and next (sel+1), like map-edge insert
+      const needHint = Math.min(4, Math.max(1, n * 1.5));
+      let takePrev = 0;
+      let takeNext = 0;
+      const prev = state.chords[sel];
+      const next = state.chords[sel + 1];
+      const dp = prev ? prev.duration || 4 : 0;
+      const dn = next ? next.duration || 4 : 0;
+      if (prev && next && dp >= 2 && dn >= 2) {
+        takePrev = Math.min(needHint / 2, dp - 0.5);
+        takeNext = Math.min(needHint - takePrev, dn - 0.5);
+      } else if (prev && dp > 1) {
+        takePrev = Math.min(needHint, dp - 0.5);
+      } else if (next && dn > 1) {
+        takeNext = Math.min(needHint, dn - 0.5);
+      } else if (prev) {
+        takePrev = Math.min(0.5, Math.max(0, dp - 0.5));
+      }
+      let budget = snapBeats(takePrev + takeNext);
+      if (budget < 0.5 * n) {
+        // Force a little more from the richest neighbor
+        const rich = dp >= dn ? 'prev' : 'next';
+        if (rich === 'prev' && prev && dp - takePrev > 0.5) {
+          takePrev = Math.min(dp - 0.5, takePrev + (0.5 * n - budget));
+        } else if (next && dn - takeNext > 0.5) {
+          takeNext = Math.min(dn - 0.5, takeNext + (0.5 * n - budget));
+        }
+        budget = Math.max(0.5 * n, snapBeats(takePrev + takeNext));
+      }
+      if (prev && takePrev > 0) {
+        state.chords[sel] = M().withDuration(prev, Math.max(0.5, snapBeats(dp - takePrev)));
+      }
+      if (next && takeNext > 0) {
+        state.chords[sel + 1] = M().withDuration(next, Math.max(0.5, snapBeats(dn - takeNext)));
+      }
+      const durs = splitBudget(Math.max(0.5 * n, takePrev + takeNext), n);
+      const fitted = pieces.map((p, i) => M().withDuration(p, durs[i]));
+      writeAt = sel + 1;
+      state.chords.splice(writeAt, 0, ...fitted);
+      return {
+        writeAt,
+        pieces: fitted,
+        mode: 'insert',
+        totalBefore,
+        totalAfter: beatSum(state.chords),
+      };
+    }
+
+    // replace continuation (default) — never free-append full 4-beat steps
+    if (writeAt >= state.chords.length) {
+      // Selected is last: steal from it, append package in that budget
+      const last = state.chords[sel];
+      if (!last) {
+        // Empty sequence
+        const durs = splitBudget(Math.max(2, n * 2), n);
+        const fitted = pieces.map((p, i) => M().withDuration(p, durs[i]));
+        state.chords = fitted;
+        return {
+          writeAt: 0,
+          pieces: fitted,
+          mode: 'seed',
+          totalBefore,
+          totalAfter: beatSum(state.chords),
+        };
+      }
+      const ld = last.duration || 4;
+      // Keep at least 0.5 on the selected chord; rest funds the package
+      let budget = Math.max(0.5 * n, snapBeats(Math.min(ld - 0.5, Math.max(n, ld * 0.5))));
+      if (ld - budget < 0.5) budget = Math.max(0.5, ld - 0.5);
+      if (budget < 0.5) {
+        // Can't steal — rewrite last chord as first piece only
+        const one = M().withDuration(pieces[0], ld);
+        state.chords[sel] = one;
+        return {
+          writeAt: sel,
+          pieces: [one],
+          mode: 'replace-last',
+          totalBefore,
+          totalAfter: beatSum(state.chords),
+        };
+      }
+      state.chords[sel] = M().withDuration(last, Math.max(0.5, snapBeats(ld - budget)));
+      const durs = splitBudget(budget, n);
+      const fitted = pieces.map((p, i) => M().withDuration(p, durs[i]));
+      writeAt = state.chords.length;
+      state.chords.push(...fitted);
+      return {
+        writeAt,
+        pieces: fitted,
+        mode: 'extend-steal',
+        totalBefore,
+        totalAfter: beatSum(state.chords),
+      };
+    }
+
+    // Has chords after selection: take budget from the next span
+    const remaining = state.chords.length - writeAt;
+    // Prefer span = package length; if not enough slots, use all remaining (budget only)
+    const spanCount = Math.min(Math.max(n, 1), remaining);
+    let budget = 0;
+    for (let i = 0; i < spanCount; i++) {
+      budget += state.chords[writeAt + i].duration || 4;
+    }
+    budget = Math.max(0.5 * n, budget);
+    const durs = splitBudget(budget, n);
+    const fitted = pieces.map((p, i) => M().withDuration(p, durs[i]));
+    // Replace spanCount steps with n pieces (may increase step count, not total beats)
+    state.chords.splice(writeAt, spanCount, ...fitted);
+    return {
+      writeAt,
+      pieces: fitted,
+      mode: 'replace',
+      totalBefore,
+      totalAfter: beatSum(state.chords),
+      spanCount,
+    };
+  }
+
   /**
    * Horizon pick = "where do I go from the selected chord?"
-   *
-   * Default (auto):
-   *   - something after selection → replace next step(s)  (edit the continuation)
-   *   - selected is last / none   → append               (compose forward)
-   * Shift-click → always insert after selection (leave the rest intact).
-   *
-   * Cadence / modulate multi-chord routes write the whole path the same way.
+   * Always keeps total cell length (beats) stable by fitting into existing budget.
+   * Shift-click = insert between (still steals from neighbors).
    */
   function commitHorizon(item, opts) {
     opts = opts || {};
     pushUndo();
 
-    const pieces = horizonPieces(item);
-    if (!pieces.length) return;
+    const rawPieces = horizonPieces(item);
+    if (!rawPieces.length) return;
 
     const sel =
       state.selected >= 0 && state.selected < state.chords.length
         ? state.selected
         : state.chords.length - 1;
-    const after = sel + 1;
-    const hasNext = after >= 0 && after < state.chords.length;
+    const hasNext = sel >= 0 && sel < state.chords.length - 1;
 
     let mode = opts.mode;
     if (!mode || mode === 'auto') {
-      if (opts.insert) mode = 'insert';
-      else if (hasNext) mode = 'replace';
-      else mode = 'append';
+      mode = opts.insert ? 'insert' : 'replace';
     }
 
     const beforeChord =
       sel >= 0 && state.chords[sel] ? M().cloneChord(state.chords[sel]) : null;
+
+    // Snapshot chord after the rewrite zone for join audition (best-effort)
     let afterChordPre = null;
-    if (mode === 'replace' && state.chords[after + pieces.length]) {
-      afterChordPre = M().cloneChord(state.chords[after + pieces.length]);
-    } else if (mode === 'insert' && state.chords[after]) {
-      afterChordPre = M().cloneChord(state.chords[after]);
+    if (mode === 'insert' && state.chords[sel + 1]) {
+      afterChordPre = M().cloneChord(state.chords[sel + 1]);
+    } else if (mode !== 'insert' && hasNext) {
+      const peek = sel + 1 + rawPieces.length;
+      if (state.chords[peek]) afterChordPre = M().cloneChord(state.chords[peek]);
+      else if (state.chords[sel + 1 + 1]) afterChordPre = M().cloneChord(state.chords[sel + 2]);
     }
 
-    let writeAt = after < 0 ? 0 : after;
-    if (mode === 'append') writeAt = state.chords.length;
-
-    if (mode === 'replace' && hasNext) {
-      for (let i = 0; i < pieces.length; i++) {
-        const pos = after + i;
-        if (pos < state.chords.length) {
-          const oldDur = state.chords[pos].duration || 4;
-          pieces[i].duration = oldDur;
-          state.chords[pos] = pieces[i];
-        } else {
-          state.chords.push(pieces[i]);
-        }
-      }
-      writeAt = after;
-    } else if (mode === 'insert') {
-      state.chords.splice(writeAt, 0, ...pieces);
-    } else {
-      pieces.forEach((p) => state.chords.push(p));
-      writeAt = state.chords.length - pieces.length;
-    }
+    const fit = fitHorizonIntoSequence(sel, rawPieces, mode);
+    if (!fit) return;
 
     if (item.modulateTo) {
       const dest =
@@ -1645,36 +1789,59 @@
       }
     }
 
-    state.selected = Math.min(writeAt + pieces.length - 1, state.chords.length - 1);
+    state.selected = Math.min(
+      fit.writeAt + fit.pieces.length - 1,
+      state.chords.length - 1
+    );
     state.fromPackId = null;
-    afterEdit();
 
-    const afterIdx = writeAt + pieces.length;
+    // Ensure time strip rebuilds (clear any stuck resize lock)
+    const strip = $('#time-strip');
+    if (strip) {
+      strip.dataset.resizing = '';
+      strip.classList.remove('resizing-strip');
+    }
+
+    afterEdit();
+    // Force strip + map again after session push
+    renderTimeStrip();
+    if (map) {
+      map.setPath(state.chords, state.selected);
+    }
+    updateMapStatus();
+
+    const afterIdx = fit.writeAt + fit.pieces.length;
     const afterChord =
       afterChordPre ||
       (afterIdx < state.chords.length ? state.chords[afterIdx] : null);
-    const written = state.chords.slice(writeAt, writeAt + pieces.length);
     A().ensure();
-    auditionJoin(beforeChord, written, afterChord);
+    auditionJoin(beforeChord, fit.pieces, afterChord);
 
-    const labels = pieces.map((p) => p.name).join(' → ');
-    const where =
-      mode === 'replace'
-        ? 'replaced next'
-        : mode === 'insert'
-          ? 'inserted after step ' + (sel + 1)
-          : 'appended';
+    const labels = fit.pieces.map((p) => p.name).join(' → ');
+    const durs = fit.pieces.map((p) => (p.duration || 0) + 'b').join('+');
+    const lenNote =
+      Math.abs((fit.totalAfter || 0) - (fit.totalBefore || 0)) < 0.05
+        ? 'length kept ' + (fit.totalAfter || 0) + 'b'
+        : 'length ' + (fit.totalBefore || 0) + 'b → ' + (fit.totalAfter || 0) + 'b';
     setSyncStatus(
-      where + ': ' + labels + (item.job ? ' · ' + item.job : '') + ' · hearing join'
+      'From here · ' +
+        labels +
+        ' (' +
+        durs +
+        ') · ' +
+        lenNote +
+        (item.job ? ' · ' + item.job : '')
     );
   }
-  /** Build the chord(s) a horizon item would write into the sequence. */
+
+  /** Build the chord(s) a horizon item would write (durations assigned later by fit). */
   function horizonPieces(item) {
     const region = item.chord && (item.chord.region || regionFromKind(item.kind));
     if (item.route && item.route.length) {
-      return item.route.map((c, i) => {
+      return item.route.map((c) => {
         const x = M().cloneChord(c);
-        x.duration = c.duration || (i === item.route.length - 1 ? 4 : 2);
+        // duration placeholder — fitHorizonIntoSequence overwrites
+        x.duration = c.duration || 2;
         x.tag = item.kind || x.tag || 'horizon';
         x.region = x.region || region;
         x.localTonic = state.tonic;
@@ -1683,7 +1850,7 @@
       });
     }
     const ch = M().cloneChord(item.chord);
-    ch.duration = item.chord.duration || 4;
+    ch.duration = item.chord.duration || 2;
     ch.tag = item.kind || 'horizon';
     ch.region = region;
     ch.localTonic = state.tonic;
@@ -2068,6 +2235,7 @@
     if (!host) return;
     // Don't rebuild DOM mid-drag — live updates tweak flex/labels instead
     if (host.dataset.resizing === '1') return;
+    host.dataset.resizing = '';
     host.innerHTML = '';
     if (!state.chords.length) {
       host.innerHTML = '<span class="ts-empty">Time strip — path steps appear here</span>';
