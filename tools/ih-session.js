@@ -174,6 +174,101 @@
     return familyVersions(song, cell.familyId);
   }
 
+  /**
+   * Delete a cell (version) from the song session.
+   * Cleans family lists, arrangement chains/sections, and focus.
+   * Mutates song. Does not save — caller should saveSong.
+   *
+   * returns {
+   *   ok: boolean,
+   *   reason?: string,
+   *   label?: string,
+   *   nextFocusId?: string|null,
+   *   sectionsTouched?: number,
+   *   sectionsRemoved?: number,
+   * }
+   */
+  function deleteCell(song, cellId, opts) {
+    opts = opts || {};
+    ensureSongShape(song);
+    if (!cellId || !song.cells[cellId]) {
+      return { ok: false, reason: 'missing' };
+    }
+    const cell = song.cells[cellId];
+    const label = cell.name || cellId;
+    const familyId = cell.familyId || null;
+
+    // Prefer switching to another family sibling, else any remaining cell
+    let nextFocusId = null;
+    if (familyId) {
+      const sibs = familyVersions(song, familyId).filter((c) => c.id !== cellId);
+      if (sibs.length) {
+        nextFocusId = sibs[0].id;
+      }
+    }
+    if (!nextFocusId) {
+      const others = Object.keys(song.cells).filter((id) => id !== cellId);
+      nextFocusId = others[0] || null;
+    }
+
+    const used = (song.arrangement || []).filter(
+      (s) => s.cellId === cellId || (s.chain && s.chain.indexOf(cellId) >= 0)
+    );
+    const sectionsTouched = used.length;
+
+    delete song.cells[cellId];
+
+    // Family bookkeeping
+    Object.keys(song.families || {}).forEach((fid) => {
+      const fam = song.families[fid];
+      if (!fam) return;
+      if (fam.versionIds) {
+        fam.versionIds = fam.versionIds.filter((id) => id !== cellId);
+      }
+      // Drop empty families
+      if (fam.versionIds && !fam.versionIds.length) {
+        delete song.families[fid];
+      } else if (fam.versionIds && fam.versionIds.length === 1) {
+        // Solo survivor: clear family link optional — keep family for history
+        const only = song.cells[fam.versionIds[0]];
+        if (only && opts.dissolveSoloFamily) {
+          only.familyId = null;
+          only.versionIndex = 1;
+          delete song.families[fid];
+        }
+      }
+    });
+
+    let sectionsRemoved = 0;
+    song.arrangement = (song.arrangement || []).filter((s) => {
+      if (s.chain) s.chain = s.chain.filter((id) => id !== cellId);
+      if (s.cellId === cellId) {
+        s.cellId = s.chain && s.chain[0] ? s.chain[0] : null;
+      }
+      // Drop section if nothing left to play
+      if (!s.cellId && !(s.chain && s.chain.length)) {
+        sectionsRemoved += 1;
+        return false;
+      }
+      return true;
+    });
+
+    if (song.focus && song.focus.cellId === cellId) {
+      song.focus.cellId = nextFocusId;
+      song.focus.chordIndex = 0;
+    }
+
+    // Clear compare hints in opts callback only — Landscape holds compareCellId
+
+    return {
+      ok: true,
+      label,
+      nextFocusId,
+      sectionsTouched,
+      sectionsRemoved,
+    };
+  }
+
   /** Cell ids played for a section (chain or single cellId). */
   function sectionChain(sec) {
     if (sec.chain && sec.chain.length) return sec.chain.slice();
@@ -882,6 +977,7 @@
     createVariation,
     familyVersions,
     siblingsOfCell,
+    deleteCell,
     sectionChain,
     defaultSeam,
     suggestSeamChords,

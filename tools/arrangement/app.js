@@ -166,7 +166,7 @@
     render();
   }
 
-  /** Remove a cell from the library; sections using it are removed (or reassigned). */
+  /** Remove a cell from the library; sections using it are cleaned up. */
   function deleteCell(cellId) {
     const cell = song.cells[cellId];
     if (!cell) return;
@@ -181,12 +181,24 @@
         used.length +
         ' section(s): ' +
         used.map((s) => s.name).join(', ') +
-        '.\nThose sections will be removed from the form.';
+        '.\nEmpty sections will be removed from the form.';
     }
     if (!confirm(msg)) return;
 
+    if (S().deleteCell) {
+      const result = S().deleteCell(song, cellId, {});
+      if (!result || !result.ok) return;
+      if (selectedSecId && !song.arrangement.find((s) => s.id === selectedSecId)) {
+        selectedSecId = song.arrangement[0] ? song.arrangement[0].id : null;
+      }
+      save();
+      render();
+      setStatus('Deleted “' + (result.label || label) + '”');
+      return;
+    }
+
+    // Fallback if older ih-session without deleteCell
     delete song.cells[cellId];
-    // Remove from family lists
     Object.keys(song.families || {}).forEach((fid) => {
       const fam = song.families[fid];
       if (fam.versionIds) fam.versionIds = fam.versionIds.filter((id) => id !== cellId);

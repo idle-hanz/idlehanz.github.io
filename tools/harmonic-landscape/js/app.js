@@ -847,7 +847,8 @@
     opts = opts || {};
     if (!S() || !cellId) return false;
     // Persist what you're leaving so variants don't lose edits
-    if (state.chords.length && state.cellId) {
+    // skipPush: after delete, current cellId may already be gone
+    if (!opts.skipPush && state.chords.length && state.cellId) {
       pushToSharedSession('landscape');
     }
     const song = S().loadSong();
@@ -944,19 +945,23 @@
     let html = '';
 
     // Always show version actions
-    html += '<div class="version-bar-label">Versions · click chip = edit · Alt-click = set blue compare</div>';
-    if (hasFamily) {
+    html +=
+      '<div class="version-bar-label">Versions · click = edit · Alt-click = blue compare · × = delete</div>';
+    if (hasFamily || cur) {
       const famName =
-        (song.families[cur.familyId] && song.families[cur.familyId].name) ||
-        (cur.name || '').replace(/\s*v\d+\s*$/i, '') ||
-        'Theme';
+        cur && cur.familyId && song.families[cur.familyId]
+          ? song.families[cur.familyId].name
+          : (cur && cur.name ? cur.name.replace(/\s*v\d+\s*$/i, '') : '') || 'Theme';
+      const chips = hasFamily ? family : cur ? [cur] : [];
       html +=
         '<div class="version-chips" id="version-chips" data-fam="' +
         escapeAttr(famName) +
         '">';
-      family.forEach((c) => {
+      chips.forEach((c) => {
         const active = c.id === state.cellId;
-        const isCompare = state.compareCellId === c.id || (!state.compareCellId && !active && c.versionIndex === 1);
+        const isCompare =
+          state.compareCellId === c.id ||
+          (!state.compareCellId && !active && c.versionIndex === 1);
         const vi = c.versionIndex != null ? c.versionIndex : '?';
         const label = c.name || 'v' + vi;
         html +=
@@ -970,7 +975,7 @@
             label +
               ' · ' +
               cellPreviewLabel(c) +
-              (active ? ' (editing)' : ' — click edit · Alt-click blue compare')
+              (active ? ' (editing)' : ' — click edit · Alt-click blue · × delete')
           ) +
           '">' +
           '<span class="ver-n">v' +
@@ -980,12 +985,16 @@
           '<span class="ver-preview">' +
           escapeHtml(cellPreviewLabel(c)) +
           (isCompare && !active ? ' · blue' : '') +
-          '</span></button>';
+          '</span>' +
+          '<span class="ver-x" data-del="' +
+          escapeAttr(c.id) +
+          '" title="Delete this version" role="button" aria-label="Delete">×</span>' +
+          '</button>';
       });
       html += '</div>';
-    } else if (cur) {
+    } else {
       html +=
-        '<p class="version-bar-empty">v1 only — duplicate or vary to fork, then switch chips here.</p>';
+        '<p class="version-bar-empty">No versions yet — add chords or load a feel.</p>';
     }
     html +=
       '<div class="ver-actions">' +
@@ -994,6 +1003,9 @@
       '<button type="button" class="btn ghost" id="btn-var-parallel" title="Fork parallel maj/min">+ Parallel</button>' +
       '<button type="button" class="btn ghost" id="btn-var-darken" title="Fork darker">+ Darken</button>' +
       '<button type="button" class="btn ghost" id="btn-ab-ver" title="Play this then blue compare">A/B listen</button>' +
+      (cur
+        ? '<button type="button" class="btn ghost btn-danger" id="btn-var-del" title="Delete the version you are editing">Delete current</button>'
+        : '') +
       '</div>';
 
     if (hasManyCells) {
@@ -1054,10 +1066,16 @@
 
     host.querySelectorAll('.ver-chip').forEach((btn) => {
       btn.addEventListener('click', (e) => {
+        if (e.target && e.target.classList && e.target.classList.contains('ver-x')) {
+          e.preventDefault();
+          e.stopPropagation();
+          const delId = e.target.getAttribute('data-del');
+          if (delId) deleteVersion(delId);
+          return;
+        }
         const id = btn.getAttribute('data-cell');
         if (!id) return;
         if (e.altKey || e.metaKey) {
-          // Set blue comparison without leaving current edit
           if (id === state.cellId) {
             setSyncStatus('Compare target must be another version');
             return;
@@ -1070,6 +1088,14 @@
           return;
         }
         if (id !== state.cellId) switchToCell(id);
+      });
+    });
+    host.querySelectorAll('.ver-x').forEach((x) => {
+      x.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const delId = x.getAttribute('data-del');
+        if (delId) deleteVersion(delId);
       });
     });
     const sel = host.querySelector('#cell-switch');
@@ -1087,6 +1113,79 @@
     bind('#btn-var-parallel', () => createVariation('parallel'));
     bind('#btn-var-darken', () => createVariation('darken'));
     bind('#btn-ab-ver', () => playAB());
+    bind('#btn-var-del', () => {
+      if (state.cellId) deleteVersion(state.cellId);
+    });
+  }
+
+  /**
+   * Delete a version/cell from the shared song session.
+   * If it is the one you're editing, switch to a sibling (or clear).
+   */
+  function deleteVersion(cellId) {
+    if (!S() || !cellId) return;
+    // Save current work first if deleting something else
+    if (state.chords.length && state.cellId && state.cellId !== cellId) {
+      pushToSharedSession('landscape');
+    } else if (state.chords.length && state.cellId === cellId) {
+      pushToSharedSession('landscape');
+    }
+
+    let song = S().loadSong();
+    if (!song || !song.cells[cellId]) {
+      setSyncStatus('Version not found');
+      return;
+    }
+    const cell = song.cells[cellId];
+    const label = cell.name || cellId;
+    const used = (song.arrangement || []).filter(
+      (s) => s.cellId === cellId || (s.chain && s.chain.indexOf(cellId) >= 0)
+    );
+    let msg = 'Delete version “' + label + '”?';
+    if (used.length) {
+      msg +=
+        '\n\nUsed in ' +
+        used.length +
+        ' arrangement section(s): ' +
+        used.map((s) => s.name || 'section').join(', ') +
+        '.\nThose sections will drop this version (empty sections are removed).';
+    }
+    msg += '\n\nThis cannot be undone from here.';
+    if (!confirm(msg)) return;
+
+    if (!S().deleteCell) {
+      alert('Session update required — refresh the page.');
+      return;
+    }
+    const result = S().deleteCell(song, cellId, { dissolveSoloFamily: false });
+    if (!result || !result.ok) {
+      setSyncStatus('Could not delete');
+      return;
+    }
+    S().saveSong(song, 'landscape');
+
+    if (state.compareCellId === cellId) state.compareCellId = null;
+
+    if (state.cellId === cellId) {
+      // Don't re-save the deleted id
+      state.cellId = null;
+      if (result.nextFocusId && song.cells[result.nextFocusId]) {
+        const nextName = song.cells[result.nextFocusId].name || '';
+        switchToCell(result.nextFocusId, { silent: true, skipPush: true });
+        setSyncStatus('Deleted “' + label + '” · now editing “' + nextName + '”');
+      } else {
+        state.chords = [];
+        state.selected = -1;
+        state.title = 'Untitled sequence';
+        state.compareCellId = null;
+        state.nameLocked = false;
+        refreshAll();
+        setSyncStatus('Deleted “' + label + '” · no versions left');
+      }
+    } else {
+      refreshAll();
+      setSyncStatus('Deleted “' + label + '”');
+    }
   }
 
   function escapeHtml(s) {

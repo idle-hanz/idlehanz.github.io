@@ -255,6 +255,39 @@
       margin-top: 0.05rem;
     }
     .ver-chip.active .ver-preview { color: rgba(232,201,138,0.75); }
+    .ver-chip {
+      position: relative;
+      padding-right: 1.35rem;
+      text-align: left;
+    }
+    .ver-x {
+      position: absolute;
+      top: 0.15rem;
+      right: 0.2rem;
+      width: 1.05rem;
+      height: 1.05rem;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.85rem;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+    }
+    .ver-x:hover {
+      color: #f0a090;
+      background: rgba(232, 93, 76, 0.15);
+    }
+    .ver-actions .btn-danger {
+      border-color: rgba(232, 93, 76, 0.45);
+      color: #e8a090;
+    }
+    .ver-actions .btn-danger:hover {
+      border-color: #e85d4c;
+      color: #ffc8bc;
+      background: rgba(232, 93, 76, 0.12);
+    }
     .cell-switch-row {
       display: flex;
       gap: 0.35rem;
