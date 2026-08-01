@@ -50,11 +50,11 @@
     this.onAimChange = null; // (pathIndex, target|{null}, meta) for live audition
     this.onInsertBetween = null; // (afterIndex) => void
     this.onTrajectory = null; // (caption) => void
-    this.snapRadius = 36; // must aim within this to lock a target
+    this.snapRadius = 42; // magnet must enter this to lock a target
     this._mode = null;
     this._dragNode = null;
-    this._dragOrigin = null; // original node world pos
-    this._dragPos = null;
+    this._dragOrigin = null; // original node world pos (chord stays here)
+    this._dragPos = null; // magnet / aim point — not the chord
     this._last = null;
     this._moved = false;
     this._aimPreview = null; // { chord, x, y, label, role }
@@ -302,42 +302,41 @@
   };
 
   /**
-   * Place aim targets at their true harmonic positions (where you should aim),
-   * with a small fan if two land on top of each other.
+   * Aim targets sit in a readable ring around the chord you grabbed.
+   * Natural harmonic direction is preserved as angle; radius is fixed so
+   * every option is nearby and scannable (not a free-space teleport).
    */
   SpatialMap.prototype._layoutAlts = function (pathIndex, alts) {
     const origin = this.nodes[pathIndex] || { x: 0, y: 0 };
-    const used = [];
-    this.alts = (alts || []).map((a, i) => {
+    const list = alts || [];
+    const n = list.length || 1;
+    // Two rings if many targets so nothing piles up
+    const rInner = 58;
+    const rOuter = 96;
+    this.alts = list.map((a, i) => {
       const natural = this._chordPos(a.chord, pathIndex, 0);
-      let x = natural.x;
-      let y = natural.y;
-      // Nudge if colliding with another target or origin
-      used.forEach((u) => {
-        const d = Math.hypot(x - u.x, y - u.y);
-        if (d < 22) {
-          const ang = Math.atan2(y - origin.y, x - origin.x) + 0.35 * (i + 1);
-          x += Math.cos(ang) * 14;
-          y += Math.sin(ang) * 10;
-        }
-      });
-      // Keep a little clear of the original node
-      const d0 = Math.hypot(x - origin.x, y - origin.y);
-      if (d0 < 28) {
-        const ang = Math.atan2(y - origin.y, x - origin.x) || -Math.PI / 2 + i * 0.5;
-        x = origin.x + Math.cos(ang) * 40;
-        y = origin.y + Math.sin(ang) * 32;
+      // Prefer true harmonic bearing from home/origin; fall back to even fan
+      let ang = Math.atan2(natural.y - origin.y, natural.x - origin.x);
+      if (!isFinite(ang) || (Math.abs(natural.x - origin.x) < 1 && Math.abs(natural.y - origin.y) < 1)) {
+        ang = -Math.PI / 2 + (i / n) * Math.PI * 2;
       }
-      const t = {
+      // Spread collisions by index on a second ring
+      const ring = i % 2 === 0 ? rInner : rOuter;
+      // Slight index jitter so same-bearing targets don't stack
+      const jitter = ((i * 0.37) % 0.55) - 0.27;
+      ang += jitter;
+      const x = origin.x + Math.cos(ang) * ring;
+      const y = origin.y + Math.sin(ang) * ring * 0.85;
+      return {
         chord: a.chord,
         label: a.label || a.chord.name,
         role: a.role || '',
         x,
         y,
-        r: 15,
+        r: 16,
+        naturalX: natural.x,
+        naturalY: natural.y,
       };
-      used.push(t);
-      return t;
     });
   };
 
@@ -448,20 +447,31 @@
 
     if (this._mode === 'node' && this._dragNode) {
       const w = this.screenToWorld(sx, sy);
-      this._dragPos = { x: w.x, y: w.y };
       this._moved = true;
-      // Aim: only lock if magnet is within snapRadius of a target
+      // Find nearest aim target; soft-magnet pulls pointer toward it when close
       let best = null;
-      let bestD = this.snapRadius * this.snapRadius;
+      let bestD = Infinity;
       this.alts.forEach((a) => {
-        const dx = w.x - a.x;
-        const dy = w.y - a.y;
-        const d = dx * dx + dy * dy;
+        const d = Math.hypot(w.x - a.x, w.y - a.y);
         if (d < bestD) {
           bestD = d;
           best = a;
         }
       });
+      const lockR = this.snapRadius;
+      const pullR = this.snapRadius * 1.65;
+      let mx = w.x;
+      let my = w.y;
+      if (best && bestD < pullR) {
+        // Soft pull: magnet eases toward target center (easier aiming)
+        const t = 1 - bestD / pullR;
+        const ease = t * t * 0.72;
+        mx = w.x + (best.x - w.x) * ease;
+        my = w.y + (best.y - w.y) * ease;
+      }
+      // Hard lock only inside snap radius
+      if (!best || bestD > lockR) best = null;
+      this._dragPos = { x: mx, y: my };
       const prev = this.snapAlt;
       this.snapAlt = best;
       this._aimPreview = best
@@ -474,7 +484,7 @@
           originChord: this._dragNode.chord,
         });
       }
-      this.canvas.style.cursor = best ? 'pointer' : 'grabbing';
+      this.canvas.style.cursor = best ? 'pointer' : 'crosshair';
       return;
     }
 
@@ -694,10 +704,11 @@
     for (let i = 0; i < this.nodes.length - 1; i++) {
       const a = this.nodes[i];
       const b = this.nodes[i + 1];
-      const ax = this._mode === 'node' && this._dragNode && this._dragNode.i === i ? this._dragPos.x : a.x;
-      const ay = this._mode === 'node' && this._dragNode && this._dragNode.i === i ? this._dragPos.y : a.y;
-      const bx = this._mode === 'node' && this._dragNode && this._dragNode.i === i + 1 ? this._dragPos.x : b.x;
-      const by = this._mode === 'node' && this._dragNode && this._dragNode.i === i + 1 ? this._dragPos.y : b.y;
+      // Chord stays put while aiming — path does not free-float with the cursor
+      const ax = a.x;
+      const ay = a.y;
+      const bx = b.x;
+      const by = b.y;
       const st = this._edgeStyle(a, b);
       ctx.beginPath();
       const mx = (ax + bx) / 2 + (by - ay) * 0.08;
@@ -718,74 +729,64 @@
       ctx.fill();
     }
 
-    // Aim mode: original stays put; targets + magnet + preview edges
+    // Aim mode: chord stays put; magnet aims at ring of labelled targets
     if (this._mode === 'node' && this._dragNode) {
       const origin = this._dragOrigin || { x: this._dragNode.x, y: this._dragNode.y };
       const magnet = this._dragPos || origin;
       const i = this._dragNode.i;
+      const z = this.camera.zoom;
 
-      // Ghost original
+      // Dim everything slightly under aim overlay feel via faint guide rings
       ctx.beginPath();
-      ctx.arc(origin.x, origin.y, this._dragNode.r, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(232,201,138,0.35)';
-      ctx.lineWidth = 2 / this.camera.zoom;
-      ctx.setLineDash([4 / this.camera.zoom, 3 / this.camera.zoom]);
+      ctx.arc(origin.x, origin.y, 58, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(232,201,138,0.12)';
+      ctx.lineWidth = 1 / z;
       ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(232,201,138,0.5)';
-      ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText('from', origin.x, origin.y - this._dragNode.r - 8 / this.camera.zoom);
+      ctx.beginPath();
+      ctx.arc(origin.x, origin.y, 96, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(232,201,138,0.08)';
+      ctx.lineWidth = 1 / z;
+      ctx.stroke();
 
-      // Aim targets (always visible while dragging)
+      // Aim targets — always visible while aiming
       this.alts.forEach((a) => {
         const isSnap = this.snapAlt === a;
-        // snap radius ring when close
         if (isSnap) {
           ctx.beginPath();
           ctx.arc(a.x, a.y, this.snapRadius, 0, Math.PI * 2);
-          ctx.strokeStyle = 'rgba(125,186,146,0.35)';
-          ctx.lineWidth = 1.5 / this.camera.zoom;
+          ctx.fillStyle = 'rgba(125,186,146,0.12)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(125,186,146,0.45)';
+          ctx.lineWidth = 1.5 / z;
           ctx.stroke();
         }
         ctx.beginPath();
-        ctx.arc(a.x, a.y, isSnap ? 17 : 13, 0, Math.PI * 2);
-        ctx.fillStyle = isSnap ? 'rgba(125,186,146,0.55)' : 'rgba(232,201,138,0.2)';
+        ctx.arc(a.x, a.y, isSnap ? 18 : 14, 0, Math.PI * 2);
+        ctx.fillStyle = isSnap ? 'rgba(125,186,146,0.7)' : 'rgba(20,16,12,0.82)';
         ctx.fill();
-        ctx.strokeStyle = isSnap ? '#9ddea8' : '#c4a574';
-        ctx.lineWidth = (isSnap ? 2.8 : 1.4) / this.camera.zoom;
+        ctx.strokeStyle = isSnap ? '#9ddea8' : 'rgba(232,201,138,0.75)';
+        ctx.lineWidth = (isSnap ? 3 : 1.6) / z;
         ctx.stroke();
-        ctx.fillStyle = isSnap ? '#fff' : 'rgba(232,201,138,0.95)';
-        ctx.font = `bold ${10 / this.camera.zoom}px DM Sans, sans-serif`;
-        ctx.fillText(a.label, a.x, a.y + 1);
+        ctx.fillStyle = isSnap ? '#0a0a0a' : 'rgba(255,244,214,0.95)';
+        ctx.font = `bold ${10 / z}px DM Sans, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(a.label, a.x, a.y - (a.role ? 3 / z : 0));
         if (a.role) {
-          ctx.fillStyle = 'rgba(180,168,150,0.85)';
-          ctx.font = `${8 / this.camera.zoom}px DM Sans, sans-serif`;
-          ctx.fillText(a.role, a.x, a.y + 20 / this.camera.zoom);
+          ctx.fillStyle = isSnap ? 'rgba(10,10,10,0.75)' : 'rgba(180,168,150,0.9)';
+          ctx.font = `${8 / z}px DM Sans, sans-serif`;
+          ctx.fillText(a.role, a.x, a.y + 11 / z);
         }
       });
 
-      // Magnet (where you're aiming — not a chord yet)
-      ctx.beginPath();
-      ctx.arc(magnet.x, magnet.y, 6 / this.camera.zoom, 0, Math.PI * 2);
-      ctx.fillStyle = this.snapAlt ? 'rgba(125,186,146,0.9)' : 'rgba(255,255,255,0.45)';
-      ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(origin.x, origin.y);
-      ctx.lineTo(magnet.x, magnet.y);
-      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-      ctx.lineWidth = 1.2 / this.camera.zoom;
-      ctx.setLineDash([3 / this.camera.zoom, 3 / this.camera.zoom]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Preview path through aimed target
+      // Preview path: prev → aimed target → next (where the progression will go)
       if (this.snapAlt) {
         const t = this.snapAlt;
         const prevN = this.nodes[i - 1];
         const nextN = this.nodes[i + 1];
-        ctx.strokeStyle = 'rgba(125,186,146,0.75)';
-        ctx.lineWidth = 2.8 / this.camera.zoom;
+        ctx.strokeStyle = 'rgba(125,186,146,0.85)';
+        ctx.lineWidth = 3.2 / z;
+        ctx.lineCap = 'round';
         if (prevN) {
           ctx.beginPath();
           ctx.moveTo(prevN.x, prevN.y);
@@ -798,38 +799,67 @@
           ctx.lineTo(nextN.x, nextN.y);
           ctx.stroke();
         }
-        // Preview node
+        // Big preview node at target
         ctx.beginPath();
-        ctx.arc(t.x, t.y, this._dragNode.r * 1.05, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(125,186,146,0.35)';
+        ctx.arc(t.x, t.y, this._dragNode.r * 1.15, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(125,186,146,0.4)';
         ctx.fill();
         ctx.strokeStyle = '#9ddea8';
-        ctx.lineWidth = 2 / this.camera.zoom;
+        ctx.lineWidth = 2.5 / z;
         ctx.stroke();
       }
 
-      // HUD in world space near magnet
-      ctx.fillStyle = this.snapAlt ? 'rgba(157,222,168,0.95)' : 'rgba(255,255,255,0.55)';
-      ctx.font = `${10 / this.camera.zoom}px DM Sans, sans-serif`;
-      ctx.fillText(
-        this.snapAlt ? 'Release → ' + this.snapAlt.label : 'Aim at a target…',
-        magnet.x,
-        magnet.y - 16 / this.camera.zoom
-      );
+      // Aim line + magnet (this is your aim point — not a free-floating chord)
+      ctx.beginPath();
+      ctx.moveTo(origin.x, origin.y);
+      ctx.lineTo(magnet.x, magnet.y);
+      ctx.strokeStyle = this.snapAlt ? 'rgba(125,186,146,0.55)' : 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = 1.4 / z;
+      ctx.setLineDash([4 / z, 4 / z]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Crosshair magnet
+      const mr = 9 / z;
+      ctx.beginPath();
+      ctx.arc(magnet.x, magnet.y, mr, 0, Math.PI * 2);
+      ctx.fillStyle = this.snapAlt ? 'rgba(125,186,146,0.95)' : 'rgba(255,255,255,0.55)';
+      ctx.fill();
+      ctx.strokeStyle = this.snapAlt ? '#fff' : 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = 1.5 / z;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(magnet.x - mr * 1.6, magnet.y);
+      ctx.lineTo(magnet.x + mr * 1.6, magnet.y);
+      ctx.moveTo(magnet.x, magnet.y - mr * 1.6);
+      ctx.lineTo(magnet.x, magnet.y + mr * 1.6);
+      ctx.strokeStyle = this.snapAlt ? 'rgba(10,10,10,0.55)' : 'rgba(255,255,255,0.65)';
+      ctx.lineWidth = 1.2 / z;
+      ctx.stroke();
+
+      // HUD near magnet
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = this.snapAlt ? 'rgba(157,222,168,0.98)' : 'rgba(255,255,255,0.7)';
+      ctx.font = `bold ${11 / z}px DM Sans, sans-serif`;
+      const hud = this.snapAlt
+        ? 'Release → ' + this.snapAlt.label + (this.snapAlt.role ? ' · ' + this.snapAlt.role : '')
+        : 'Aim at a target · release outside = cancel';
+      ctx.fillText(hud, magnet.x, magnet.y - 18 / z);
     }
 
-    // Primary nodes
+    // Primary nodes — always stay on path positions (never free-float with cursor)
     this.nodes.forEach((n) => {
       const reg = n.chord.region || 'diatonic';
       const col = REGION[reg] || REGION.diatonic;
       const isCur = n.i === this.current;
       const isPlay = n.i === this.playing;
-      const dragging = this._mode === 'node' && this._dragNode && this._dragNode.i === n.i;
+      const aiming = this._mode === 'node' && this._dragNode && this._dragNode.i === n.i;
       const div = this.divergent.indexOf(n.i) >= 0 && this.showAlt && this.altNodes.length;
-      const x = dragging ? this._dragPos.x : n.x;
-      const y = dragging ? this._dragPos.y : n.y;
+      const x = n.x;
+      const y = n.y;
       const pulse = isPlay ? 1 + 0.08 * Math.sin(this.pulseT * 2) : 1;
-      const r = n.r * (isPlay || isCur || dragging ? 1.12 : 1) * pulse;
+      const r = n.r * (isPlay || isCur || aiming ? 1.12 : 1) * pulse;
 
       // Playhead / selection ring
       if (isPlay || isCur) {
@@ -851,12 +881,23 @@
 
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fillStyle = col.fill;
-      ctx.fill();
-      if (isCur || isPlay || dragging) {
-        ctx.strokeStyle = '#fff4d6';
-        ctx.lineWidth = 2.5 / this.camera.zoom;
+      // While aiming this step, show as dashed "from" source
+      if (aiming) {
+        ctx.fillStyle = 'rgba(196,165,116,0.35)';
+        ctx.fill();
+        ctx.setLineDash([5 / this.camera.zoom, 4 / this.camera.zoom]);
+        ctx.strokeStyle = 'rgba(232,201,138,0.85)';
+        ctx.lineWidth = 2.2 / this.camera.zoom;
         ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        ctx.fillStyle = col.fill;
+        ctx.fill();
+        if (isCur || isPlay) {
+          ctx.strokeStyle = '#fff4d6';
+          ctx.lineWidth = 2.5 / this.camera.zoom;
+          ctx.stroke();
+        }
       }
 
       // Step number badge
@@ -870,10 +911,16 @@
       ctx.textBaseline = 'middle';
       ctx.fillText(String(n.i + 1), x - r * 0.75, y - r * 0.75);
 
-      ctx.fillStyle = '#0a0a0a';
+      ctx.fillStyle = aiming ? 'rgba(232,201,138,0.9)' : '#0a0a0a';
       ctx.font = `bold ${Math.max(9, 11 / this.camera.zoom)}px DM Sans, sans-serif`;
       ctx.textBaseline = 'middle';
-      ctx.fillText(dragging && this.snapAlt ? this.snapAlt.label : n.chord.name, x, y);
+      ctx.fillText(n.chord.name, x, y);
+
+      if (aiming) {
+        ctx.fillStyle = 'rgba(232,201,138,0.7)';
+        ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
+        ctx.fillText('from', x, y - r - 10 / this.camera.zoom);
+      }
 
       // Duration tail hint
       ctx.fillStyle = 'rgba(200,184,160,0.65)';
@@ -891,11 +938,11 @@
     let tip =
       this._mode === 'node'
         ? this.snapAlt
-          ? 'Release to commit · green = aimed target (audition playing)'
-          : 'Aim magnet at a labelled target to audition · release outside = cancel'
+          ? 'Release to set · audition: prev → ' + this.snapAlt.label + ' → next'
+          : 'Move crosshair onto a labelled target to audition · release off-target = cancel'
         : this.hover && this.hover.type === 'edge'
           ? 'Click edge to insert (steals time from neighbors)'
-          : 'Drag a chord → aim at targets · double-click time strip to split';
+          : 'Grab a chord → aim ring targets · double-click time strip to split';
     ctx.fillText(tip, 10, h - 12);
 
     // Edge colour legend

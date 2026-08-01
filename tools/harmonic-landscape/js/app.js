@@ -132,15 +132,18 @@
         clearTimeout(aimTimer);
         aimTimer = null;
       }
+      // Stop any previous context audition so targets don't stack
+      if (A().stopPlayback) A().stopPlayback();
       if (!target) {
-        setSyncStatus('Aim cancelled');
+        setSyncStatus('Aim cancelled — nothing changed');
         return;
       }
       A().ensure();
-      // Immediate soft audition of aimed chord
-      A().playChord({ chord: target.chord, soft: true, duration: 0.55 });
-      setSyncStatus('Aim: ' + target.label + (target.role ? ' · ' + target.role : '') + ' — release to set');
-      // After a short hold, audition prev → target → next
+      // Immediate soft hit of the aimed chord
+      A().playChord({ chord: target.chord, soft: true, duration: 0.5 });
+      const roleBit = target.role ? ' · ' + target.role : '';
+      setSyncStatus('Aiming ' + target.label + roleBit + ' — hold to hear context, release to set');
+      // After a short hold, audition prev → target → next (where you're going)
       aimTimer = setTimeout(() => {
         if (!map.snapAlt || map.snapAlt !== target) return;
         const seq = [];
@@ -151,14 +154,20 @@
           A().playSequence(
             seq.map((c) => {
               const x = M().cloneChord(c);
-              x.duration = 1.5;
+              x.duration = 1.4;
               return x;
             }),
-            Math.max(state.bpm, 100),
+            Math.max(state.bpm, 110),
             { pulse: false, loop: false }
           );
+          setSyncStatus(
+            'Audition: ' +
+              seq.map((c) => c.name).join(' → ') +
+              ' · release to set ' +
+              target.label
+          );
         }
-      }, 320);
+      }, 280);
     };
     map.onInsertBetween = (afterIndex) => {
       insertBetweenWithTiming(afterIndex);
@@ -558,15 +567,22 @@
     );
   }
 
-  /** Split a time-strip step into two chords, halving duration. */
+  /**
+   * Split a time-strip step into two equal(ish) halves.
+   * Total cell length is unchanged — only this step is bisected.
+   */
   function splitChordAt(index) {
     if (index < 0 || index >= state.chords.length) return;
     const src = state.chords[index];
     const d = src.duration || 4;
-    if (d < 1) return;
+    if (d < 1) {
+      setSyncStatus('Too short to split (need ≥ 1 beat)');
+      return;
+    }
     pushUndo();
-    const half = Math.max(0.5, Math.round(d * 2) / 4); // prefer .5 steps
-    const d1 = Math.max(0.5, d - half);
+    // Prefer half-beat grid: e.g. 4 → 2+2, 3 → 1.5+1.5, 1 → 0.5+0.5
+    const d1 = Math.max(0.5, Math.round(d) / 2);
+    // Remainder on second half so total length is unchanged
     const d2 = Math.max(0.5, d - d1);
     state.chords[index] = M().withDuration(src, d1);
     let ch = M().cloneChord(src);
@@ -576,7 +592,10 @@
     state.selected = index + 1;
     state.fromPackId = null;
     afterEdit();
-    setSyncStatus('Split step ' + (index + 1) + ' · ' + d1 + 'b + ' + d2 + 'b');
+    A().ensure();
+    A().playChord({ chord: ch, soft: true, duration: 0.4 });
+    const total = state.chords.reduce((s, c) => s + (c.duration || 0), 0);
+    setSyncStatus('Split step ' + (index + 1) + ' · ' + d1 + 'b + ' + d2 + 'b · total still ' + total + 'b');
   }
 
   function circularBlendRoot(a, b, t) {
