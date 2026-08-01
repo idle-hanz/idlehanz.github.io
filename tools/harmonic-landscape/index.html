@@ -122,7 +122,11 @@
       font-size: 0.72rem;
       cursor: pointer;
     }
-    .chip.on, .chip:hover { border-color: var(--gold); color: var(--gold2); }
+    .chip.on, .chip:hover, .chip.active {
+      border-color: var(--gold);
+      color: var(--gold2);
+      background: rgba(196,165,116,0.12);
+    }
 
     main {
       display: grid;
