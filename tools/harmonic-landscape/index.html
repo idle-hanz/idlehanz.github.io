@@ -496,6 +496,106 @@
     .hz.kind-direction strong { color: var(--blue); }
     .hz.kind-cadence strong { color: var(--gold2); }
     .hz.kind-modulate strong { color: var(--purple); }
+    .hz-tag {
+      display: inline-block;
+      font-size: 0.58rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 0.05rem 0.28rem;
+      margin-right: 0.3rem;
+      vertical-align: middle;
+    }
+    .hz.kind-flavour .hz-tag { border-color: rgba(240,160,112,0.4); color: #f0a070; }
+    .hz.kind-direction .hz-tag { border-color: rgba(126,184,218,0.4); color: var(--blue); }
+    .hz.kind-cadence .hz-tag { border-color: rgba(232,201,138,0.4); color: var(--gold2); }
+    .hz.kind-modulate .hz-tag { border-color: rgba(167,139,250,0.4); color: var(--purple); }
+    #list-from-here { max-height: calc(100vh - 12rem); overflow: auto; padding-right: 0.15rem; }
+    .slot.diff {
+      border-color: rgba(126,184,218,0.55);
+      box-shadow: inset 3px 0 0 rgba(126,184,218,0.7);
+    }
+    .slot.playing-step {
+      border-color: #c4b5fd;
+      background: rgba(167,139,250,0.1);
+    }
+    .map-status {
+      font-size: 0.72rem;
+      color: #c8b8a0;
+      padding: 0.2rem 0.15rem 0.15rem;
+      min-height: 1.15em;
+      letter-spacing: 0.01em;
+    }
+    .map-legend-line {
+      font-size: 0.62rem;
+      color: var(--muted);
+      padding: 0 0.15rem 0.2rem;
+      line-height: 1.35;
+    }
+    .fold {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--elev);
+      margin-bottom: 0.55rem;
+    }
+    .fold > summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 0.45rem 0.55rem;
+      font-family: var(--display);
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--gold);
+      user-select: none;
+    }
+    .fold > summary::-webkit-details-marker { display: none; }
+    .fold > summary::after {
+      content: ' ▸';
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+    .fold[open] > summary::after { content: ' ▾'; }
+    .fold-body { padding: 0 0.55rem 0.55rem; }
+    .critique {
+      font-size: 0.75rem;
+      color: var(--muted);
+      line-height: 1.4;
+      margin-top: 0.35rem;
+    }
+    .critique .grades {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      margin: 0.3rem 0;
+    }
+    .critique .g {
+      font-size: 0.62rem;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 0.1rem 0.3rem;
+      color: var(--text);
+    }
+    .critique strong { color: var(--gold2); font-weight: 600; }
+    .vl-line {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin: 0.25rem 0 0.45rem;
+      line-height: 1.35;
+    }
+    .ver-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      margin-top: 0.4rem;
+    }
+    .ver-chip.compare {
+      outline: 1px dashed var(--blue);
+      outline-offset: 1px;
+    }
+    .transport { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
 
     #export-out {
       width: 100%;
@@ -548,8 +648,13 @@
           <input type="number" id="bpm" min="40" max="200" value="96">
         </label>
         <label class="ctl"><input type="checkbox" id="loop" checked> Loop</label>
-        <label class="ctl"><input type="checkbox" id="pulse" checked> Pulse</label>
-        <button type="button" class="btn primary" id="btn-play">Loop</button>
+        <label class="ctl"><input type="checkbox" id="pulse"> Pulse</label>
+        <div class="transport">
+          <button type="button" class="btn primary" id="btn-play" title="Play from start (Space)">Play</button>
+          <button type="button" class="btn" id="btn-play-from" title="Play from selected step (Shift+Space)">From sel</button>
+          <button type="button" class="btn" id="btn-ab" title="Hear this version, then blue comparison">A/B</button>
+          <button type="button" class="btn ghost" id="btn-stop" title="Stop (Esc)">Stop</button>
+        </div>
       </div>
     </header>
 
@@ -574,35 +679,41 @@
             <select id="add-quality" aria-label="Quality"></select>
             <button type="button" class="btn primary" id="btn-add" title="Append chord">Add</button>
             <button type="button" class="btn ghost" id="btn-insert" title="Insert after selection">Insert</button>
-            <button type="button" class="btn ghost" id="btn-dup" title="Ctrl+D">Dup</button>
+            <button type="button" class="btn ghost" id="btn-dup" title="Duplicate step · Ctrl+D">Dup step</button>
+            <button type="button" class="btn ghost" id="btn-smooth" title="Smooth bass / inversions through the cell">Smooth VL</button>
             <button type="button" class="btn ghost" id="btn-undo" title="Ctrl+Z">Undo</button>
             <button type="button" class="btn ghost" id="btn-redo-edit" title="Ctrl+Y">Redo</button>
             <button type="button" class="btn ghost" id="btn-clear">Clear</button>
           </div>
-          <p class="hint" style="margin-top:0.25rem">Drag ⋮⋮ to reorder · ← → select · Alt+↑↓ move · Del remove</p>
+          <p class="hint" style="margin-top:0.25rem">Drag ⋮⋮ · ←→ select · <kbd>Space</kbd> play · <kbd>Shift+Space</kbd> from sel · blue edge = differs from compare</p>
           <div id="slots"></div>
+          <div id="vl-readout" class="vl-line" hidden></div>
           <div id="inspector" style="margin-top:0.55rem"></div>
+          <div id="critique" class="critique" hidden></div>
         </div>
 
-        <div class="section">
-          <h2>Feels</h2>
-          <p class="hint">Or start from a colour world</p>
-          <label class="ctl" style="margin-bottom:0.4rem">Filter
-            <select id="feel-filter"></select>
-          </label>
-          <div id="pack-list" class="pack-scroll"></div>
-        </div>
-
-        <div class="section">
-          <h2>Export</h2>
-          <div class="row">
-            <button type="button" class="btn primary" id="btn-export-txt">Text</button>
-            <button type="button" class="btn primary" id="btn-export-mid">MIDI</button>
-            <button type="button" class="btn" id="btn-pull-fb" title="Load focused cell from shared session (if fretboard sent one)">Pull session</button>
+        <details class="fold" id="fold-feels">
+          <summary>Feels — start from a colour world</summary>
+          <div class="fold-body">
+            <label class="ctl" style="margin-bottom:0.4rem">Filter
+              <select id="feel-filter"></select>
+            </label>
+            <div id="pack-list" class="pack-scroll"></div>
           </div>
-          <textarea id="export-out" readonly style="margin-top:0.4rem"></textarea>
-          <p class="foot"><kbd>Space</kbd> play · drag map chords for alternates</p>
-        </div>
+        </details>
+
+        <details class="fold" id="fold-export">
+          <summary>Export &amp; session</summary>
+          <div class="fold-body">
+            <div class="row">
+              <button type="button" class="btn primary" id="btn-export-txt">Text</button>
+              <button type="button" class="btn primary" id="btn-export-mid">MIDI</button>
+              <button type="button" class="btn" id="btn-pull-fb" title="Load focused cell from shared session">Pull session</button>
+            </div>
+            <textarea id="export-out" readonly style="margin-top:0.4rem"></textarea>
+            <p class="foot"><kbd>Space</kbd> play · <kbd>Shift+Space</kbd> from selection · aim map chords for alternates</p>
+          </div>
+        </details>
       </section>
 
       <!-- Spatial compass (main stage) -->
@@ -615,40 +726,29 @@
           <span style="width:0.35rem"></span>
           <button type="button" class="btn ghost" id="btn-swing" title="Add a chord on the opposite side of home">+ Swing</button>
           <button type="button" class="btn ghost" id="btn-arch" title="Add V7 → home">Arch home</button>
-          <span style="width:0.35rem"></span>
-          <button type="button" class="btn ghost" id="btn-var-reharm" title="Fork linked variation">+ Vary reharm</button>
-          <button type="button" class="btn ghost" id="btn-var-parallel" title="Fork parallel colour">+ Vary parallel</button>
-          <button type="button" class="btn ghost" id="btn-var-darken" title="Fork darker">+ Vary darken</button>
           <label class="ctl" style="margin-left:0.35rem;color:#c8b8a0"><input type="checkbox" id="tog-horizon" checked> Options</label>
           <label class="ctl" style="color:#c8b8a0"><input type="checkbox" id="tog-alt" checked> Blue path</label>
         </div>
         <canvas id="map" aria-label="Harmonic path and directions"></canvas>
         <div class="map-footer">
+          <div id="map-status" class="map-status">Select a step</div>
+          <div class="map-legend-line">Angle ≈ root · radius ≈ distance from home · gold = this version · blue = compare · green = aim lock</div>
           <div id="traj-caption" class="traj-caption">Path shape appears here</div>
           <div id="time-strip" class="time-strip" title="Click select · drag edge to resize · double-click split"></div>
-          <p class="foot" style="margin:0.25rem 0 0">Time strip: click = select · <strong>drag right edge</strong> to resize (border with next redistributes beats) · double-click or Split = bisect. Map: aim ring targets · release on green to set.</p>
+          <p class="foot" style="margin:0.25rem 0 0">Time strip: click = select · drag right edge = resize · double-click = split. Map: aim ring targets · release on green.</p>
         </div>
       </div>
 
-      <!-- Horizon lists -->
+      <!-- From here (unified horizon) -->
       <aside class="col col-horizon">
-        <p class="foot" style="margin:0 0 0.5rem;padding:0 0.15rem">From the <strong>selected</strong> step: click replaces the next step(s) — Directions may be <em>one or two chords</em> so the path still joins what follows. <kbd>Shift</kbd>+click inserts between. Hover to audition the package.</p>
-        <div class="section">
-          <h2>Flavours</h2>
-          <div id="list-flavour"></div>
-        </div>
-        <div class="section">
-          <h2>Directions</h2>
-          <div id="list-direction"></div>
-        </div>
-        <div class="section">
-          <h2>Cadences</h2>
-          <div id="list-cadence"></div>
-        </div>
-        <div class="section">
-          <h2>Modulate</h2>
-          <div id="list-modulate"></div>
-        </div>
+        <h2 style="margin:0 0 0.25rem">From here</h2>
+        <p class="foot" style="margin:0 0 0.45rem;padding:0">Suggestions from the <strong>selected</strong> step. Click = replace next (or append if last). <kbd>Shift</kbd>+click = insert. Hover = audition. 1–2 chord packages keep the join intact.</p>
+        <div id="list-from-here"></div>
+        <!-- legacy hosts kept empty for safety -->
+        <div id="list-flavour" hidden></div>
+        <div id="list-direction" hidden></div>
+        <div id="list-cadence" hidden></div>
+        <div id="list-modulate" hidden></div>
       </aside>
     </main>
   </div>

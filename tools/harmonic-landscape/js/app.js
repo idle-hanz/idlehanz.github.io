@@ -16,7 +16,7 @@
     mode: 'minor',
     bpm: 96,
     loop: true,
-    pulse: true,
+    pulse: false,
     chords: [],
     selected: 0,
     title: 'Untitled sequence', // cell display name (user-editable)
@@ -29,6 +29,8 @@
     syncMsg: '',
     undoStack: [],
     redoStack: [],
+    /** Cell id drawn as blue comparison path (defaults to v1 sibling) */
+    compareCellId: null,
   };
 
   let map = null;
@@ -777,7 +779,21 @@
     refreshAltPath();
   }
 
-  /** Draw sibling variation (prefer v1, else another version) in blue. */
+  /** Resolve which cell is the blue comparison path. */
+  function resolveCompareCell(song) {
+    if (!song || !state.cellId) return null;
+    if (state.compareCellId && song.cells[state.compareCellId] && state.compareCellId !== state.cellId) {
+      return song.cells[state.compareCellId];
+    }
+    const sibs = S().siblingsOfCell(song, state.cellId);
+    return (
+      sibs.find((c) => c.id !== state.cellId && (c.versionIndex === 1 || /v1\b/i.test(c.name || ''))) ||
+      sibs.find((c) => c.id !== state.cellId) ||
+      null
+    );
+  }
+
+  /** Draw comparison version in blue. */
   function refreshAltPath() {
     if (!map || !S()) {
       if (map) map.setAltPath([]);
@@ -788,17 +804,40 @@
       map.setAltPath([]);
       return;
     }
-    const sibs = S().siblingsOfCell(song, state.cellId);
-    // Prefer original v1 as the blue comparison path when editing a later version
-    let other =
-      sibs.find((c) => c.id !== state.cellId && (c.versionIndex === 1 || /v1\b/i.test(c.name || ''))) ||
-      sibs.find((c) => c.id !== state.cellId);
+    const other = resolveCompareCell(song);
     if (!other || !other.chords || !other.chords.length) {
       map.setAltPath([]);
       return;
     }
+    if (!state.compareCellId) state.compareCellId = other.id;
     const alt = other.chords.map((sc) => sessionChordToLandscape(sc));
     map.setAltPath(alt);
+  }
+
+  /** Indices where current path differs from compare cell (for slot highlight). */
+  function diffIndicesVsCompare() {
+    if (!S() || !state.cellId) return new Set();
+    const song = S().loadSong();
+    const other = resolveCompareCell(song);
+    if (!other || !other.chords) return new Set();
+    const set = new Set();
+    const n = Math.max(state.chords.length, other.chords.length);
+    for (let i = 0; i < n; i++) {
+      const a = state.chords[i];
+      const b = other.chords[i];
+      if (!a || !b) {
+        set.add(i);
+        continue;
+      }
+      if (a.root !== b.root || a.quality !== b.quality) set.add(i);
+      else if ((a.duration || 4) !== (b.duration || 4)) set.add(i);
+      else if (a.custom || b.custom) {
+        const an = (a.notes || []).slice().sort().join(',');
+        const bn = (b.notes || []).slice().sort().join(',');
+        if (an !== bn) set.add(i);
+      }
+    }
+    return set;
   }
 
   /**
@@ -894,7 +933,8 @@
     const hasFamily = family.length > 1;
     const hasManyCells = cellIds.length > 1;
 
-    if (!hasFamily && !hasManyCells && !cur) {
+    // Always show when editing a cell or a sequence (so Duplicate / Vary are reachable)
+    if (!cur && !state.chords.length && !hasManyCells) {
       host.hidden = true;
       host.innerHTML = '';
       return;
@@ -903,28 +943,35 @@
     host.hidden = false;
     let html = '';
 
+    // Always show version actions
+    html += '<div class="version-bar-label">Versions · click chip = edit · Alt-click = set blue compare</div>';
     if (hasFamily) {
       const famName =
         (song.families[cur.familyId] && song.families[cur.familyId].name) ||
         (cur.name || '').replace(/\s*v\d+\s*$/i, '') ||
         'Theme';
       html +=
-        '<div class="version-bar-label">Versions · ' +
-        escapeHtml(famName) +
-        ' <span style="font-weight:400;text-transform:none;letter-spacing:0">(click to edit)</span></div>';
-      html += '<div class="version-chips" id="version-chips">';
+        '<div class="version-chips" id="version-chips" data-fam="' +
+        escapeAttr(famName) +
+        '">';
       family.forEach((c) => {
         const active = c.id === state.cellId;
+        const isCompare = state.compareCellId === c.id || (!state.compareCellId && !active && c.versionIndex === 1);
         const vi = c.versionIndex != null ? c.versionIndex : '?';
         const label = c.name || 'v' + vi;
         html +=
           '<button type="button" class="ver-chip' +
           (active ? ' active' : '') +
+          (isCompare && !active ? ' compare' : '') +
           '" data-cell="' +
           escapeAttr(c.id) +
           '" title="' +
-          escapeAttr(label + ' · ' + cellPreviewLabel(c)) +
-          (active ? ' (current)' : ' — switch to this version') +
+          escapeAttr(
+            label +
+              ' · ' +
+              cellPreviewLabel(c) +
+              (active ? ' (editing)' : ' — click edit · Alt-click blue compare')
+          ) +
           '">' +
           '<span class="ver-n">v' +
           vi +
@@ -932,13 +979,22 @@
           escapeHtml(label.replace(/\s*v\d+\s*$/i, '') || label) +
           '<span class="ver-preview">' +
           escapeHtml(cellPreviewLabel(c)) +
+          (isCompare && !active ? ' · blue' : '') +
           '</span></button>';
       });
       html += '</div>';
     } else if (cur) {
       html +=
-        '<p class="version-bar-empty">Single version — use <strong>+ Vary</strong> above the map to fork v2, then switch here.</p>';
+        '<p class="version-bar-empty">v1 only — duplicate or vary to fork, then switch chips here.</p>';
     }
+    html +=
+      '<div class="ver-actions">' +
+      '<button type="button" class="btn ghost" id="btn-var-copy" title="Exact copy as next version">+ Duplicate</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-reharm" title="Fork with reharm colour">+ Reharm</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-parallel" title="Fork parallel maj/min">+ Parallel</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-darken" title="Fork darker">+ Darken</button>' +
+      '<button type="button" class="btn ghost" id="btn-ab-ver" title="Play this then blue compare">A/B listen</button>' +
+      '</div>';
 
     if (hasManyCells) {
       html += '<div class="cell-switch-row">';
@@ -997,9 +1053,23 @@
     host.innerHTML = html;
 
     host.querySelectorAll('.ver-chip').forEach((btn) => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
         const id = btn.getAttribute('data-cell');
-        if (id && id !== state.cellId) switchToCell(id);
+        if (!id) return;
+        if (e.altKey || e.metaKey) {
+          // Set blue comparison without leaving current edit
+          if (id === state.cellId) {
+            setSyncStatus('Compare target must be another version');
+            return;
+          }
+          state.compareCellId = id;
+          refreshAltPath();
+          renderVersionBar();
+          renderSlots();
+          setSyncStatus('Blue compare → ' + (song.cells[id] && song.cells[id].name));
+          return;
+        }
+        if (id !== state.cellId) switchToCell(id);
       });
     });
     const sel = host.querySelector('#cell-switch');
@@ -1008,6 +1078,15 @@
         if (sel.value && sel.value !== state.cellId) switchToCell(sel.value);
       });
     }
+    const bind = (id, fn) => {
+      const el = host.querySelector(id);
+      if (el) el.addEventListener('click', fn);
+    };
+    bind('#btn-var-copy', () => createVariation('copy'));
+    bind('#btn-var-reharm', () => createVariation('reharm'));
+    bind('#btn-var-parallel', () => createVariation('parallel'));
+    bind('#btn-var-darken', () => createVariation('darken'));
+    bind('#btn-ab-ver', () => playAB());
   }
 
   function escapeHtml(s) {
@@ -1041,7 +1120,9 @@
 
     // Mutate a copy of chords for the variation
     let newChords = state.chords.map((c) => S().fromLandscapeChord(c));
-    if (kind === 'parallel') {
+    if (kind === 'copy') {
+      // Exact fork — user edits manually
+    } else if (kind === 'parallel') {
       // Flip maj/min quality on non-dominant chords
       newChords = newChords.map((c) => {
         let q = c.quality;
@@ -1079,8 +1160,17 @@
       }
     }
 
-    const newId = S().createVariation(song, state.cellId, { chords: newChords });
+    const nameOpt =
+      kind === 'copy'
+        ? undefined // default vN name
+        : undefined;
+    const newId = S().createVariation(song, state.cellId, {
+      chords: newChords,
+      name: nameOpt,
+    });
     if (!newId) return;
+    // Keep previous as blue compare when forking
+    state.compareCellId = state.cellId;
     S().saveSong(song, 'landscape');
 
     // Switch to the new version for editing
@@ -1095,9 +1185,27 @@
     });
     state.nameLocked = true;
     refreshAll();
-    refreshAltPath();
-    setSyncStatus('Created ' + cell.name + ' · gold=this · blue=sibling');
-    playSeq({ once: true });
+    setSyncStatus(
+      'Created ' +
+        cell.name +
+        (kind === 'copy' ? ' (duplicate)' : ' · ' + kind) +
+        ' · gold=this · blue=compare'
+    );
+    playSeq({ once: true, force: true });
+  }
+
+  function smoothVoicings() {
+    if (!state.chords.length || !C().smoothCellVoicings) return;
+    pushUndo();
+    state.chords = C().smoothCellVoicings(state.chords);
+    state.chords.forEach((c) => {
+      c.localTonic = state.tonic;
+      c.localMode = state.mode;
+    });
+    state.fromPackId = null;
+    afterEdit();
+    A().ensure();
+    playSeq({ once: true, force: true, label: 'Smoothed voicings · playing once' });
   }
 
   /**
@@ -1288,6 +1396,12 @@
         : state.chords.length - 1;
     const after = sel + 1; // write starting here
     const hasNext = after >= 0 && after < state.chords.length;
+    // Capture join context before mutating
+    const beforeChord = sel >= 0 && state.chords[sel] ? M().cloneChord(state.chords[sel]) : null;
+    const afterJoinChord =
+      after + pieces.length < state.chords.length
+        ? M().cloneChord(state.chords[after + pieces.length])
+        : modeWillLeaveFollowing(after, pieces.length, hasNext);
 
     // mode: 'replace' | 'insert' | 'append'
     let mode = opts.mode;
@@ -1299,6 +1413,18 @@
 
     let writeAt = after < 0 ? 0 : after;
     if (mode === 'append') writeAt = state.chords.length;
+
+    // Recompute after-join once mode is known
+    let afterChord fores =
+      mode === 'replace'
+        ? state.chords[after + pieces.length]
+          ? M().cloneChord(state.chords[after + pieces.length])
+          : null
+        : mode === 'insert'
+          ? state.chords[after]
+            ? M().cloneChord(state.chords[after])
+            : null
+          : null;
 
     if (mode === 'replace' && hasNext) {
       // Overwrite following steps; keep their durations so the strip length holds
@@ -1322,20 +1448,37 @@
       writeAt = state.chords.length - pieces.length;
     }
 
-    // Modulation: update home if marked
+    // Modulation: confirm before moving home
     if (item.modulateTo) {
-      state.tonic = item.modulateTo.tonic;
-      state.mode = item.modulateTo.mode;
-      if ($('#tonic')) $('#tonic').value = String(state.tonic);
-      if ($('#mode')) $('#mode').value = state.mode;
-      if (map) map.setOrigin(state.tonic, state.mode);
+      const dest =
+        M().noteName(item.modulateTo.tonic) +
+        ' ' +
+        (item.modulateTo.mode || 'minor');
+      const ok = confirm(
+        'Modulate writing home to ' + dest + '?\n\nOK = change home key · Cancel = write chords only, keep current home'
+      );
+      if (ok) {
+        state.tonic = item.modulateTo.tonic;
+        state.mode = item.modulateTo.mode;
+        if ($('#tonic')) $('#tonic').value = String(state.tonic);
+        if ($('#mode')) $('#mode').value = state.mode;
+        if (map) map.setOrigin(state.tonic, state.mode);
+      }
     }
 
+    const beforeChord = sel >= 0 ? state.chords[sel] : null;
+    // After write, what follows the package
+    const afterIdx = writeAt + pieces.length;
+    // Need after from post-mutation — compute after splice
     state.selected = Math.min(writeAt + pieces.length - 1, state.chords.length - 1);
     state.fromPackId = null;
     afterEdit();
+
+    const afterChord =
+      afterIdx < state.chords.length ? state.chords[afterIdx] : null;
+    const written = state.chords.slice(writeAt, writeAt + pieces.length);
     A().ensure();
-    A().playChord({ chord: state.chords[state.selected] });
+    auditionJoin(beforeChord, written, afterChord);
 
     const labels = pieces.map((p) => p.name).join(' → ');
     const where =
@@ -1344,7 +1487,7 @@
         : mode === 'insert'
           ? 'inserted after step ' + (sel + 1)
           : 'appended';
-    setSyncStatus(where + ': ' + labels + (item.job ? ' · ' + item.job : ''));
+    setSyncStatus(where + ': ' + labels + (item.job ? ' · ' + item.job : '') + ' · hearing join');
   }
 
   /** Build the chord(s) a horizon item would write into the sequence. */
@@ -1507,38 +1650,133 @@
   }
 
   // ─── Playback / export ───────────────────────────────────
+  function stopPlaybackUI() {
+    if (A().stopPlayback) A().stopPlayback();
+    if (map) map.setPlaying(-1);
+    updatePlayBtn();
+    renderSlots();
+    renderTimeStrip();
+  }
+
+  /**
+   * Play sequence. opts: { once, fromIndex, chords, label, onEnd }
+   * fromIndex — start at selected (or given) step of state.chords
+   */
   function playSeq(opts) {
+    opts = opts || {};
     A().ensure();
     if (A().isPlaying()) {
+      if (!opts.force) {
+        stopPlaybackUI();
+        return;
+      }
       A().stopPlayback();
-      map.setPlaying(-1);
-      updatePlayBtn();
-      return;
+      if (map) map.setPlaying(-1);
     }
-    if (!state.chords.length) return;
-    const once = opts && opts.once;
-    A().playSequence(state.chords, state.bpm, {
-      loop: once ? false : state.loop,
+    const from = Math.max(0, opts.fromIndex != null ? opts.fromIndex : 0);
+    const source = opts.chords || state.chords;
+    if (!source.length) return;
+    const slice = source.slice(from).map((c) => M().cloneChord(c));
+    if (!slice.length) return;
+    const once = opts.once != null ? opts.once : !state.loop;
+    const loop = opts.loop != null ? opts.loop : once ? false : state.loop;
+    A().playSequence(slice, state.bpm, {
+      loop,
       pulse: state.pulse,
       onStep: (i) => {
-        map.setPlaying(i);
-        state.selected = i;
-        renderSlots();
-        renderTimeStrip();
+        const idx = from + i;
+        if (map) map.setPlaying(opts.chords ? -1 : idx);
+        if (!opts.chords) {
+          state.selected = Math.min(idx, state.chords.length - 1);
+          renderSlots();
+          renderTimeStrip();
+          updateMapStatus();
+        }
       },
       onEnd: () => {
-        map.setPlaying(-1);
+        if (map) map.setPlaying(-1);
         renderTimeStrip();
+        renderSlots();
         updatePlayBtn();
+        if (opts.onEnd) opts.onEnd();
       },
     });
     updatePlayBtn();
+    if (opts.label) setSyncStatus(opts.label);
+    else if (from > 0) setSyncStatus('Playing from step ' + (from + 1));
+  }
+
+  function playFromSelection() {
+    if (!state.chords.length) return;
+    const from = Math.max(0, state.selected >= 0 ? state.selected : 0);
+    playSeq({ fromIndex: from, once: !state.loop, force: true, label: 'From step ' + (from + 1) });
+  }
+
+  /** A then B: current cell, then comparison version. */
+  function playAB() {
+    if (!state.chords.length) return;
+    A().ensure();
+    if (A().isPlaying()) stopPlaybackUI();
+    const song = S() && S().loadSong();
+    const other = song ? resolveCompareCell(song) : null;
+    const nameA = state.title || 'A';
+    const nameB = other ? other.name || 'B' : null;
+    setSyncStatus('A/B · A: ' + nameA);
+    playSeq({
+      once: true,
+      loop: false,
+      force: true,
+      label: 'A · ' + nameA,
+      onEnd: () => {
+        if (!other || !other.chords || !other.chords.length) {
+          setSyncStatus('A/B · no comparison version (Alt-click a version chip)');
+          return;
+        }
+        const bChords = other.chords.map((sc) => sessionChordToLandscape(sc));
+        setTimeout(() => {
+          playSeq({
+            chords: bChords,
+            once: true,
+            loop: false,
+            force: true,
+            label: 'B · ' + nameB + ' (blue path)',
+          });
+        }, 280);
+      },
+    });
   }
 
   function updatePlayBtn() {
+    const playing = A().isPlaying();
     const b = $('#btn-play');
-    b.textContent = A().isPlaying() ? 'Stop' : state.loop ? 'Loop' : 'Play';
-    b.classList.toggle('on', A().isPlaying());
+    if (b) {
+      b.textContent = playing ? 'Stop' : state.loop ? 'Play ↻' : 'Play';
+      b.classList.toggle('on', playing);
+    }
+    const bf = $('#btn-play-from');
+    if (bf) bf.classList.toggle('on', false);
+  }
+
+  /** Audition join: chord before write → new package → what follows. */
+  function auditionJoin(beforeChord, pieces, afterChord) {
+    const seq = [];
+    if (beforeChord) seq.push(M().cloneChord(beforeChord));
+    (pieces || []).forEach((p) => {
+      const x = M().cloneChord(p);
+      x.duration = Math.min(2, x.duration || 2);
+      seq.push(x);
+    });
+    if (afterChord) seq.push(M().cloneChord(afterChord));
+    if (seq.length < 2) {
+      if (seq[0]) A().playChord({ chord: seq[0] });
+      return;
+    }
+    seq.forEach((c) => {
+      c.duration = Math.min(1.6, c.duration || 1.6);
+    });
+    A().ensure();
+    if (A().stopPlayback) A().stopPlayback();
+    A().playSequence(seq, Math.max(state.bpm, 100), { pulse: false, loop: false });
   }
 
   function exportText() {
@@ -1890,6 +2128,107 @@
     renderTitle();
     renderSlots();
     renderInspector();
+    renderVlReadout();
+    renderCritique();
+    updateMapStatus();
+  }
+
+  function updateMapStatus() {
+    const el = $('#map-status');
+    if (!el) return;
+    if (!state.chords.length) {
+      el.textContent = 'Empty path — add a chord or load a feel';
+      return;
+    }
+    const i = Math.max(0, Math.min(state.selected, state.chords.length - 1));
+    const ch = state.chords[i];
+    if (!ch) {
+      el.textContent = 'Select a step';
+      return;
+    }
+    let side = '';
+    if (map && map.nodes && map.nodes[i]) {
+      const x = map.nodes[i].x;
+      side = x < -12 ? ' · left of home' : x > 12 ? ' · right of home' : ' · near home';
+    }
+    const play =
+      map && map.playing === i ? ' · playing' : '';
+    el.textContent =
+      'Step ' +
+      (i + 1) +
+      ' of ' +
+      state.chords.length +
+      ' · ' +
+      ch.name +
+      ' · ' +
+      (ch.duration || 4) +
+      'b' +
+      side +
+      play;
+  }
+
+  function renderVlReadout() {
+    const el = $('#vl-readout');
+    if (!el) return;
+    const i = state.selected;
+    if (i < 1 || !state.chords[i] || !C().voiceLeadingDetail) {
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+    const d = C().voiceLeadingDetail(state.chords[i - 1], state.chords[i]);
+    if (!d) {
+      el.hidden = true;
+      return;
+    }
+    const q =
+      d.quality >= 0.7 ? 'smooth' : d.quality >= 0.45 ? 'ok' : 'jumpy';
+    el.hidden = false;
+    el.textContent =
+      'Into ' +
+      state.chords[i].name +
+      ': bass ' +
+      d.bassFrom +
+      '→' +
+      d.bassTo +
+      ' (' +
+      d.bassMotion +
+      ') · common ' +
+      (d.common.length ? d.common.join(' ') : '—') +
+      ' · moving ' +
+      (d.moving.length ? d.moving.join(' ') : '—') +
+      ' · ' +
+      q;
+  }
+
+  function renderCritique() {
+    const el = $('#critique');
+    if (!el) return;
+    if (!state.chords.length || !C().analyzeCell) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    const a = C().analyzeCell(state.chords, state.tonic, state.mode);
+    const g = a.grades || {};
+    const pct = (x) => Math.round((x || 0) * 100);
+    el.hidden = false;
+    el.innerHTML =
+      '<div><strong>Cell read</strong> · score ' +
+      pct(a.score) +
+      '%</div>' +
+      '<div class="grades">' +
+      ['hook', 'motion', 'return', 'rhythm', 'voice']
+        .map((k) => '<span class="g">' + k + ' ' + pct(g[k]) + '</span>')
+        .join('') +
+      '</div>' +
+      (a.strengths && a.strengths[0]
+        ? '<div>✓ ' + escapeHtml(a.strengths[0]) + '</div>'
+        : '') +
+      (a.weaknesses && a.weaknesses[0]
+        ? '<div>△ ' + escapeHtml(a.weaknesses[0]) + '</div>'
+        : '') +
+      (a.tips && a.tips[0] ? '<div>→ ' + escapeHtml(a.tips[0]) + '</div>' : '');
   }
 
   function renderTitle() {
@@ -1915,7 +2254,8 @@
     if (state.recognition && state.recognition.pack) {
       why.textContent = state.recognition.pack.why;
     } else {
-      why.textContent = 'Enter chords or pick a feel. Horizon shows flavours, directions, cadences, and modulation.';
+      why.textContent =
+        'Edit the path · From here suggests next moves · versions live under the name';
     }
     $('#path-text').textContent = state.chords.map((c) => c.name).join(' → ') || 'Empty — add a chord or load a feel';
   }
@@ -1923,9 +2263,15 @@
   function renderSlots() {
     const host = $('#slots');
     host.innerHTML = '';
+    const diffs = diffIndicesVsCompare();
+    const playing = map ? map.playing : -1;
     state.chords.forEach((ch, i) => {
       const el = document.createElement('div');
-      el.className = 'slot' + (i === state.selected ? ' selected' : '');
+      el.className =
+        'slot' +
+        (i === state.selected ? ' selected' : '') +
+        (diffs.has(i) ? ' diff' : '') +
+        (playing === i ? ' playing-step' : '');
       el.draggable = true;
       el.dataset.index = String(i);
       el.innerHTML = `
@@ -2071,45 +2417,73 @@
   }
 
   function renderHorizonLists() {
-    const items = buildHorizon();
-    const groups = {
-      flavour: $('#list-flavour'),
-      direction: $('#list-direction'),
-      cadence: $('#list-cadence'),
-      modulate: $('#list-modulate'),
-    };
-    Object.values(groups).forEach((el) => {
-      if (el) el.innerHTML = '';
+    const host = $('#list-from-here') || $('#list-direction');
+    if (!host) return;
+    host.innerHTML = '';
+    // Clear legacy hosts
+    ['list-flavour', 'list-direction', 'list-cadence', 'list-modulate'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && el !== host) el.innerHTML = '';
     });
+
+    const items = buildHorizon();
+    // Prefer directions first, then flavours, cadences, modulate
+    const order = { direction: 0, flavour: 1, cadence: 2, modulate: 3 };
+    items.sort((a, b) => (order[a.kind] != null ? order[a.kind] : 9) - (order[b.kind] != null ? order[b.kind] : 9));
+
     const hasNext =
       state.selected >= 0 && state.selected < state.chords.length - 1;
     const tipDefault = hasNext
-      ? 'Click = replace next step · Shift+click = insert between'
-      : 'Click = append after selection · Shift+click = insert after';
+      ? 'Click = replace next · Shift+click = insert · hover = audition'
+      : 'Click = append · Shift+click = insert · hover = audition';
+    const kindLabel = {
+      direction: 'Dir',
+      flavour: 'Colour',
+      cadence: 'Cadence',
+      modulate: 'Mod',
+    };
 
     items.forEach((it) => {
-      const host = groups[it.kind];
-      if (!host) return;
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'hz kind-' + it.kind;
-      b.title = tipDefault;
-      b.innerHTML = `<strong>${it.label}</strong><span>${it.job || it.chord.name}</span>`;
+      b.title = tipDefault + (it.kind === 'modulate' ? ' · may change home key' : '');
+      b.innerHTML =
+        '<span class="hz-tag">' +
+        (kindLabel[it.kind] || it.kind) +
+        '</span><strong>' +
+        escapeHtml(it.label) +
+        '</strong><span>' +
+        escapeHtml(it.job || (it.chord && it.chord.name) || '') +
+        '</span>';
       b.addEventListener('mouseenter', () => {
         A().ensure();
         const pieces =
-          it.route && it.route.length
-            ? it.route
-            : it.chord
-              ? [it.chord]
-              : [];
-        if (pieces.length >= 2) {
-          // Audition the whole package so you hear where it goes
+          it.route && it.route.length ? it.route : it.chord ? [it.chord] : [];
+        // Context audition: selected → package → following chord if any
+        const seq = [];
+        const sel =
+          state.selected >= 0 && state.chords[state.selected]
+            ? state.chords[state.selected]
+            : null;
+        if (sel) seq.push(sel);
+        pieces.forEach((c) => seq.push(c));
+        const afterIdx = (state.selected >= 0 ? state.selected : -1) + 1 + pieces.length;
+        // On hover we don't mutate — approximate after as current next when single step replace
+        if (pieces.length === 1 && state.chords[state.selected + 2]) {
+          seq.push(state.chords[state.selected + 2]);
+        } else if (pieces.length >= 2 && state.chords[state.selected + 1 + pieces.length]) {
+          seq.push(state.chords[state.selected + 1 + pieces.length]);
+        } else if (hasNext && pieces.length === 1 && state.chords[state.selected + 1]) {
+          // will replace next — show join into what was after next
+          if (state.chords[state.selected + 2]) seq.push(state.chords[state.selected + 2]);
+        }
+        if (seq.length >= 2) {
           if (A().stopPlayback) A().stopPlayback();
           A().playSequence(
-            pieces.map((c) => {
+            seq.map((c) => {
               const x = M().cloneChord(c);
-              x.duration = 1.5;
+              x.duration = 1.35;
               return x;
             }),
             Math.max(state.bpm, 110),
@@ -2120,7 +2494,6 @@
         }
       });
       b.addEventListener('click', (e) => {
-        // Shift = insert between (non-destructive). Default = replace next / append.
         commitHorizon(it, { insert: !!(e && e.shiftKey) });
       });
       host.appendChild(b);
@@ -2178,10 +2551,19 @@
         }
       });
     }
-    $('#btn-play').addEventListener('click', () => playSeq());
+    if ($('#btn-play'))
+      $('#btn-play').addEventListener('click', () => {
+        if (A().isPlaying()) stopPlaybackUI();
+        else playSeq({ fromIndex: 0, force: true });
+      });
+    if ($('#btn-play-from'))
+      $('#btn-play-from').addEventListener('click', () => playFromSelection());
+    if ($('#btn-ab')) $('#btn-ab').addEventListener('click', () => playAB());
+    if ($('#btn-stop')) $('#btn-stop').addEventListener('click', () => stopPlaybackUI());
     if ($('#btn-add')) $('#btn-add').addEventListener('click', () => addChordFromPicker('end'));
     if ($('#btn-insert')) $('#btn-insert').addEventListener('click', () => addChordFromPicker('after'));
     if ($('#btn-dup')) $('#btn-dup').addEventListener('click', duplicateSelected);
+    if ($('#btn-smooth')) $('#btn-smooth').addEventListener('click', smoothVoicings);
     if ($('#btn-undo-edit')) $('#btn-undo-edit').addEventListener('click', undo);
     if ($('#btn-redo-edit')) $('#btn-redo-edit').addEventListener('click', redo);
     if ($('#btn-undo')) $('#btn-undo').addEventListener('click', undo);
@@ -2190,8 +2572,8 @@
         if (!state.chords.length || confirm('Clear sequence?')) clearSeq();
       });
     }
-    $('#btn-export-txt').addEventListener('click', exportText);
-    $('#btn-export-mid').addEventListener('click', exportMidi);
+    if ($('#btn-export-txt')) $('#btn-export-txt').addEventListener('click', exportText);
+    if ($('#btn-export-mid')) $('#btn-export-mid').addEventListener('click', exportMidi);
     if ($('#btn-fret')) $('#btn-fret').addEventListener('click', sendToFretboard);
     if ($('#btn-pull-fb')) $('#btn-pull-fb').addEventListener('click', pullFromSharedSession);
     if ($('#btn-arrange')) {
@@ -2225,9 +2607,6 @@
         syncCamButtons();
       });
     }
-    if ($('#btn-var-reharm')) $('#btn-var-reharm').addEventListener('click', () => createVariation('reharm'));
-    if ($('#btn-var-parallel')) $('#btn-var-parallel').addEventListener('click', () => createVariation('parallel'));
-    if ($('#btn-var-darken')) $('#btn-var-darken').addEventListener('click', () => createVariation('darken'));
     if ($('#btn-swing')) $('#btn-swing').addEventListener('click', suggestSwingNext);
     if ($('#btn-arch')) $('#btn-arch').addEventListener('click', suggestArchHome);
     if ($('#tog-horizon')) {
@@ -2255,7 +2634,9 @@
       if (e.target.matches('input, textarea, select')) return;
       if (e.key === ' ' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
-        playSeq();
+        if (e.shiftKey) playFromSelection();
+        else if (A().isPlaying()) stopPlaybackUI();
+        else playSeq({ fromIndex: 0, force: true });
       } else if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         undo();
@@ -2287,9 +2668,7 @@
         A().ensure();
         A().playChord({ chord: state.chords[state.selected] });
       } else if (e.key === 'Escape') {
-        A().stopPlayback();
-        map.setPlaying(-1);
-        updatePlayBtn();
+        stopPlaybackUI();
       }
     });
   }

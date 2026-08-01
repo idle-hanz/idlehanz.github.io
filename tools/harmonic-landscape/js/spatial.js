@@ -942,16 +942,22 @@
           : 'Move crosshair onto a labelled target to audition · release off-target = cancel'
         : this.hover && this.hover.type === 'edge'
           ? 'Click edge to insert (steals time from neighbors)'
-          : 'Grab a chord → aim ring targets · double-click time strip to split';
+          : 'Grab chord → aim · edge insert · gold path / blue compare';
     ctx.fillText(tip, 10, h - 12);
 
-    // Edge colour legend
+    // Map reading legend (top-left)
     ctx.font = '9px DM Sans, sans-serif';
+    ctx.fillStyle = 'rgba(180,168,150,0.5)';
+    ctx.fillText('∠ root   ·   radius = distance from home', 10, 14);
+
+    // Edge colour legend
     const legs = [
       ['#7dba92', 'step'],
       ['#7eb8da', '5th'],
       ['#e8c98a', 'swing'],
       ['#e85d4c', 'tritone'],
+      ['#c4a574', 'gold=you'],
+      ['#7eb8da', 'blue=cmp'],
     ];
     let lx = 10;
     legs.forEach(([col, lab]) => {
@@ -959,7 +965,7 @@
       ctx.fillRect(lx, h - 28, 10, 3);
       ctx.fillStyle = 'rgba(180,168,150,0.7)';
       ctx.fillText(lab, lx + 12, h - 24);
-      lx += 52;
+      lx += lab.length > 6 ? 62 : 48;
     });
   };
 
