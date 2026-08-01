@@ -118,38 +118,51 @@
     this._emitTrajectory();
   };
 
+  /**
+   * Options fan around the *selected path node* (constellation), not a second
+   * cloud on home. Home stays the global centre disc only.
+   */
   SpatialMap.prototype.setHorizon = function (items) {
     if (this._mode === 'node') return;
     const M = global.HLMusic;
-    const R = Math.min(this.w || 500, this.h || 360) * 0.36;
     const anchor =
       this.current >= 0 && this.nodes[this.current]
         ? this.nodes[this.current]
-        : { x: 0, y: 0 };
+        : { x: 0, y: 0, r: 14 };
 
-    // Home is the centre disc itself — never place a second "HOME" satellite
-    const orbitItems = (items || []).filter((it) => it.kind !== 'home');
+    // Cap density on canvas; full catalog lives in From here list
+    const orbitItems = (items || [])
+      .filter((it) => it.kind !== 'home')
+      .slice(0, 8);
+
+    const n = orbitItems.length || 1;
+    // Two rings so labels stay readable
+    const rInner = 52 + (anchor.r || 14);
+    const rOuter = 78 + (anchor.r || 14);
+
     this.horizon = orbitItems.map((it, i) => {
       const ch = it.chord;
-      const dist = M.harmonicDistance(ch, this.origin.tonic, this.origin.mode);
-      const ang = M.harmonicAngle(ch, this.origin.tonic) + i * 0.11;
-      const radius = 55 + dist * (R / 2.6);
-      let x = Math.cos(ang) * radius;
-      let y = Math.sin(ang) * radius * 0.72;
-      x = x * 0.7 + anchor.x * 0.3;
-      y = y * 0.7 + anchor.y * 0.3;
-      x += Math.cos(i * 1.25) * 14;
-      y += Math.sin(i * 1.25) * 12;
+      // Prefer harmonic bearing from home, expressed as angle around selection
+      let ang = 0;
+      if (M && ch) {
+        ang = M.harmonicAngle(ch, this.origin.tonic);
+      }
+      // Fan evenly if many share a bearing
+      ang += (i / n) * 0.35 + i * 0.08;
+      const ring = i % 2 === 0 ? rInner : rOuter;
+      const x = anchor.x + Math.cos(ang) * ring;
+      const y = anchor.y + Math.sin(ang) * ring * 0.78;
       return {
         chord: ch,
         kind: it.kind || 'direction',
-        label: it.label || ch.name,
+        label: it.label || (ch && ch.name) || '?',
         job: it.job || '',
         route: it.route,
         modulateTo: it.modulateTo,
         x,
         y,
-        r: 12,
+        r: 10, // smaller hollow options (drawn differently)
+        _anchor: { x: anchor.x, y: anchor.y },
       };
     });
   };
@@ -174,17 +187,49 @@
     this._emitTrajectory();
   };
 
+  /**
+   * Harmonic polar position + mild step spiral so the sequence reads as a journey
+   * (not a pile of overlapping same-root visits).
+   */
   SpatialMap.prototype._chordPos = function (ch, index, lane) {
     const M = global.HLMusic;
     const R = Math.min(this.w || 500, this.h || 360) * 0.36;
     const dist = M.harmonicDistance(ch, this.origin.tonic, this.origin.mode);
-    const ang = M.harmonicAngle(ch, this.origin.tonic);
-    const radius = 40 + dist * (R / 2.6);
-    const off = lane === 1 ? 12 : 0;
+    // Step bias: each step walks slightly around + out so order is visible
+    const stepAng = index * 0.22;
+    const ang = M.harmonicAngle(ch, this.origin.tonic) + stepAng * 0.15;
+    const radius = 36 + dist * (R / 2.55) + index * 11;
+    const off = lane === 1 ? 14 : 0;
+    const perp = ang + Math.PI / 2;
     return {
-      x: Math.cos(ang) * radius + (lane === 1 ? Math.cos(ang + Math.PI / 2) * off : 0),
-      y: Math.sin(ang) * radius * 0.72 + (lane === 1 ? Math.sin(ang + Math.PI / 2) * off * 0.72 : 0),
+      x: Math.cos(ang) * radius + (lane === 1 ? Math.cos(perp) * off : 0),
+      y: Math.sin(ang) * radius * 0.72 + (lane === 1 ? Math.sin(perp) * off * 0.72 : 0),
     };
+  };
+
+  SpatialMap.prototype._separateNodes = function (nodes, minDist) {
+    minDist = minDist || 36;
+    for (let pass = 0; pass < 4; pass++) {
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a = nodes[i];
+          const b = nodes[j];
+          let dx = b.x - a.x;
+          let dy = b.y - a.y;
+          let d = Math.hypot(dx, dy) || 0.01;
+          if (d < minDist) {
+            const push = ((minDist - d) / 2) * 0.85;
+            dx /= d;
+            dy /= d;
+            a.x -= dx * push;
+            a.y -= dy * push;
+            b.x += dx * push;
+            b.y += dy * push;
+          }
+        }
+      }
+    }
+    return nodes;
   };
 
   SpatialMap.prototype._layoutPath = function () {
@@ -192,9 +237,11 @@
     if (!M) return;
     this.nodes = this.path.map((ch, i) => {
       const pos = this._chordPos(ch, i, 0);
-      const r = 15 + Math.min(14, (ch.duration || 4) * 1.4);
+      // Path nodes read heavier than option ghosts
+      const r = 17 + Math.min(12, (ch.duration || 4) * 1.2);
       return { chord: ch, x: pos.x, y: pos.y, r, i };
     });
+    this._separateNodes(this.nodes, 40);
     this._layoutAltPath();
     this._computeDivergent();
     if (this._mode !== 'node') this._applyCameraForMode();
@@ -208,9 +255,10 @@
     }
     this.altNodes = (this.altPath || []).map((ch, i) => {
       const pos = this._chordPos(ch, i, 1);
-      const r = 12 + Math.min(12, (ch.duration || 4) * 1.2);
+      const r = 13 + Math.min(10, (ch.duration || 4) * 1.1);
       return { chord: ch, x: pos.x, y: pos.y, r, i };
     });
+    this._separateNodes(this.altNodes, 34);
   };
 
   SpatialMap.prototype._computeDivergent = function () {
@@ -386,7 +434,7 @@
         const h = this.horizon[i];
         const dx = w.x - h.x;
         const dy = w.y - h.y;
-        const rr = (h.r || 12) + 6;
+        const rr = (h.r || 10) + 8;
         if (dx * dx + dy * dy <= rr * rr) return { type: 'horizon', item: h };
       }
     }
@@ -394,6 +442,15 @@
     if (this._mode !== 'node') {
       const dHome = w.x * w.x + w.y * w.y;
       if (dHome <= 28 * 28) return { type: 'home' };
+    }
+    // Blue compare nodes (for tooltips)
+    if (this.showAlt && this._mode !== 'node' && this.altNodes && this.altNodes.length) {
+      for (let i = this.altNodes.length - 1; i >= 0; i--) {
+        const n = this.altNodes[i];
+        const dx = w.x - n.x;
+        const dy = w.y - n.y;
+        if (dx * dx + dy * dy <= (n.r + 5) * (n.r + 5)) return { type: 'altNode', item: n };
+      }
     }
     for (let i = this.nodes.length - 1; i >= 0; i--) {
       const n = this.nodes[i];
@@ -649,11 +706,11 @@
     ctx.beginPath();
     ctx.arc(0, 0, 55, 0, Math.PI * 2);
     ctx.fill();
-    // Orbit guide — “other options live on this ring”
-    if (this.showHorizon && this.horizon.length && this._mode !== 'node') {
+    // Soft rings around home (global frame only)
+    if (this._mode !== 'node') {
       ctx.beginPath();
       ctx.arc(0, 0, 72, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(232,201,138,0.12)';
+      ctx.strokeStyle = 'rgba(232,201,138,0.08)';
       ctx.lineWidth = 1 / this.camera.zoom;
       ctx.setLineDash([4 / this.camera.zoom, 6 / this.camera.zoom]);
       ctx.stroke();
@@ -709,47 +766,103 @@
       ctx.fillText('Click outer dots for next · drag path to swap', 0, homeR + 30 / this.camera.zoom);
     }
 
-    // Horizon = other options only (not home — home is the centre)
-    if (this.showHorizon && this._mode !== 'node') {
+    // Options: hollow rings around the *selected* path node (constellation)
+    if (this.showHorizon && this._mode !== 'node' && this.horizon.length) {
+      const ax =
+        (this.horizon[0] && this.horizon[0]._anchor && this.horizon[0]._anchor.x) ||
+        (this.nodes[this.current] && this.nodes[this.current].x) ||
+        0;
+      const ay =
+        (this.horizon[0] && this.horizon[0]._anchor && this.horizon[0]._anchor.y) ||
+        (this.nodes[this.current] && this.nodes[this.current].y) ||
+        0;
+      // Soft selection orbit
+      ctx.beginPath();
+      ctx.arc(ax, ay, 58, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(126,184,218,0.15)';
+      ctx.lineWidth = 1 / this.camera.zoom;
+      ctx.setLineDash([3 / this.camera.zoom, 4 / this.camera.zoom]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
       this.horizon.forEach((h) => {
         if (h.kind === 'home') return;
         const col = REGION[h.kind] || REGION[h.chord && h.chord.region] || REGION.flavour;
         const isH = this.hover && this.hover.type === 'horizon' && this.hover.item === h;
+        // Stem from selection, not from map origin
         ctx.beginPath();
-        ctx.moveTo(h.x * 0.2, h.y * 0.2);
+        ctx.moveTo(ax, ay);
         ctx.lineTo(h.x, h.y);
-        ctx.strokeStyle = isH ? 'rgba(255,244,214,0.35)' : 'rgba(180,168,150,0.12)';
-        ctx.lineWidth = 1 / this.camera.zoom;
+        ctx.strokeStyle = isH ? 'rgba(157,222,168,0.55)' : 'rgba(180,168,150,0.14)';
+        ctx.lineWidth = (isH ? 1.6 : 1) / this.camera.zoom;
         ctx.stroke();
 
+        // Hollow option (not solid path-node look)
+        const rr = isH ? 12 : 9;
         ctx.beginPath();
-        ctx.arc(h.x, h.y, isH ? 15 : 11, 0, Math.PI * 2);
-        ctx.fillStyle = isH ? (col.fill || '#c4a574') : col.ghost || 'rgba(196,165,116,0.35)';
+        ctx.arc(h.x, h.y, rr, 0, Math.PI * 2);
+        ctx.fillStyle = isH ? 'rgba(20,16,12,0.92)' : 'rgba(12,10,8,0.55)';
         ctx.fill();
-        ctx.strokeStyle = isH ? '#fff4d6' : col.fill || '#c4a574';
-        ctx.lineWidth = (isH ? 2.4 : 1.3) / this.camera.zoom;
+        ctx.strokeStyle = isH ? '#9ddea8' : col.fill || '#c4a574';
+        ctx.lineWidth = (isH ? 2.4 : 1.5) / this.camera.zoom;
+        ctx.setLineDash(isH ? [] : [2.5 / this.camera.zoom, 2 / this.camera.zoom]);
         ctx.stroke();
+        ctx.setLineDash([]);
 
         const kindTag =
           h.kind === 'direction'
             ? 'next'
             : h.kind === 'cadence'
-              ? 'cadence'
+              ? 'cad'
               : h.kind === 'modulate'
                 ? 'key'
                 : h.kind === 'flavour'
                   ? 'colour'
                   : '';
-        ctx.fillStyle = isH ? '#0a0a0a' : 'rgba(230,220,200,0.9)';
-        ctx.font = `bold ${9 / this.camera.zoom}px DM Sans, sans-serif`;
+        ctx.fillStyle = isH ? '#9ddea8' : 'rgba(230,220,200,0.88)';
+        ctx.font = `bold ${8.5 / this.camera.zoom}px DM Sans, sans-serif`;
         ctx.textBaseline = 'middle';
-        ctx.fillText(h.label, h.x, h.y - (kindTag || h.job ? 2 / this.camera.zoom : 0));
-        if (kindTag || h.job) {
-          ctx.fillStyle = isH ? 'rgba(10,10,10,0.7)' : 'rgba(180,168,150,0.85)';
-          ctx.font = `${7.5 / this.camera.zoom}px DM Sans, sans-serif`;
-          ctx.fillText(kindTag || h.job, h.x, h.y + 12 / this.camera.zoom);
+        ctx.textAlign = 'center';
+        ctx.fillText(h.label, h.x, h.y - (kindTag ? 3 / this.camera.zoom : 0));
+        if (kindTag) {
+          ctx.fillStyle = isH ? 'rgba(157,222,168,0.85)' : 'rgba(160,150,135,0.8)';
+          ctx.font = `${7 / this.camera.zoom}px DM Sans, sans-serif`;
+          ctx.fillText(kindTag, h.x, h.y + 10 / this.camera.zoom);
         }
       });
+
+      // Ghost path on option hover: prev → option → next (visual join)
+      if (this.hover && this.hover.type === 'horizon' && this.hover.item) {
+        const h = this.hover.item;
+        const ci = this.current;
+        const prevN = ci > 0 ? this.nodes[ci - 1] : null;
+        const nextN = ci >= 0 && ci < this.nodes.length - 1 ? this.nodes[ci + 1] : null;
+        // If options mean "next move", ghost through selected → option
+        const fromN = this.nodes[ci] || null;
+        ctx.strokeStyle = 'rgba(125,186,146,0.7)';
+        ctx.lineWidth = 2.5 / this.camera.zoom;
+        ctx.lineCap = 'round';
+        if (fromN) {
+          ctx.beginPath();
+          ctx.moveTo(fromN.x, fromN.y);
+          ctx.lineTo(h.x, h.y);
+          ctx.stroke();
+        }
+        if (nextN && fromN) {
+          // show option replacing next
+          ctx.globalAlpha = 0.45;
+          ctx.beginPath();
+          ctx.moveTo(h.x, h.y);
+          ctx.lineTo(nextN.x, nextN.y);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        } else if (prevN && !fromN) {
+          ctx.beginPath();
+          ctx.moveTo(prevN.x, prevN.y);
+          ctx.lineTo(h.x, h.y);
+          ctx.stroke();
+        }
+      }
     }
 
     // Alt path
@@ -768,12 +881,14 @@
       }
       this.altNodes.forEach((n, i) => {
         const div = this.divergent.indexOf(i) >= 0;
+        const altHover =
+          this.hover && this.hover.type === 'altNode' && this.hover.item === n;
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r * (div ? 1.05 : 0.85), 0, Math.PI * 2);
         ctx.fillStyle = div ? 'rgba(126,184,218,0.55)' : 'rgba(126,184,218,0.28)';
         ctx.fill();
-        ctx.strokeStyle = div ? '#b8e0f5' : '#7eb8da';
-        ctx.lineWidth = (div ? 2.5 : 1.2) / this.camera.zoom;
+        ctx.strokeStyle = div || altHover ? '#b8e0f5' : '#7eb8da';
+        ctx.lineWidth = (div || altHover ? 2.5 : 1.2) / this.camera.zoom;
         ctx.stroke();
         if (div) {
           ctx.beginPath();
@@ -781,6 +896,27 @@
           ctx.strokeStyle = 'rgba(126,184,218,0.45)';
           ctx.lineWidth = 1.5 / this.camera.zoom;
           ctx.stroke();
+        }
+        // Compare tooltip on divergent steps
+        if ((altHover || (div && this.hover && this.hover.type === 'path' && this.hover.item && this.hover.item.i === i)) && this.nodes[i]) {
+          const gold = this.nodes[i].chord;
+          const blue = n.chord;
+          const tip =
+            'v? ' +
+            (gold.name || '?') +
+            '  ·  compare ' +
+            (blue.name || '?');
+          const label =
+            (gold.name || '?') + ' → ' + (blue.name || '?') + (div ? ' · differ' : ' · same');
+          ctx.fillStyle = 'rgba(10,8,6,0.88)';
+          const tw = Math.max(80, label.length * 5.2) / this.camera.zoom;
+          const th = 16 / this.camera.zoom;
+          ctx.fillRect(n.x - tw / 2, n.y - n.r - th - 8 / this.camera.zoom, tw, th);
+          ctx.fillStyle = '#b8e0f5';
+          ctx.font = `bold ${9 / this.camera.zoom}px DM Sans, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(label, n.x, n.y - n.r - th / 2 - 8 / this.camera.zoom);
         }
       });
     }
@@ -796,33 +932,56 @@
       ctx.fillText('+', this.hover.x, this.hover.y + 1);
     }
 
-    // Primary path edges
+    // Primary path edges — journey trail (dim past, bright current during play)
     for (let i = 0; i < this.nodes.length - 1; i++) {
       const a = this.nodes[i];
       const b = this.nodes[i + 1];
-      // Chord stays put while aiming — path does not free-float with the cursor
       const ax = a.x;
       const ay = a.y;
       const bx = b.x;
       const by = b.y;
       const st = this._edgeStyle(a, b);
+      const playing = this.playing;
+      let alpha = 1;
+      if (playing >= 0) {
+        if (i < playing - 1) alpha = 0.28;
+        else if (i === playing - 1) alpha = 0.95;
+        else if (i >= playing) alpha = 0.4;
+      }
       ctx.beginPath();
       const mx = (ax + bx) / 2 + (by - ay) * 0.08;
       const my = (ay + by) / 2 - (bx - ax) * 0.08;
       ctx.moveTo(ax, ay);
       ctx.quadraticCurveTo(mx, my, bx, by);
       ctx.strokeStyle = st.color;
-      ctx.lineWidth = st.w / this.camera.zoom;
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = (st.w * (i === playing - 1 ? 1.35 : 1)) / this.camera.zoom;
       ctx.lineCap = 'round';
       ctx.stroke();
-      // direction tick
-      const t = 0.55;
-      const px = (1 - t) * (1 - t) * ax + 2 * (1 - t) * t * mx + t * t * bx;
-      const py = (1 - t) * (1 - t) * ay + 2 * (1 - t) * t * my + t * t * by;
-      ctx.beginPath();
-      ctx.arc(px, py, 2.5 / this.camera.zoom, 0, Math.PI * 2);
-      ctx.fillStyle = st.color;
-      ctx.fill();
+      ctx.globalAlpha = 1;
+      // Playhead bead on the edge into current step
+      if (playing >= 1 && i === playing - 1) {
+        const t = 0.35 + 0.45 * (0.5 + 0.5 * Math.sin(this.pulseT * 3));
+        const px = (1 - t) * (1 - t) * ax + 2 * (1 - t) * t * mx + t * t * bx;
+        const py = (1 - t) * (1 - t) * ay + 2 * (1 - t) * t * my + t * t * by;
+        ctx.beginPath();
+        ctx.arc(px, py, 5 / this.camera.zoom, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff4d6';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,244,214,0.5)';
+        ctx.lineWidth = 2 / this.camera.zoom;
+        ctx.stroke();
+      } else {
+        const t = 0.55;
+        const px = (1 - t) * (1 - t) * ax + 2 * (1 - t) * t * mx + t * t * bx;
+        const py = (1 - t) * (1 - t) * ay + 2 * (1 - t) * t * my + t * t * by;
+        ctx.beginPath();
+        ctx.arc(px, py, 2.5 / this.camera.zoom, 0, Math.PI * 2);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = st.color;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
     }
 
     // Aim mode: chord stays put; magnet aims at ring of labelled targets
@@ -944,7 +1103,7 @@
       ctx.fillText(hud, magnet.x, magnet.y - 18 / z);
     }
 
-    // Primary nodes — always stay on path positions (never free-float with cursor)
+    // Primary path nodes — solid, numbered, heavier than hollow options
     this.nodes.forEach((n) => {
       const reg = n.chord.region || 'diatonic';
       const col = REGION[reg] || REGION.diatonic;
@@ -955,14 +1114,19 @@
       const x = n.x;
       const y = n.y;
       const pulse = isPlay ? 1 + 0.08 * Math.sin(this.pulseT * 2) : 1;
-      const r = n.r * (isPlay || isCur || aiming ? 1.12 : 1) * pulse;
+      const r = n.r * (isPlay || isCur || aiming ? 1.14 : 1) * pulse;
+      // Dim past steps while playing (journey)
+      let nodeAlpha = 1;
+      if (this.playing >= 0 && n.i < this.playing) nodeAlpha = 0.4;
+      else if (this.playing >= 0 && n.i > this.playing) nodeAlpha = 0.55;
+      ctx.globalAlpha = nodeAlpha;
 
       // Playhead / selection ring
       if (isPlay || isCur) {
         ctx.beginPath();
         ctx.arc(x, y, r + 8 / this.camera.zoom, 0, Math.PI * 2);
-        ctx.strokeStyle = isPlay ? 'rgba(255,244,214,0.75)' : 'rgba(232,201,138,0.45)';
-        ctx.lineWidth = 2.5 / this.camera.zoom;
+        ctx.strokeStyle = isPlay ? 'rgba(255,244,214,0.85)' : 'rgba(232,201,138,0.55)';
+        ctx.lineWidth = 2.8 / this.camera.zoom;
         ctx.stroke();
       }
       if (div) {
@@ -1023,6 +1187,28 @@
       ctx.font = `${8 / this.camera.zoom}px DM Sans, sans-serif`;
       ctx.textBaseline = 'alphabetic';
       ctx.fillText((n.chord.duration || 4) + 'b', x, y + r + 11 / this.camera.zoom);
+
+      if (
+        div &&
+        this.hover &&
+        this.hover.type === 'path' &&
+        this.hover.item === n &&
+        this.altNodes[n.i]
+      ) {
+        const blue = this.altNodes[n.i].chord;
+        const label = (n.chord.name || '?') + '  vs  ' + (blue.name || '?');
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = 'rgba(10,8,6,0.9)';
+        const tw = Math.max(90, label.length * 5.5) / this.camera.zoom;
+        const th = 18 / this.camera.zoom;
+        ctx.fillRect(x - tw / 2, y + r + 14 / this.camera.zoom, tw, th);
+        ctx.fillStyle = '#b8e0f5';
+        ctx.font = `bold ${9 / this.camera.zoom}px DM Sans, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, x, y + r + 14 / this.camera.zoom + th / 2);
+      }
+      ctx.globalAlpha = 1;
     });
 
     ctx.restore();
@@ -1037,20 +1223,26 @@
           ? 'Release to set · audition: prev → ' + this.snapAlt.label + ' → next'
           : 'Move crosshair onto a labelled target to audition · release off-target = cancel'
         : this.hover && this.hover.type === 'home'
-          ? 'Centre = home chord — click to start or land on tonic'
+          ? 'Centre = write-home tonic — click to start or land'
           : this.hover && this.hover.type === 'horizon'
-            ? 'Click to write this next move (same as From here list)'
+            ? 'Option from selection · green ghost = join · click to write'
             : this.hover && this.hover.type === 'edge'
               ? 'Click edge to insert (steals time from neighbors)'
-              : this.nodes && this.nodes.length
-                ? 'Centre = home · path = sequence · outer dots = other options · drag path to swap'
-                : 'Click the centre gold disc to start on the home chord';
+              : this.hover && this.hover.type === 'altNode'
+                ? 'Blue compare path — names show where versions differ'
+                : this.nodes && this.nodes.length
+                  ? 'Solid numbered = path · hollow around selection = options · drag path to swap'
+                  : 'Click the centre gold disc to start on the home chord';
     ctx.fillText(tip, 10, h - 12);
 
     // Map reading legend (top-left)
     ctx.font = '9px DM Sans, sans-serif';
     ctx.fillStyle = 'rgba(180,168,150,0.5)';
-    ctx.fillText('Centre disc = home tonic · outer dots = other moves · path = your sequence', 10, 14);
+    ctx.fillText(
+      'Home centre · solid path · hollow options from selection · blue = compare',
+      10,
+      14
+    );
 
     // Edge colour legend
     const legs = [

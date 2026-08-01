@@ -489,7 +489,7 @@
     if (opts.skipEdit) {
       if (map) {
         map.setOrigin(state.tonic, state.mode);
-        map.setHorizon(buildHorizon());
+        map.setHorizon(buildHorizon({ forMap: true, limit: 8 }));
       }
       renderTitle();
       renderHorizonLists();
@@ -2110,7 +2110,14 @@
   }
 
   // ─── Horizon builders ────────────────────────────────────
-  function buildHorizon() {
+  /**
+   * opts.forMap — compact set for canvas constellation (no home satellite; capped)
+   * opts.limit — max items when forMap
+   */
+  function buildHorizon(opts) {
+    opts = opts || {};
+    const forMap = !!opts.forMap;
+    const limit = opts.limit != null ? opts.limit : forMap ? 8 : 18;
     const music = M();
     const compose = C();
     const t = state.tonic;
@@ -2121,15 +2128,14 @@
 
     const items = [];
 
-    // Always offer home / tonic first (start empty path or return to centre)
-    {
-      const home = makeHomeChord({ duration: 4 });
+    // Home only in the list (centre disc owns home on the map)
+    if (!forMap) {
+      const home = makeHomeChord({ duration: stepDuration() });
       const alreadyOnHome =
         from &&
         from.root === home.root &&
         (from.quality === home.quality ||
           (from.quality || '').indexOf(home.quality === 'min' ? 'min' : 'maj') === 0);
-      // Still show when empty, or when not already resting on tonic
       if (!from || !alreadyOnHome || !state.chords.length) {
         items.push({
           chord: home,
@@ -2244,16 +2250,26 @@
       });
     }
 
-    // Dedupe by root+quality+kind, limit density
+    // Dedupe by root+quality+kind, prefer directions when mapping
     const seen = new Set();
-    const out = [];
+    let out = [];
+    const order = forMap
+      ? { direction: 0, flavour: 1, cadence: 2, modulate: 3 }
+      : { home: -1, direction: 0, flavour: 1, cadence: 2, modulate: 3 };
+    items.sort(
+      (a, b) =>
+        (order[a.kind] != null ? order[a.kind] : 9) - (order[b.kind] != null ? order[b.kind] : 9)
+    );
     for (const it of items) {
+      if (!it.chord) continue;
       const k = it.kind + ':' + it.chord.root + ':' + it.chord.quality + ':' + (it.label || '');
       if (seen.has(k)) continue;
       seen.add(k);
       out.push(it);
-      if (out.length >= 18) break;
+      if (out.length >= (forMap ? limit : 22)) break;
     }
+    // Map: mix so we don't only show directions
+    if (forMap && out.length > limit) out = out.slice(0, limit);
     return out;
   }
 
@@ -2488,7 +2504,8 @@
   function refreshMap() {
     map.setOrigin(state.tonic, state.mode);
     map.setPath(state.chords, state.selected);
-    map.setHorizon(buildHorizon());
+    // Canvas shows a short ranked constellation; From here list keeps the full catalog
+    map.setHorizon(buildHorizon({ forMap: true, limit: 8 }));
     renderTimeStrip();
     refreshAltPath();
   }
