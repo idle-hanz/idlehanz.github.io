@@ -1125,22 +1125,47 @@
       items.push({ chord: ch, kind: 'flavour', label: ch.name, job: s.job });
     });
 
-    // Directions — ranked next moves
-    if (compose.suggestNext) {
-      const sug = compose.suggestNext({
-        fromChord: from,
-        tonic: t,
-        modeKey: state.mode,
-        goalId: 'balanced',
-        count: 5,
-        path: state.chords,
-      });
+    // Directions — 1 or 2 chord packages that still join the rest of the path
+    if (compose.suggestDirectionPaths || compose.suggestNext) {
+      const sel =
+        state.selected >= 0 && state.selected < state.chords.length
+          ? state.selected
+          : state.chords.length - 1;
+      const tail = sel >= 0 ? state.chords.slice(sel + 1) : [];
+      const sug = compose.suggestDirectionPaths
+        ? compose.suggestDirectionPaths({
+            fromChord: from,
+            tail,
+            tonic: t,
+            modeKey: state.mode,
+            goalId: 'balanced',
+            count: 7,
+            path: state.chords.slice(0, Math.max(0, sel + 1)),
+          })
+        : compose.suggestNext({
+            fromChord: from,
+            tonic: t,
+            modeKey: state.mode,
+            goalId: 'balanced',
+            count: 5,
+            path: state.chords,
+          }).map((s) => ({
+            chord: s.chord,
+            chords: [s.chord],
+            label: s.chord.name,
+            jobLabel: s.jobLabel,
+            steps: 1,
+          }));
       sug.forEach((s) => {
+        const route = s.chords && s.chords.length ? s.chords : [s.chord];
         items.push({
-          chord: s.chord,
+          chord: route[0],
           kind: 'direction',
-          label: s.chord.name,
-          job: s.jobLabel,
+          label: s.label || route.map((c) => c.name).join(' → '),
+          job: s.jobLabel || s.job || (route.length > 1 ? route.length + ' steps' : ''),
+          // Multi-chord packages replace/insert the whole path so the join still works
+          route: route.length >= 2 ? route : undefined,
+          steps: route.length,
         });
       });
     }
@@ -1658,7 +1683,27 @@
       b.innerHTML = `<strong>${it.label}</strong><span>${it.job || it.chord.name}</span>`;
       b.addEventListener('mouseenter', () => {
         A().ensure();
-        A().playChord({ chord: it.chord, soft: true, duration: 0.4 });
+        const pieces =
+          it.route && it.route.length
+            ? it.route
+            : it.chord
+              ? [it.chord]
+              : [];
+        if (pieces.length >= 2) {
+          // Audition the whole package so you hear where it goes
+          if (A().stopPlayback) A().stopPlayback();
+          A().playSequence(
+            pieces.map((c) => {
+              const x = M().cloneChord(c);
+              x.duration = 1.5;
+              return x;
+            }),
+            Math.max(state.bpm, 110),
+            { pulse: false, loop: false }
+          );
+        } else if (pieces[0]) {
+          A().playChord({ chord: pieces[0], soft: true, duration: 0.45 });
+        }
       });
       b.addEventListener('click', (e) => {
         // Shift = insert between (non-destructive). Default = replace next / append.

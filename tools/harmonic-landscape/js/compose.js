@@ -395,6 +395,200 @@
     return picked;
   }
 
+  /**
+   * Direction packages of 1–2 chords from `fromChord`.
+   * When the rest of the sequence (`tail`) continues after the write, packages
+   * are scored so the *last* new chord still joins the remaining progression.
+   * Two-chord packages are preferred when a single swap would leave a bad join.
+   *
+   * opts: { fromChord, tail, tonic, modeKey, goalId, count, path }
+   * returns: [{ chords, chord, label, job, jobLabel, score, steps, joinsTo }]
+   */
+  function suggestDirectionPaths(opts) {
+    const music = M();
+    const {
+      fromChord,
+      tail = [],
+      tonic,
+      modeKey,
+      goalId = 'balanced',
+      count = 6,
+      path = [],
+    } = opts;
+
+    const packages = [];
+    const pushPkg = (chords, meta) => {
+      if (!chords || !chords.length) return;
+      const names = chords.map((c) => c.name || music.formatChordName?.(c) || '?');
+      const label = names.join(' → ');
+      const key = chords.map((c) => c.root + ':' + c.quality).join('>');
+      if (packages.some((p) => p.key === key)) return;
+      packages.push({
+        key,
+        chords: chords.map((c) => music.cloneChord(c)),
+        chord: music.cloneChord(chords[0]),
+        label,
+        job: meta.job || 'continue',
+        jobLabel: meta.jobLabel || meta.job || JOB_LABELS.continue || 'continue',
+        score: meta.score || 0,
+        steps: chords.length,
+        joinsTo: meta.joinsTo || null,
+      });
+    };
+
+    const vl = (a, b) => (a && b ? music.voiceLeadingQuality(a, b) : 0.65);
+    // What remains after writing L steps (replace starting at tail[0])
+    const remainingAfter = (L) => (tail.length > L ? tail[L] : null);
+
+    // ── Single-step candidates ──
+    const singles = suggestNext({
+      fromChord,
+      tonic,
+      modeKey,
+      goalId,
+      count: 8,
+      path,
+    });
+
+    singles.forEach((s) => {
+      const B = s.chord;
+      const join = remainingAfter(1);
+      const joinScore = join ? vl(B, join) : 0.7;
+      // Soft-penalize bad joins — still offer if composing at end
+      let score = s.score + joinScore * 0.9;
+      if (join && joinScore < 0.35) score -= 0.55;
+      if (join && joinScore >= 0.55) score += 0.2;
+
+      pushPkg([B], {
+        job: s.job,
+        jobLabel: join
+          ? (s.jobLabel || s.job) + (joinScore < 0.4 ? ' · weak into ' + join.name : ' · into ' + join.name)
+          : s.jobLabel || s.job,
+        score,
+        joinsTo: join,
+      });
+
+      // ── Two-step extension: B → C, scored into remainingAfter(2) ──
+      const seconds = suggestNext({
+        fromChord: B,
+        tonic,
+        modeKey,
+        goalId,
+        count: 5,
+        path: (path || []).concat([B]),
+      });
+      seconds.slice(0, 4).forEach((s2) => {
+        const C = s2.chord;
+        // Skip trivial repeats
+        if (C.root === B.root && C.quality === B.quality) return;
+        const join2 = remainingAfter(2);
+        const mid = vl(B, C);
+        const end = join2 ? vl(C, join2) : 0.68;
+        let sc = s.score * 0.55 + s2.score * 0.55 + mid * 0.7 + end * 1.0;
+        // Prefer two steps when one step had a weak join into old next
+        if (join && joinScore < 0.4) sc += 0.45;
+        // Classic setup→push / push→land feel
+        if (s.job === 'continue' && s2.job === 'push') sc += 0.2;
+        if (s.job === 'push' && (s2.job === 'land' || s2.job === 'cadence')) sc += 0.25;
+        if (s.job === 'colour' && (s2.job === 'push' || s2.job === 'land')) sc += 0.15;
+        if (join2 && end < 0.35) sc -= 0.5;
+        if (join2 && end >= 0.55) sc += 0.25;
+
+        const jobLabel = (s.jobLabel || s.job) + ' → ' + (s2.jobLabel || s2.job);
+        pushPkg([B, C], {
+          job: s2.job,
+          jobLabel: join2
+            ? jobLabel + ' · into ' + join2.name
+            : jobLabel + (tail.length === 1 ? ' · rewrites next 2' : ''),
+          score: sc,
+          joinsTo: join2,
+        });
+      });
+    });
+
+    // ── Seeded 2-chord gestures (always useful vocabulary) ──
+    const t = music.pc(tonic);
+    const isMin = (music.MODES[modeKey] || music.MODES.minor).romanBase === 'minor';
+    const gestureSeeds = [
+      {
+        a: music.makeChord((t + 2) % 12, isMin ? 'halfdim' : 'min7', { region: 'diatonic', tag: 'ii' }),
+        b: music.makeChord((t + 7) % 12, 'dom7', { region: 'diatonic', tag: 'V7' }),
+        job: 'push',
+        jobLabel: 'ii → V setup',
+      },
+      {
+        a: music.makeChord((t + 5) % 12, isMin ? 'min' : 'maj', { region: 'diatonic', tag: 'IV/iv' }),
+        b: music.makeChord((t + 7) % 12, 'dom7', { region: 'diatonic', tag: 'V7' }),
+        job: 'push',
+        jobLabel: 'IV → V',
+      },
+      {
+        a: music.makeChord((t + 8) % 12, 'maj', { region: 'interchange', tag: '♭VI' }),
+        b: music.makeChord((t + 10) % 12, 'maj', { region: 'interchange', tag: '♭VII' }),
+        job: 'colour',
+        jobLabel: '♭VI → ♭VII epic',
+      },
+      {
+        a: music.makeChord((t + 7) % 12, 'dom7', { region: 'diatonic', tag: 'V7' }),
+        b: music.makeChord(t, isMin ? 'min' : 'maj', { region: 'diatonic', tag: 'home' }),
+        job: 'cadence',
+        jobLabel: 'V → home',
+      },
+      {
+        a: music.makeChord((t + 1) % 12, 'dom7', { region: 'tritone', tag: '♭II7' }),
+        b: music.makeChord(t, isMin ? 'min' : 'maj', { region: 'diatonic', tag: 'home' }),
+        job: 'cadence',
+        jobLabel: 'noir → home',
+      },
+    ];
+
+    gestureSeeds.forEach((g) => {
+      let A = fromChord ? bestInversion(fromChord, g.a) : g.a;
+      let B = bestInversion(A, g.b);
+      if (fromChord && fromChord.root === A.root && fromChord.quality === A.quality) return;
+      const join2 = remainingAfter(2);
+      const end = join2 ? vl(B, join2) : 0.7;
+      let sc = 0.85 + vl(fromChord, A) * 0.6 + vl(A, B) * 0.7 + end * 0.9;
+      if (join2 && end < 0.35) sc -= 0.4;
+      pushPkg([A, B], {
+        job: g.job,
+        jobLabel: join2 ? g.jobLabel + ' · into ' + join2.name : g.jobLabel,
+        score: sc,
+        joinsTo: join2,
+      });
+    });
+
+    packages.sort((a, b) => b.score - a.score);
+
+    // Diversify: mix 1-step and 2-step, avoid same first chord dominating
+    const out = [];
+    const usedFirst = new Set();
+    let ones = 0;
+    let twos = 0;
+    for (const p of packages) {
+      if (out.length >= count) break;
+      const fk = p.chords[0].root + ':' + p.chords[0].quality;
+      // Allow a first chord twice only if one is 1-step and one is 2-step
+      const firstCount = out.filter(
+        (o) => o.chords[0].root === p.chords[0].root && o.chords[0].quality === p.chords[0].quality
+      ).length;
+      if (firstCount >= 2) continue;
+      if (p.steps === 1 && ones >= Math.ceil(count * 0.45) && twos < 2) continue;
+      if (p.steps === 2 && twos >= Math.ceil(count * 0.65) && ones < 2) continue;
+      out.push(p);
+      usedFirst.add(fk);
+      if (p.steps === 1) ones += 1;
+      else twos += 1;
+    }
+    // Fill remainder
+    for (const p of packages) {
+      if (out.length >= count) break;
+      if (out.some((o) => o.key === p.key)) continue;
+      out.push(p);
+    }
+    return out;
+  }
+
   function countExoticStreak(path) {
     let n = 0;
     for (let i = path.length - 1; i >= 0; i--) {
@@ -1033,6 +1227,7 @@
     tensionCurve,
     describeJob,
     suggestNext,
+    suggestDirectionPaths,
     analyzeCell,
     varyOneChord,
     varyRhythmOnly,
