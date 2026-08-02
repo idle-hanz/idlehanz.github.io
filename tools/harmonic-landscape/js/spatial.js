@@ -150,6 +150,17 @@
     this.rememberKey(next.tonic, next.mode);
     // Mid-drag rebuilds re-layout the path and make the map jitter
     if (this._mode === 'node') return;
+    // Same key already loaded — skip rebuild (view switch was jumping the wheel)
+    if (
+      prev &&
+      prev.tonic === next.tonic &&
+      prev.mode === next.mode &&
+      this.disks &&
+      this.disks.length &&
+      this._keepCameraOnce
+    ) {
+      return;
+    }
     this._rebuildDisks();
     if (this.path && this.path.length) {
       this._layoutPath();
@@ -239,8 +250,12 @@
       };
     });
 
-    // Auto frame when multiple disks
-    if (this.disks.length > 1 && this.cameraMode === 'home') {
+    // Multi-disk: only suggest a wider zoom when not preserving camera (view switch)
+    if (
+      this.disks.length > 1 &&
+      this.cameraMode === 'home' &&
+      !this._keepCameraOnce
+    ) {
       this.camera.tz = Math.min(this.camera.tz || 1, 0.65);
       this.camera.tx = 0;
       this.camera.ty = 0;
@@ -282,6 +297,15 @@
   };
 
   SpatialMap.prototype.setMapView = function (view) {
+    // Keep the same write-home wheel: don't let layout re-frame the camera
+    const cam = {
+      tx: this.camera.tx,
+      ty: this.camera.ty,
+      tz: this.camera.tz,
+      x: this.camera.x,
+      y: this.camera.y,
+      zoom: this.camera.zoom,
+    };
     this.mapView = view === 'function' ? 'function' : 'chase';
     if (this.mapView === 'chase') {
       this.functionNodes = [];
@@ -289,8 +313,31 @@
       this._layoutFunctionChart();
     }
     // Gold + blue paths re-snap (Function seats vs Chase) when view flips
+    this._keepCameraOnce = true;
     if (this.path && this.path.length) this._layoutPath();
     else if (this.altPath && this.altPath.length) this._layoutAltPath();
+    this._keepCameraOnce = false;
+    // Restore pose so Chase ↔ Function feels like the same disk
+    this.camera.tx = cam.tx;
+    this.camera.ty = cam.ty;
+    this.camera.tz = cam.tz;
+    this.camera.x = cam.x;
+    this.camera.y = cam.y;
+    this.camera.zoom = cam.zoom;
+  };
+
+  /** Snap view to the active write-home disk without changing zoom much. */
+  SpatialMap.prototype.frameActiveDisk = function (opts) {
+    opts = opts || {};
+    const d = this._activeDisk();
+    this.camera.tx = (d && d.cx) || 0;
+    this.camera.ty = (d && d.cy) || 0;
+    if (opts.zoom != null) this.camera.tz = opts.zoom;
+    if (opts.snap) {
+      this.camera.x = this.camera.tx;
+      this.camera.y = this.camera.ty;
+      this.camera.zoom = this.camera.tz;
+    }
   };
 
   /**
@@ -865,7 +912,8 @@
     this._layoutAltPath();
     this._computeDivergent();
     this._rebuildScaleSeats();
-    if (this._mode !== 'node') this._applyCameraForMode();
+    // View switch / explicit keep: don't yank the wheel to Home lock
+    if (this._mode !== 'node' && !this._keepCameraOnce) this._applyCameraForMode();
   };
 
   /**
@@ -1016,6 +1064,8 @@
     // Soft only — hard _separateNodes flung blue nodes into empty corners
     this._softSeparate(this.altNodes, 20, 6);
   };
+
+  // (camera apply is in _layoutPath / setCameraMode)
 
   SpatialMap.prototype._computeDivergent = function () {
     this.divergent = [];

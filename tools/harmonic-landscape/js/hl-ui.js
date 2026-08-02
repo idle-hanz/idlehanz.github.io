@@ -21,8 +21,22 @@ H.refreshAll = function () {
     H.refreshMap();
   }
 
-  H.refreshMap = function () {
+  H.refreshMap = function (opts) {
+    opts = opts || {};
     H.ensurePathOwned();
+    // Keep pan/zoom across Chase ↔ Function (and any caller that asks)
+    if (opts.keepCamera && H.map) H.map._keepCameraOnce = true;
+    const camSnap =
+      opts.keepCamera && H.map
+        ? {
+            tx: H.map.camera.tx,
+            ty: H.map.camera.ty,
+            tz: H.map.camera.tz,
+            x: H.map.camera.x,
+            y: H.map.camera.y,
+            zoom: H.map.camera.zoom,
+          }
+        : null;
     H.map.setOrigin(H.state.tonic, H.state.mode);
     H.map.setPath(H.state.chords, H.state.selected);
     // Chase: next-move constellation. Function: neighbourhood chart for write home.
@@ -35,11 +49,31 @@ H.refreshAll = function () {
     }
     H.renderTimeStrip();
     H.refreshAltPath();
+    if (camSnap && H.map) {
+      H.map.camera.tx = camSnap.tx;
+      H.map.camera.ty = camSnap.ty;
+      H.map.camera.tz = camSnap.tz;
+      H.map.camera.x = camSnap.x;
+      H.map.camera.y = camSnap.y;
+      H.map.camera.zoom = camSnap.zoom;
+    }
+    if (H.map) H.map._keepCameraOnce = false;
   }
 
   /** Switch map between Chase (scale seats) and Function (neighbourhood chart). */
   H.setMapView = function (view) {
     view = view === 'function' ? 'function' : 'chase';
+    // Snapshot before any layout so the write-home wheel doesn't jump
+    const camSnap = H.map
+      ? {
+          tx: H.map.camera.tx,
+          ty: H.map.camera.ty,
+          tz: H.map.camera.tz,
+          x: H.map.camera.x,
+          y: H.map.camera.y,
+          zoom: H.map.camera.zoom,
+        }
+      : null;
     if (H.map && H.map.setMapView) H.map.setMapView(view);
     const chaseBtn = H.$('#view-chase');
     const fnBtn = H.$('#view-function');
@@ -54,11 +88,32 @@ H.refreshAll = function () {
       if (wrap && wrap.style) wrap.style.opacity = view === 'function' ? '0.35' : '1';
     }
     H.syncFunctionOptsUI();
-    H.refreshMap();
+    H.refreshMap({ keepCamera: true });
+    // Re-apply after refresh (setPath/setOrigin would otherwise Home-lock the camera)
+    if (camSnap && H.map) {
+      // Stay on the active write-home disk (always at origin)
+      // Keep the user's zoom; only pin centre if they were already near home
+      const nearHome =
+        Math.hypot(camSnap.tx || 0, camSnap.ty || 0) < 80 ||
+        H.map.cameraMode === 'home';
+      if (nearHome) {
+        H.map.camera.tx = 0;
+        H.map.camera.ty = 0;
+        H.map.camera.x = 0;
+        H.map.camera.y = 0;
+      } else {
+        H.map.camera.tx = camSnap.tx;
+        H.map.camera.ty = camSnap.ty;
+        H.map.camera.x = camSnap.x;
+        H.map.camera.y = camSnap.y;
+      }
+      H.map.camera.tz = camSnap.tz;
+      H.map.camera.zoom = camSnap.zoom;
+    }
     H.setSyncStatus(
       view === 'function'
-        ? 'Function view · use toggles under the map · hover lights paths'
-        : 'Chase view · scale seats · multi-disk for true key changes'
+        ? 'Function view · same write-home wheel · use toggles under the map'
+        : 'Chase view · same write-home wheel · multi-disk for true key changes'
     );
   };
 
