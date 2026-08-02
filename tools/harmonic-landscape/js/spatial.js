@@ -279,8 +279,9 @@
   };
 
   /**
-   * Options sit on Chase seats of the active disk (or shell), near the selection.
-   * Prefer true scale seats; constellation fan is fallback for dense collisions.
+   * Options sit on the same Chase seats the path will use after click.
+   * (Old soft-pull toward selection made suggestions look local but the
+   * written chord jumped to its true seat — far from the hollow ring.)
    */
   SpatialMap.prototype.setHorizon = function (items) {
     if (this._mode === 'node') return;
@@ -296,34 +297,60 @@
 
     this.horizon = orbitItems.map((it, i) => {
       const ch = it.chord;
-      let x;
-      let y;
+      let x = disk.cx || 0;
+      let y = disk.cy || 0;
       let onScale = false;
       let shell = false;
-      if (M && M.chaseChordPos && ch) {
-        const pos = M.chaseChordPos(ch, this.origin.tonic, this.origin.mode, disk);
+      let naturalX = x;
+      let naturalY = y;
+
+      if (ch) {
+        // Same layout as path nodes so click lands under the suggestion
+        const probe = {
+          ...ch,
+          localTonic: ch.localTonic != null ? ch.localTonic : this.origin.tonic,
+          localMode: ch.localMode || this.origin.mode,
+        };
+        const pos = this._chordPos(probe, 0, 0);
         x = pos.x;
         y = pos.y;
-        onScale = pos.onScale;
+        naturalX = pos.x;
+        naturalY = pos.y;
+        onScale = !!pos.onScale;
         shell = pos.shell;
-        // Nudge off occupied seats
-        used.forEach((u) => {
-          const d = Math.hypot(x - u.x, y - u.y);
-          if (d < 28) {
-            const ang = Math.atan2(y - (disk.cy || 0), x - (disk.cx || 0)) + 0.35;
-            x += Math.cos(ang) * 14;
-            y += Math.sin(ang) * 12;
-          }
-        });
-      } else {
+      } else if (M && M.chaseChordPos) {
+        // fallback
         const ang = -Math.PI / 2 + (i / Math.max(1, orbitItems.length)) * Math.PI * 2;
-        const ring = 52 + (anchor.r || 14) + (i % 2) * 22;
-        x = anchor.x + Math.cos(ang) * ring;
-        y = anchor.y + Math.sin(ang) * ring * 0.78;
+        x = (disk.cx || 0) + Math.cos(ang) * (disk.R || 100) * 0.74;
+        y = (disk.cy || 0) + Math.sin(ang) * (disk.R || 100) * 0.66;
+        naturalX = x;
+        naturalY = y;
       }
-      // Soft pull toward selection so constellation feels local
-      x = x * 0.72 + anchor.x * 0.28;
-      y = y * 0.72 + anchor.y * 0.28;
+
+      // Tiny de-stack only — keep near true seat (≤1 step)
+      const deStack = (ox, oy, minD, step) => {
+        let px = ox;
+        let py = oy;
+        for (let k = 0; k < 6; k++) {
+          let hit = null;
+          used.forEach((u) => {
+            if (Math.hypot(px - u.x, py - u.y) < minD) hit = u;
+          });
+          (this.nodes || []).forEach((n) => {
+            if (Math.hypot(px - n.x, py - n.y) < minD * 0.85) hit = n;
+          });
+          if (!hit) break;
+          const ang =
+            Math.atan2(py - (disk.cy || 0), px - (disk.cx || 0)) + 0.45 + k * 0.2;
+          px = naturalX + Math.cos(ang) * step * (k + 1);
+          py = naturalY + Math.sin(ang) * step * 0.88 * (k + 1);
+        }
+        return { x: px, y: py };
+      };
+      const stacked = deStack(x, y, 24, 11);
+      x = stacked.x;
+      y = stacked.y;
+
       const node = {
         chord: ch,
         kind: it.kind || 'direction',
@@ -333,7 +360,9 @@
         modulateTo: it.modulateTo,
         x,
         y,
-        r: 10,
+        naturalX,
+        naturalY,
+        r: 11,
         onScale,
         shell,
         _anchor: { x: anchor.x, y: anchor.y },
@@ -1129,7 +1158,7 @@
       ctx.fillText('Click HOME to start on tonic · ring = Chase harmonic scale', act.cx || 0, (act.cy || 0) + (act.R || 100) * 0.95);
     }
 
-    // Options: hollow rings near selection (lighter when not dragging)
+    // Options: hollow rings on true Chase seats (same place the path will land)
     // Hidden while dragging — drag uses Chase seats as drop targets instead
     if (this.showHorizon && this._mode !== 'node' && this.horizon.length) {
       const ax =
@@ -1140,32 +1169,26 @@
         (this.horizon[0] && this.horizon[0]._anchor && this.horizon[0]._anchor.y) ||
         (this.nodes[this.current] && this.nodes[this.current].y) ||
         0;
-      // Soft selection orbit
-      ctx.beginPath();
-      ctx.arc(ax, ay, 58, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(126,184,218,0.15)';
-      ctx.lineWidth = 1 / this.camera.zoom;
-      ctx.setLineDash([3 / this.camera.zoom, 4 / this.camera.zoom]);
-      ctx.stroke();
-      ctx.setLineDash([]);
 
       this.horizon.forEach((h) => {
         if (h.kind === 'home') return;
         const col = REGION[h.kind] || REGION[h.chord && h.chord.region] || REGION.flavour;
         const isH = this.hover && this.hover.type === 'horizon' && this.hover.item === h;
-        // Stem from selection, not from map origin
+        // Thin stem from selection → true seat (honest hop, not a local fan)
         ctx.beginPath();
         ctx.moveTo(ax, ay);
         ctx.lineTo(h.x, h.y);
-        ctx.strokeStyle = isH ? 'rgba(157,222,168,0.55)' : 'rgba(180,168,150,0.14)';
-        ctx.lineWidth = (isH ? 1.6 : 1) / this.camera.zoom;
+        ctx.strokeStyle = isH ? 'rgba(157,222,168,0.55)' : 'rgba(180,168,150,0.12)';
+        ctx.lineWidth = (isH ? 1.6 : 0.9) / this.camera.zoom;
+        ctx.setLineDash(isH ? [] : [3 / this.camera.zoom, 4 / this.camera.zoom]);
         ctx.stroke();
+        ctx.setLineDash([]);
 
-        // Hollow option (not solid path-node look)
-        const rr = isH ? 12 : 9;
+        // Hollow option sitting on the landing seat
+        const rr = isH ? 13 : 10;
         ctx.beginPath();
         ctx.arc(h.x, h.y, rr, 0, Math.PI * 2);
-        ctx.fillStyle = isH ? 'rgba(20,16,12,0.92)' : 'rgba(12,10,8,0.55)';
+        ctx.fillStyle = isH ? 'rgba(20,16,12,0.92)' : 'rgba(12,10,8,0.5)';
         ctx.fill();
         ctx.strokeStyle = isH ? '#9ddea8' : col.fill || '#c4a574';
         ctx.lineWidth = (isH ? 2.4 : 1.5) / this.camera.zoom;
@@ -1183,7 +1206,7 @@
                 : h.kind === 'flavour'
                   ? 'colour'
                   : '';
-        ctx.fillStyle = isH ? '#9ddea8' : 'rgba(230,220,200,0.88)';
+        ctx.fillStyle = isH ? '#9ddea8' : 'rgba(230,220,200,0.9)';
         ctx.font = `bold ${8.5 / this.camera.zoom}px DM Sans, sans-serif`;
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'center';
@@ -1195,35 +1218,37 @@
         }
       });
 
-      // Ghost path on option hover: prev → option → next (visual join)
+      // Ghost path on option hover: selection → landing seat (and onward)
       if (this.hover && this.hover.type === 'horizon' && this.hover.item) {
         const h = this.hover.item;
         const ci = this.current;
         const prevN = ci > 0 ? this.nodes[ci - 1] : null;
         const nextN = ci >= 0 && ci < this.nodes.length - 1 ? this.nodes[ci + 1] : null;
-        // If options mean "next move", ghost through selected → option
         const fromN = this.nodes[ci] || null;
-        ctx.strokeStyle = 'rgba(125,186,146,0.7)';
+        // Prefer true seat for ghost so it matches post-click path
+        const hx = h.naturalX != null ? h.naturalX : h.x;
+        const hy = h.naturalY != null ? h.naturalY : h.y;
+        ctx.strokeStyle = 'rgba(125,186,146,0.75)';
         ctx.lineWidth = 2.5 / this.camera.zoom;
         ctx.lineCap = 'round';
         if (fromN) {
           ctx.beginPath();
           ctx.moveTo(fromN.x, fromN.y);
-          ctx.lineTo(h.x, h.y);
+          ctx.lineTo(hx, hy);
           ctx.stroke();
         }
         if (nextN && fromN) {
           // show option replacing next
           ctx.globalAlpha = 0.45;
           ctx.beginPath();
-          ctx.moveTo(h.x, h.y);
+          ctx.moveTo(hx, hy);
           ctx.lineTo(nextN.x, nextN.y);
           ctx.stroke();
           ctx.globalAlpha = 1;
         } else if (prevN && !fromN) {
           ctx.beginPath();
           ctx.moveTo(prevN.x, prevN.y);
-          ctx.lineTo(h.x, h.y);
+          ctx.lineTo(hx, hy);
           ctx.stroke();
         }
       }
