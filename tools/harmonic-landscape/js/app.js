@@ -117,12 +117,27 @@
 
     H.fillControls();
     H.wire();
-    // Prefer handoff / shared session; else seed a feel pack
+    // Prefer handoff / shared session; else start empty (no default pack)
     const loaded = H.ingestHandoffOrSession();
-    if (!loaded) H.loadPack('home-grit', { silent: true });
+    if (!loaded) {
+      // Zero slate: empty path, write home from dropdown defaults only
+      H.state.chords = [];
+      H.state.selected = -1;
+      H.state.title = 'Untitled sequence';
+      H.state.fromPackId = null;
+      H.state.recognition = null;
+      H.state.nameLocked = false;
+      if (!H.state.cellId && H.S() && H.S().newCellId) {
+        H.state.cellId = H.S().newCellId('cell');
+      }
+    }
     H.refreshAll();
     H.refreshAltPath();
-    H.setSyncStatus(loaded ? 'Loaded shared session' : 'Local pack · not yet sent');
+    H.setSyncStatus(
+      loaded
+        ? 'Loaded shared session'
+        : 'Empty · pick Write home · click seats / From here / a feel pack to start'
+    );
 
     document.body.addEventListener('pointerdown', () => H.A().ensure(), { once: true });
     requestAnimationFrame(() => {
@@ -218,7 +233,30 @@
     if (H.$('#btn-H.undo')) H.$('#btn-H.undo').addEventListener('click', H.undo);
     if (H.$('#btn-clear')) {
       H.$('#btn-clear').addEventListener('click', () => {
-        if (!H.state.chords.length || confirm('Clear sequence?')) H.clearSeq();
+        // Empty path only (keeps versions / write home)
+        if (!H.state.chords.length || confirm('Clear the path? (Write home and versions stay)')) {
+          H.clearSeq();
+        }
+      });
+    }
+    if (H.$('#btn-reset-all')) {
+      H.$('#btn-reset-all').addEventListener('click', () => {
+        const ok = confirm(
+          'Full reset to empty?\n\n' +
+            '• Clears the path and undo history\n' +
+            '• Removes blue compare and map key disks\n' +
+            '• Starts a new cell (no feel pack)\n' +
+            '• Optional: also wipe saved session cells\n\n' +
+            'OK = reset Landscape\n' +
+            'Cancel = keep everything'
+        );
+        if (!ok) return;
+        const wipeSession = confirm(
+          'Also wipe the shared song session (all version cells in local storage)?\n\n' +
+            'OK = clear session too\n' +
+            'Cancel = keep saved versions, only reset this editor'
+        );
+        H.resetToEmpty({ clearSession: wipeSession, resetHome: false });
       });
     }
     if (H.$('#btn-export-txt')) H.$('#btn-export-txt').addEventListener('click', H.exportText);

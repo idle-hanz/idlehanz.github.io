@@ -173,6 +173,9 @@ H.smoothVoicings = function () {
     H.A().playChord({ chord: ch });
   }
 
+  /**
+   * Clear the working path only (keeps write home, versions, undo of prior clears).
+   */
   H.clearSeq = function () {
     if (H.state.chords.length) H.pushUndo();
     H.state.chords = [];
@@ -180,7 +183,87 @@ H.smoothVoicings = function () {
     H.state.title = 'Untitled sequence';
     H.state.recognition = null;
     H.state.fromPackId = null;
+    H.state.nameLocked = false;
     H.refreshAll();
+    H.setSyncStatus('Path cleared · write home still ' + H.keyLabel() + ' · Reset all = zero slate');
+  }
+
+  /**
+   * Full zero slate: empty path, no pack, no blue compare, fresh cell id,
+   * undo stacks empty, map key ledger wiped. Write home stays on the dropdowns
+   * (so you still have a tonic for seats) unless opts.resetHome.
+   */
+  H.resetToEmpty = function (opts) {
+    opts = opts || {};
+    if (H.A() && H.A().isPlaying && H.A().isPlaying()) {
+      if (H.stopPlaybackUI) H.stopPlaybackUI();
+      else if (H.A().stopPlayback) H.A().stopPlayback();
+    }
+
+    H.state.chords = [];
+    H.state.selected = -1;
+    H.state.title = 'Untitled sequence';
+    H.state.recognition = null;
+    H.state.fromPackId = null;
+    H.state.nameLocked = false;
+    H.state.cellId = H.S() && H.S().newCellId ? H.S().newCellId('cell') : null;
+    H.state.compareCellId = null;
+    H.state.undoStack = [];
+    H.state.redoStack = [];
+    H.state.pendingTonic = null;
+    H.state.pendingMode = null;
+    H.state.defaultDuration = 4;
+    H.state.syncMsg = '';
+
+    if (opts.resetHome) {
+      H.state.tonic = 0; // C
+      H.state.mode = 'major';
+      if (H.$('#tonic')) H.$('#tonic').value = '0';
+      if (H.$('#mode')) H.$('#mode').value = 'major';
+    }
+
+    // Wipe multi-disk memory so only the current write home remains
+    if (H.map) {
+      if (H.map.keyLedger) H.map.keyLedger = [];
+      if (H.map.setFunctionChart) H.map.setFunctionChart(null);
+      if (H.map.setAltPath) H.map.setAltPath([]);
+      if (H.map.setHorizon) H.map.setHorizon([]);
+      if (H.map.setPath) H.map.setPath([], -1);
+      if (H.map.setOrigin) H.map.setOrigin(H.state.tonic, H.state.mode);
+      if (H.map.setMapView) H.map.setMapView('chase');
+      if (H.map.focusHome) H.map.focusHome();
+    }
+    if (H.$('#view-chase')) H.$('#view-chase').classList.add('active');
+    if (H.$('#view-function')) H.$('#view-function').classList.remove('active');
+    if (H.$('#tog-alt')) {
+      H.$('#tog-alt').checked = false;
+      if (H.map && H.map.setShowAlt) H.map.setShowAlt(false);
+    }
+
+    // Optional: drop IHSession song so Arrangement doesn't rehydrate old cells
+    if (opts.clearSession && H.S() && H.S().saveSong) {
+      try {
+        const song = H.S().loadSong && H.S().loadSong();
+        if (song) {
+          song.cells = {};
+          song.families = song.families || {};
+          song.focus = { cellId: null, sectionId: null, chordIndex: 0 };
+          song.key = { tonic: H.state.tonic, mode: H.state.mode };
+          H.S().saveSong(song, 'landscape');
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    }
+
+    H.refreshAll();
+    H.updateLandButton && H.updateLandButton();
+    H.setSyncStatus(
+      'Reset · empty path · no pack' +
+        (opts.resetHome ? ' · home C major' : ' · write home ' + H.keyLabel()) +
+        (opts.clearSession ? ' · session cells cleared' : '') +
+        ' · load a feel or click seats to start'
+    );
   }
 
   H.beatSum = function (chords) {
