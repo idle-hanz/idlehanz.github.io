@@ -527,6 +527,11 @@
       ctx.fill();
     });
 
+    // While dragging a path chord, aim pads sit on these seats — skip node
+    // discs so we don't paint double chords at the same coordinates.
+    const dragging = this._mode === 'node';
+    if (dragging) return;
+
     this.functionNodes.forEach((n) => {
       const col =
         n.role === 'secondary' || n.role === 'dominant'
@@ -772,11 +777,13 @@
             n.chord.root === ch.root &&
             n.chord.quality === ch.quality
         );
+        // Soft: same root — prefer diatonic, then any chart seat (never free Chase pos)
         const soft = exact
           ? null
           : this.functionNodes.find(
               (n) => n.chord && n.chord.root === ch.root && n.role === 'diatonic'
-            );
+            ) ||
+            this.functionNodes.find((n) => n.chord && n.chord.root === ch.root);
         const fn = exact || soft;
         if (fn) {
           // Stack multiple visits slightly so path steps don't fully cover each other
@@ -785,7 +792,10 @@
             const prev = this.path[j];
             if (prev && prev.root === ch.root && prev.quality === ch.quality) stack++;
           }
-          const ang = Math.atan2(fn.y, fn.x) + Math.PI / 2;
+          const disk = this._diskForChord(ch) || this._activeDisk();
+          const cx = (disk && disk.cx) || 0;
+          const cy = (disk && disk.cy) || 0;
+          const ang = Math.atan2(fn.y - cy, fn.x - cx) + Math.PI / 2;
           pos = {
             x: fn.x + Math.cos(ang) * stack * 6,
             y: fn.y + Math.sin(ang) * stack * 5,
@@ -924,34 +934,64 @@
   };
 
   /**
-   * Drag targets sit on real Chase chart seats (not a clutter fan around the grab).
-   * You drag a path chord onto I / IV / V / etc.
+   * Drag targets sit on real seats the path will use after drop.
+   * Chase: Chase layout. Function: exact Function-chart node positions
+   * (never Chase seats beside chart chords — that looked like double nodes).
    */
   SpatialMap.prototype._layoutAlts = function (pathIndex, alts) {
     const list = alts || [];
     const used = [];
+    const useFn =
+      this.mapView === 'function' && this.functionNodes && this.functionNodes.length;
     this.alts = list.map((a, i) => {
-      const natural = this._chordPos(a.chord, pathIndex, 0);
-      let x = natural.x;
-      let y = natural.y;
-      // Gentle de-stack if two land on the same seat
-      used.forEach((u) => {
-        const d = Math.hypot(x - u.x, y - u.y);
-        if (d < 26) {
-          const ang = Math.atan2(y, x) + 0.4 * (i + 1);
-          x += Math.cos(ang) * 12;
-          y += Math.sin(ang) * 10;
+      let x;
+      let y;
+      // Prefer coords stamped by buildAimTargets from functionNodes
+      if (a._fnX != null && a._fnY != null) {
+        x = a._fnX;
+        y = a._fnY;
+      } else if (useFn && a.chord) {
+        const exact = this.functionNodes.find(
+          (n) =>
+            n.chord &&
+            n.chord.root === a.chord.root &&
+            n.chord.quality === a.chord.quality
+        );
+        const soft = exact
+          ? null
+          : this.functionNodes.find((n) => n.chord && n.chord.root === a.chord.root);
+        const fn = exact || soft;
+        if (fn) {
+          x = fn.x;
+          y = fn.y;
         }
-      });
+      }
+      if (x == null || y == null) {
+        const natural = this._chordPos(a.chord, pathIndex, 0);
+        x = natural.x;
+        y = natural.y;
+        // Gentle de-stack only in Chase (Function seats are intentional collocation)
+        if (!useFn) {
+          used.forEach((u) => {
+            const d = Math.hypot(x - u.x, y - u.y);
+            if (d < 26) {
+              const ang = Math.atan2(y, x) + 0.4 * (i + 1);
+              x += Math.cos(ang) * 12;
+              y += Math.sin(ang) * 10;
+            }
+          });
+        }
+      }
       const t = {
         chord: a.chord,
         label: a.label || a.chord.name,
         role: a.role || '',
-        x,
-        y,
-        r: 22,
-        naturalX: natural.x,
-        naturalY: natural.y,
+        functionNodeId: a.functionNodeId || null,
+        x: x,
+        y: y,
+        r: useFn ? 18 : 22,
+        naturalX: x,
+        naturalY: y,
       };
       used.push(t);
       return t;
@@ -1870,24 +1910,26 @@
       ctx.lineWidth = 1 / z;
       ctx.stroke();
 
-      // Aim targets on Chase seats — large drop pads
+      // Aim targets on seats (Chase layout or Function chart — same coords as path will use)
+      const fnAim = this.mapView === 'function';
       this.alts.forEach((a) => {
         const isSnap = this.snapAlt === a;
+        const padR = fnAim ? (isSnap ? 20 : 16) : isSnap ? 28 : 24;
         ctx.beginPath();
-        ctx.arc(a.x, a.y, isSnap ? 28 : 24, 0, Math.PI * 2);
+        ctx.arc(a.x, a.y, padR, 0, Math.PI * 2);
         ctx.fillStyle = isSnap ? 'rgba(125,186,146,0.7)' : 'rgba(20,16,12,0.78)';
         ctx.fill();
         ctx.strokeStyle = isSnap ? '#9ddea8' : 'rgba(232,201,138,0.9)';
         ctx.lineWidth = (isSnap ? 3.5 : 2.2) / z;
         ctx.stroke();
         ctx.fillStyle = isSnap ? '#0a0a0a' : '#fff4d6';
-        ctx.font = `bold ${13 / z}px DM Sans, sans-serif`;
+        ctx.font = `bold ${(fnAim ? 11 : 13) / z}px DM Sans, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(a.role || a.label, a.x, a.y - (a.role ? 5 / z : 0));
         if (a.role) {
           ctx.fillStyle = isSnap ? 'rgba(10,10,10,0.75)' : 'rgba(232,201,138,0.95)';
-          ctx.font = `${10 / z}px DM Sans, sans-serif`;
+          ctx.font = `${(fnAim ? 9 : 10) / z}px DM Sans, sans-serif`;
           ctx.fillText(a.label, a.x, a.y + 12 / z);
         }
       });

@@ -41,17 +41,19 @@
     H.map.onSwapChord = (pathIndex, newChord) => {
       H.applyChordAtIndex(pathIndex, newChord, { pullNeighbors: false });
     };
-    // Only called when user released on a locked aim target (Chase seat or tension)
+    // Only called when user released on a locked aim target (swap in place — never append)
     H.map.onPullChord = (pathIndex, chord, meta) => {
       H.applyChordAtIndex(pathIndex, chord, {
         pullNeighbors: !!(meta && meta.pullNeighbors),
         pullStrength: 0.5,
       });
+      const where =
+        H.map && H.map.mapView === 'function' ? ' on Function chart' : ' on Chase chart';
       H.setSyncStatus(
         'Moved to ' +
           (chord.name || '') +
           (meta && meta.role ? ' · ' + meta.role : '') +
-          ' on Chase chart'
+          where
       );
     };
     // Click empty scale seat → add that chord

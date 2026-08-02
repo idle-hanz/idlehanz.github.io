@@ -23,25 +23,55 @@ H.chordFromChaseSeat = function (seat, key) {
   }
 
   /**
-   * Drag targets on the (large) Chase chart: full scale seats + useful tension shells.
-   * Built in the path chord's own key so multi-disk drag stays on that disk.
+   * Drag targets for map pull-to-swap.
+   * Chase view: scale seats + tension shells (path lands on Chase layout).
+   * Function view: only neighbourhood chart seats at their exact chart positions
+   * (Chase alts next to Function nodes looked like double chords).
    */
   H.buildAimTargets = function (pathIndex, chord) {
     const list = [];
     const seen = new Set();
     const diskKey = H.keyOf(chord || H.state.chords[pathIndex]);
-    const add = (ch, label, role) => {
+    const dur = (chord && chord.duration) || H.stepDuration();
+    const add = (ch, label, role, extra) => {
       if (!ch) return;
       const k = ch.root + ':' + ch.quality;
       if (seen.has(k)) return;
       if (chord && ch.root === chord.root && ch.quality === chord.quality) return;
       seen.add(k);
-      ch = { ...ch, duration: (chord && chord.duration) || H.stepDuration() };
+      const music = H.M();
+      ch = music.cloneChord
+        ? music.cloneChord(ch)
+        : { ...ch, notes: (ch.notes || []).slice() };
+      ch.duration = dur;
       H.stampKey(ch, diskKey);
-      list.push({ chord: ch, label: label || ch.name, role: role || '' });
+      list.push(
+        Object.assign(
+          { chord: ch, label: label || ch.name, role: role || '' },
+          extra || {}
+        )
+      );
     };
 
-    // Full circular harmonic scale of THIS chord's disk
+    // Function view: snap only to chart seats (diatonic, V7s, borrow)
+    if (
+      H.map &&
+      H.map.mapView === 'function' &&
+      H.map.functionNodes &&
+      H.map.functionNodes.length
+    ) {
+      H.map.functionNodes.forEach((fn) => {
+        if (!fn.chord) return;
+        add(fn.chord, fn.label || fn.chord.name, fn.roman || fn.role || '', {
+          functionNodeId: fn.id,
+          _fnX: fn.x,
+          _fnY: fn.y,
+        });
+      });
+      return list;
+    }
+
+    // Chase view: full circular harmonic scale of THIS chord's disk
     if (H.M().circularHarmonicScale) {
       H.M()
         .circularHarmonicScale(diskKey.tonic, diskKey.mode)
