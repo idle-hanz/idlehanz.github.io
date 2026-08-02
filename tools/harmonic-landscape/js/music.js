@@ -335,16 +335,148 @@
     return Math.min(base, 4.5);
   }
 
-  /** Angle around home for spatial placement */
+  /** Angle around home for spatial placement (legacy / fallback) */
   function harmonicAngle(chord, tonic) {
     const t = pc(tonic);
-    // Map root relation to angle; offset by quality for uniqueness
-    const rootAngle = ((chord.root - t + 12) % 12) * (Math.PI * 2 / 12);
+    const rootAngle = ((chord.root - t + 12) % 12) * ((Math.PI * 2) / 12);
     const qOff = {
       maj: 0, min: 0.08, dim: 0.15, aug: -0.1,
       maj7: -0.05, min7: 0.1, dom7: 0.12, halfdim: 0.18, dim7: 0.2,
     };
     return rootAngle + (qOff[chord.quality] || 0);
+  }
+
+  /**
+   * Chase-inspired circular harmonic scale for one key.
+   * Seats go clockwise as fifths-down (homeward gravity), tonic at top (-π/2).
+   * Major: I–IV–vii°–iii–vi–ii–V
+   * Minor: i–iv–♭VII–♭III–♭VI–ii°–V
+   */
+  function circularHarmonicScale(tonic, modeKey) {
+    const t = pc(tonic);
+    const isMin = (MODES[modeKey] || MODES.minor).romanBase === 'minor';
+    const specs = isMin
+      ? [
+          { d: 0, qualities: ['min', 'min7', 'min9', 'minmaj7'], roman: 'i', role: 'tonic' },
+          { d: 5, qualities: ['min', 'min7'], roman: 'iv', role: 'subdom' },
+          { d: 10, qualities: ['maj', 'dom7', 'maj7'], roman: '♭VII', role: 'modal' },
+          { d: 3, qualities: ['maj', 'maj7'], roman: '♭III', role: 'mediant' },
+          { d: 8, qualities: ['maj', 'maj7'], roman: '♭VI', role: 'submed' },
+          { d: 2, qualities: ['dim', 'halfdim', 'min7'], roman: 'ii°', role: 'supertonic' },
+          { d: 7, qualities: ['dom7', 'maj', 'maj7'], roman: 'V', role: 'dom' },
+        ]
+      : [
+          { d: 0, qualities: ['maj', 'maj7', 'add9', 'maj9'], roman: 'I', role: 'tonic' },
+          { d: 5, qualities: ['maj', 'maj7'], roman: 'IV', role: 'subdom' },
+          { d: 11, qualities: ['dim', 'halfdim'], roman: 'vii°', role: 'leading' },
+          { d: 4, qualities: ['min', 'min7'], roman: 'iii', role: 'mediant' },
+          { d: 9, qualities: ['min', 'min7'], roman: 'vi', role: 'submed' },
+          { d: 2, qualities: ['min', 'min7'], roman: 'ii', role: 'supertonic' },
+          { d: 7, qualities: ['dom7', 'maj', 'maj7'], roman: 'V', role: 'dom' },
+        ];
+    const n = specs.length;
+    return specs.map((s, i) => ({
+      d: s.d,
+      qualities: s.qualities,
+      roman: s.roman,
+      role: s.role,
+      root: (t + s.d) % 12,
+      seatIndex: i,
+      // Clockwise from top = fifths-down around the scale
+      angle: -Math.PI / 2 + (i / n) * Math.PI * 2,
+    }));
+  }
+
+  function qualityFamily(q) {
+    q = String(q || '');
+    if (q === 'custom') return 'custom';
+    if (q.indexOf('dom') === 0 || q === '7') return 'dom';
+    if (q.indexOf('halfdim') >= 0 || q === 'm7b5') return 'halfdim';
+    if (q.indexOf('dim') >= 0) return 'dim';
+    if (q.indexOf('min') === 0 || q === 'm') return 'min';
+    if (q.indexOf('maj') === 0 || q === 'add9') return 'maj';
+    if (q.indexOf('sus') === 0) return 'sus';
+    return q;
+  }
+
+  /**
+   * Map a chord onto the circular harmonic scale of a key.
+   * onScale: sits on a scale seat; shell: chromatic / outside ring.
+   */
+  function seatForChord(chord, tonic, modeKey) {
+    const seats = circularHarmonicScale(tonic, modeKey);
+    const root = pc(chord.root);
+    const fam = qualityFamily(chord.quality);
+    // Exact seat + quality family
+    for (let i = 0; i < seats.length; i++) {
+      const s = seats[i];
+      if (s.root !== root) continue;
+      const hit = s.qualities.some((q) => qualityFamily(q) === fam || q === chord.quality);
+      if (hit) return { seat: s, onScale: true, shell: false, seats };
+    }
+    // Same root, different colour (e.g. secondary on a seat)
+    for (let i = 0; i < seats.length; i++) {
+      if (seats[i].root === root) {
+        return {
+          seat: seats[i],
+          onScale: true,
+          shell: fam === 'dom' && seats[i].role !== 'dom' ? 'secondary' : 'variant',
+          seats,
+        };
+      }
+    }
+    // Chromatic: angle from pitch class, outer shell
+    const ang = -Math.PI / 2 + ((root - pc(tonic) + 12) % 12) * ((Math.PI * 2) / 12);
+    return {
+      seat: { angle: ang, root, roman: '?', role: 'chromatic', seatIndex: -1 },
+      onScale: false,
+      shell: true,
+      seats,
+    };
+  }
+
+  /**
+   * World position for a chord on a Chase disk.
+   * disk: { cx, cy, R }
+   */
+  function chaseChordPos(chord, tonic, modeKey, disk) {
+    disk = disk || { cx: 0, cy: 0, R: 120 };
+    const hit = seatForChord(chord, tonic, modeKey);
+    const ang = hit.seat.angle;
+    let radius = disk.R * 0.72;
+    if (hit.seat.role === 'tonic' && hit.onScale && !hit.shell) radius = disk.R * 0.42;
+    else if (hit.shell === 'secondary') radius = disk.R * 0.9;
+    else if (hit.shell === 'variant') radius = disk.R * 0.8;
+    else if (hit.shell === true) radius = disk.R * 1.12;
+    const squash = 0.88;
+    return {
+      x: disk.cx + Math.cos(ang) * radius,
+      y: disk.cy + Math.sin(ang) * radius * squash,
+      ang,
+      radius,
+      onScale: hit.onScale,
+      shell: hit.shell,
+      seat: hit.seat,
+      seats: hit.seats,
+    };
+  }
+
+  /** Fifths-distance between two tonics (−6…+6) for placing a second disk */
+  function fifthsDistance(fromTonic, toTonic) {
+    const a = pc(fromTonic);
+    const b = pc(toTonic);
+    // steps of +7 semitones (fifths up)
+    let best = 0;
+    let bestAbs = 99;
+    for (let k = -6; k <= 6; k++) {
+      if ((a + ((k * 7) % 12) + 12) % 12 === b) {
+        if (Math.abs(k) < bestAbs) {
+          bestAbs = Math.abs(k);
+          best = k;
+        }
+      }
+    }
+    return best;
   }
 
   /**
@@ -736,6 +868,11 @@
     allPaletteChords,
     harmonicDistance,
     harmonicAngle,
+    circularHarmonicScale,
+    seatForChord,
+    chaseChordPos,
+    fifthsDistance,
+    qualityFamily,
     voiceLead,
     voiceLeadingQuality,
     waysBackHome,

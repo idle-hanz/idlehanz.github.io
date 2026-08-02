@@ -26,6 +26,8 @@
     this.w = 0;
     this.h = 0;
     this.origin = { tonic: 11, mode: 'minor' };
+    /** Chase disks: active write-home + optional previous key */
+    this.disks = [];
     this.path = [];
     this.nodes = [];
     this.altPath = [];
@@ -39,6 +41,7 @@
     this.showHorizon = true;
     this.showAlt = true;
     this.camera = { x: 0, y: 0, zoom: 1, tx: 0, ty: 0, tz: 1 };
+    this._rebuildDisks(true);
     this.hover = null;
     this.snapAlt = null;
     this.pulseT = 0;
@@ -93,13 +96,90 @@
     this.canvas.width = Math.floor(this.w * this.dpr);
     this.canvas.height = Math.floor(this.h * this.dpr);
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    // Keep disk radii in proportion to canvas
+    if (this.disks && this.disks.length) {
+      const R = Math.min(this.w, this.h) * 0.34;
+      this.disks.forEach((d, i) => {
+        d.R = i === 0 || d.active ? R : R * 0.78;
+      });
+      if (this.path && this.path.length) this._layoutPath();
+    }
   };
 
   SpatialMap.prototype.setOrigin = function (tonic, mode) {
-    this.origin = {
-      tonic: typeof tonic === 'number' ? tonic : global.HLMusic.pc(tonic),
+    const M = global.HLMusic;
+    const next = {
+      tonic: typeof tonic === 'number' ? tonic : M ? M.pc(tonic) : 0,
       mode: mode || 'minor',
     };
+    const prev = this.origin;
+    const changed =
+      prev && (prev.tonic !== next.tonic || prev.mode !== next.mode);
+    this.origin = next;
+    this._rebuildDisks(!!changed && prev);
+    if (this.path && this.path.length) {
+      this._layoutPath();
+      this._emitTrajectory();
+    }
+  };
+
+  /**
+   * Active disk at origin; previous write-home becomes a dim second disk
+   * offset by circle-of-fifths distance (intersecting disks).
+   */
+  SpatialMap.prototype._rebuildDisks = function (keepPrev) {
+    const M = global.HLMusic;
+    const R = Math.min(this.w || 500, this.h || 360) * 0.34;
+    const active = {
+      tonic: this.origin.tonic,
+      mode: this.origin.mode,
+      cx: 0,
+      cy: 0,
+      R: R,
+      active: true,
+      label: M ? M.noteName(this.origin.tonic) : '?',
+    };
+    const prevDisks = this.disks || [];
+    const oldActive = prevDisks.find((d) => d.active);
+    this.disks = [active];
+    if (
+      keepPrev &&
+      oldActive &&
+      (oldActive.tonic !== active.tonic || oldActive.mode !== active.mode)
+    ) {
+      const steps = M && M.fifthsDistance ? M.fifthsDistance(active.tonic, oldActive.tonic) : 1;
+      const ang = -Math.PI / 2 + (steps / 12) * Math.PI * 2;
+      const dist = R * 1.55;
+      this.disks.push({
+        tonic: oldActive.tonic,
+        mode: oldActive.mode,
+        cx: Math.cos(ang) * dist,
+        cy: Math.sin(ang) * dist * 0.85,
+        R: R * 0.78,
+        active: false,
+        label: M ? M.noteName(oldActive.tonic) : '?',
+      });
+    }
+  };
+
+  SpatialMap.prototype._activeDisk = function () {
+    return (
+      (this.disks && this.disks.find((d) => d.active)) || {
+        cx: 0,
+        cy: 0,
+        R: Math.min(this.w || 500, this.h || 360) * 0.34,
+        tonic: this.origin.tonic,
+        mode: this.origin.mode,
+      }
+    );
+  };
+
+  /** Disk that owns a chord (localTonic if set, else active write-home) */
+  SpatialMap.prototype._diskForChord = function (ch) {
+    const t = ch.localTonic != null ? ch.localTonic : this.origin.tonic;
+    const m = ch.localMode || this.origin.mode;
+    const found = (this.disks || []).find((d) => d.tonic === t && d.mode === m);
+    return found || this._activeDisk();
   };
 
   SpatialMap.prototype.setShowHorizon = function (on) {
@@ -119,40 +199,52 @@
   };
 
   /**
-   * Options fan around the *selected path node* (constellation), not a second
-   * cloud on home. Home stays the global centre disc only.
+   * Options sit on Chase seats of the active disk (or shell), near the selection.
+   * Prefer true scale seats; constellation fan is fallback for dense collisions.
    */
   SpatialMap.prototype.setHorizon = function (items) {
     if (this._mode === 'node') return;
     const M = global.HLMusic;
+    const disk = this._activeDisk();
     const anchor =
       this.current >= 0 && this.nodes[this.current]
         ? this.nodes[this.current]
-        : { x: 0, y: 0, r: 14 };
+        : { x: disk.cx || 0, y: disk.cy || 0, r: 14 };
 
-    // Cap density on canvas; full catalog lives in From here list
-    const orbitItems = (items || [])
-      .filter((it) => it.kind !== 'home')
-      .slice(0, 8);
-
-    const n = orbitItems.length || 1;
-    // Two rings so labels stay readable
-    const rInner = 52 + (anchor.r || 14);
-    const rOuter = 78 + (anchor.r || 14);
+    const orbitItems = (items || []).filter((it) => it.kind !== 'home').slice(0, 8);
+    const used = [];
 
     this.horizon = orbitItems.map((it, i) => {
       const ch = it.chord;
-      // Prefer harmonic bearing from home, expressed as angle around selection
-      let ang = 0;
-      if (M && ch) {
-        ang = M.harmonicAngle(ch, this.origin.tonic);
+      let x;
+      let y;
+      let onScale = false;
+      let shell = false;
+      if (M && M.chaseChordPos && ch) {
+        const pos = M.chaseChordPos(ch, this.origin.tonic, this.origin.mode, disk);
+        x = pos.x;
+        y = pos.y;
+        onScale = pos.onScale;
+        shell = pos.shell;
+        // Nudge off occupied seats
+        used.forEach((u) => {
+          const d = Math.hypot(x - u.x, y - u.y);
+          if (d < 28) {
+            const ang = Math.atan2(y - (disk.cy || 0), x - (disk.cx || 0)) + 0.35;
+            x += Math.cos(ang) * 14;
+            y += Math.sin(ang) * 12;
+          }
+        });
+      } else {
+        const ang = -Math.PI / 2 + (i / Math.max(1, orbitItems.length)) * Math.PI * 2;
+        const ring = 52 + (anchor.r || 14) + (i % 2) * 22;
+        x = anchor.x + Math.cos(ang) * ring;
+        y = anchor.y + Math.sin(ang) * ring * 0.78;
       }
-      // Fan evenly if many share a bearing
-      ang += (i / n) * 0.35 + i * 0.08;
-      const ring = i % 2 === 0 ? rInner : rOuter;
-      const x = anchor.x + Math.cos(ang) * ring;
-      const y = anchor.y + Math.sin(ang) * ring * 0.78;
-      return {
+      // Soft pull toward selection so constellation feels local
+      x = x * 0.72 + anchor.x * 0.28;
+      y = y * 0.72 + anchor.y * 0.28;
+      const node = {
         chord: ch,
         kind: it.kind || 'direction',
         label: it.label || (ch && ch.name) || '?',
@@ -161,9 +253,13 @@
         modulateTo: it.modulateTo,
         x,
         y,
-        r: 10, // smaller hollow options (drawn differently)
+        r: 10,
+        onScale,
+        shell,
         _anchor: { x: anchor.x, y: anchor.y },
       };
+      used.push(node);
+      return node;
     });
   };
 
@@ -188,28 +284,43 @@
   };
 
   /**
-   * Harmonic polar position + mild step spiral so the sequence reads as a journey
-   * (not a pile of overlapping same-root visits).
+   * Chase circular-harmonic-scale position on the disk that owns this chord.
+   * lane 1 = compare path (slight radial nudge).
    */
   SpatialMap.prototype._chordPos = function (ch, index, lane) {
     const M = global.HLMusic;
-    const R = Math.min(this.w || 500, this.h || 360) * 0.36;
-    const dist = M.harmonicDistance(ch, this.origin.tonic, this.origin.mode);
-    // Step bias: each step walks slightly around + out so order is visible
-    const stepAng = index * 0.22;
-    const ang = M.harmonicAngle(ch, this.origin.tonic) + stepAng * 0.15;
-    const radius = 36 + dist * (R / 2.55) + index * 11;
-    const off = lane === 1 ? 14 : 0;
-    const perp = ang + Math.PI / 2;
-    return {
-      x: Math.cos(ang) * radius + (lane === 1 ? Math.cos(perp) * off : 0),
-      y: Math.sin(ang) * radius * 0.72 + (lane === 1 ? Math.sin(perp) * off * 0.72 : 0),
-    };
+    if (!M || !M.chaseChordPos) {
+      const R = Math.min(this.w || 500, this.h || 360) * 0.34;
+      const ang = ((ch.root || 0) / 12) * Math.PI * 2 - Math.PI / 2;
+      return { x: Math.cos(ang) * R * 0.7, y: Math.sin(ang) * R * 0.6, onScale: true };
+    }
+    const disk = this._diskForChord(ch);
+    const pos = M.chaseChordPos(ch, disk.tonic != null ? disk.tonic : this.origin.tonic, disk.mode || this.origin.mode, disk);
+    if (lane === 1) {
+      // Compare path slightly outward on same seat
+      const ang = Math.atan2(pos.y - disk.cy, pos.x - disk.cx);
+      pos.x += Math.cos(ang) * 12;
+      pos.y += Math.sin(ang) * 10;
+    }
+    // Stack visits to same seat along a short tangent so repeats don't fully overlap
+    if (index > 0 && this.path) {
+      let stack = 0;
+      for (let j = 0; j < index; j++) {
+        const prev = this.path[j];
+        if (prev && prev.root === ch.root) stack += 1;
+      }
+      if (stack > 0) {
+        const ang = Math.atan2(pos.y - (disk.cy || 0), pos.x - (disk.cx || 0)) + Math.PI / 2;
+        pos.x += Math.cos(ang) * stack * 7;
+        pos.y += Math.sin(ang) * stack * 6;
+      }
+    }
+    return pos;
   };
 
   SpatialMap.prototype._separateNodes = function (nodes, minDist) {
-    minDist = minDist || 36;
-    for (let pass = 0; pass < 4; pass++) {
+    minDist = minDist || 32;
+    for (let pass = 0; pass < 3; pass++) {
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
           const a = nodes[i];
@@ -218,7 +329,7 @@
           let dy = b.y - a.y;
           let d = Math.hypot(dx, dy) || 0.01;
           if (d < minDist) {
-            const push = ((minDist - d) / 2) * 0.85;
+            const push = ((minDist - d) / 2) * 0.7;
             dx /= d;
             dy /= d;
             a.x -= dx * push;
@@ -235,13 +346,22 @@
   SpatialMap.prototype._layoutPath = function () {
     const M = global.HLMusic;
     if (!M) return;
+    if (!this.disks || !this.disks.length) this._rebuildDisks(false);
     this.nodes = this.path.map((ch, i) => {
       const pos = this._chordPos(ch, i, 0);
-      // Path nodes read heavier than option ghosts
-      const r = 17 + Math.min(12, (ch.duration || 4) * 1.2);
-      return { chord: ch, x: pos.x, y: pos.y, r, i };
+      const r = 16 + Math.min(11, (ch.duration || 4) * 1.15);
+      return {
+        chord: ch,
+        x: pos.x,
+        y: pos.y,
+        r,
+        i,
+        onScale: pos.onScale,
+        shell: pos.shell,
+        seat: pos.seat,
+      };
     });
-    this._separateNodes(this.nodes, 40);
+    this._separateNodes(this.nodes, 34);
     this._layoutAltPath();
     this._computeDivergent();
     if (this._mode !== 'node') this._applyCameraForMode();
@@ -255,10 +375,10 @@
     }
     this.altNodes = (this.altPath || []).map((ch, i) => {
       const pos = this._chordPos(ch, i, 1);
-      const r = 13 + Math.min(10, (ch.duration || 4) * 1.1);
-      return { chord: ch, x: pos.x, y: pos.y, r, i };
+      const r = 13 + Math.min(9, (ch.duration || 4) * 1.05);
+      return { chord: ch, x: pos.x, y: pos.y, r, i, onScale: pos.onScale, shell: pos.shell };
     });
-    this._separateNodes(this.altNodes, 34);
+    this._separateNodes(this.altNodes, 30);
   };
 
   SpatialMap.prototype._computeDivergent = function () {
@@ -683,87 +803,111 @@
     ctx.scale(this.camera.zoom, this.camera.zoom);
     ctx.translate(-this.camera.x, -this.camera.y);
 
-    const R = Math.min(w, h) * 0.36;
-    // Function wedges (subtle)
-    const wedges = [
-      { a0: -0.6, a1: 0.6, c: 'rgba(196,165,116,0.04)' }, // near tonic angles rough
-    ];
-    [0.35, 0.6, 0.9].forEach((f, i) => {
-      ctx.beginPath();
-      ctx.ellipse(0, 0, R * f, R * f * 0.72, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(196,165,116,${0.12 - i * 0.025})`;
-      ctx.lineWidth = 1.2 / this.camera.zoom;
-      ctx.stroke();
-    });
+    const M = global.HLMusic;
+    if (!this.disks || !this.disks.length) this._rebuildDisks(false);
 
-    // Home = the centre disc (clickable tonic). Outer orbit = other options only.
-    const homeHover = this.hover && this.hover.type === 'home';
-    const empty = !this.nodes || !this.nodes.length;
-    const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 55);
-    glow.addColorStop(0, homeHover ? 'rgba(255,220,140,0.55)' : 'rgba(255,200,120,0.4)');
-    glow.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(0, 0, 55, 0, Math.PI * 2);
-    ctx.fill();
-    // Soft rings around home (global frame only)
-    if (this._mode !== 'node') {
+    // ── Chase disks (circular harmonic scales) ──
+    // Draw inactive (previous key) first, then active write-home disk
+    const disksDraw = (this.disks || []).slice().sort((a, b) => (a.active ? 1 : 0) - (b.active ? 1 : 0));
+    disksDraw.forEach((disk) => {
+      const active = !!disk.active;
+      const alpha = active ? 1 : 0.38;
+      ctx.globalAlpha = alpha;
+      const cx = disk.cx || 0;
+      const cy = disk.cy || 0;
+      const dR = disk.R || 120;
+
+      // Disk face
+      const gdisk = ctx.createRadialGradient(cx, cy, dR * 0.1, cx, cy, dR * 1.15);
+      gdisk.addColorStop(0, active ? 'rgba(40,32,24,0.5)' : 'rgba(30,28,40,0.35)');
+      gdisk.addColorStop(0.7, active ? 'rgba(20,16,12,0.25)' : 'rgba(16,14,22,0.2)');
+      gdisk.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = gdisk;
       ctx.beginPath();
-      ctx.arc(0, 0, 72, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(232,201,138,0.08)';
+      ctx.ellipse(cx, cy, dR * 1.12, dR * 1.12 * 0.88, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Scale ring + shell ring
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, dR * 0.72, dR * 0.72 * 0.88, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = active ? 'rgba(232,201,138,0.35)' : 'rgba(126,184,218,0.25)';
+      ctx.lineWidth = (active ? 2 : 1.2) / this.camera.zoom;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, dR * 1.12, dR * 1.12 * 0.88, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = active ? 'rgba(212,120,106,0.2)' : 'rgba(126,184,218,0.12)';
       ctx.lineWidth = 1 / this.camera.zoom;
-      ctx.setLineDash([4 / this.camera.zoom, 6 / this.camera.zoom]);
+      ctx.setLineDash([4 / this.camera.zoom, 5 / this.camera.zoom]);
       ctx.stroke();
       ctx.setLineDash([]);
-    }
-    const M = global.HLMusic;
-    const homeName = M ? M.noteName(this.origin.tonic) : '';
-    const homeR = homeHover || empty ? 18 : 14;
-    if (empty || homeHover) {
+
+      // Harmonic-scale seats (roman numerals)
+      const seats =
+        M && M.circularHarmonicScale
+          ? M.circularHarmonicScale(disk.tonic, disk.mode)
+          : [];
+      seats.forEach((s) => {
+        const sx = cx + Math.cos(s.angle) * dR * 0.72;
+        const sy = cy + Math.sin(s.angle) * dR * 0.72 * 0.88;
+        ctx.beginPath();
+        ctx.arc(sx, sy, (active ? 5 : 3.5) / this.camera.zoom, 0, Math.PI * 2);
+        ctx.fillStyle =
+          s.role === 'tonic'
+            ? 'rgba(232,201,138,0.55)'
+            : s.role === 'dom'
+              ? 'rgba(232,93,76,0.4)'
+              : 'rgba(180,168,150,0.25)';
+        ctx.fill();
+        ctx.fillStyle = active ? 'rgba(200,184,160,0.75)' : 'rgba(160,170,190,0.5)';
+        ctx.font = `${8 / this.camera.zoom}px DM Sans, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(s.roman, sx, sy - 12 / this.camera.zoom);
+      });
+
+      // Clockwise = fifths-down homeward hint
+      if (active) {
+        ctx.fillStyle = 'rgba(180,168,150,0.4)';
+        ctx.font = `${8 / this.camera.zoom}px Crimson Text, Georgia, serif`;
+        ctx.fillText('fifths ↓ homeward →', cx, cy + dR * 1.22);
+      }
+
+      // Disk centre label
+      const isMin =
+        disk.mode === 'minor' ||
+        (M && M.MODES && M.MODES[disk.mode] && M.MODES[disk.mode].romanBase === 'minor');
+      const homeName = M ? M.noteName(disk.tonic) + (isMin ? 'm' : '') : disk.label || '';
+      ctx.beginPath();
+      ctx.arc(cx, cy, active ? 16 : 11, 0, Math.PI * 2);
+      ctx.fillStyle = active ? '#e8c98a' : 'rgba(126,184,218,0.45)';
+      ctx.fill();
+      ctx.fillStyle = active ? '#1a1410' : 'rgba(10,10,16,0.85)';
+      ctx.font = `bold ${active ? 11 : 9 / this.camera.zoom}px DM Sans, sans-serif`;
+      ctx.fillText(homeName, cx, cy - 1);
+      ctx.font = `${7 / this.camera.zoom}px DM Sans, sans-serif`;
+      ctx.fillStyle = active ? 'rgba(26,20,16,0.6)' : 'rgba(10,10,16,0.55)';
+      ctx.fillText(active ? 'HOME' : 'prev', cx, cy + 10 / this.camera.zoom);
+
+      ctx.globalAlpha = 1;
+    });
+
+    // Active home hover / empty coaching on active disk centre
+    const homeHover = this.hover && this.hover.type === 'home';
+    const empty = !this.nodes || !this.nodes.length;
+    const act = this._activeDisk();
+    if (homeHover || empty) {
       const pulse = empty ? 1 + 0.1 * Math.sin((this.pulseT || 0) * 2.2) : 1;
       ctx.beginPath();
-      ctx.arc(0, 0, (homeR + 6) * pulse, 0, Math.PI * 2);
+      ctx.arc(act.cx || 0, act.cy || 0, 22 * pulse, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(232,201,138,0.55)';
       ctx.lineWidth = 2 / this.camera.zoom;
       ctx.stroke();
     }
-    ctx.beginPath();
-    ctx.arc(0, 0, homeR, 0, Math.PI * 2);
-    ctx.fillStyle = homeHover ? '#fff4d6' : '#e8c98a';
-    ctx.fill();
-    ctx.strokeStyle = homeHover ? '#fff' : 'rgba(255,244,214,0.65)';
-    ctx.lineWidth = 2 / this.camera.zoom;
-    ctx.stroke();
-    // Chord name in the centre — this is the tonic you start with
-    ctx.fillStyle = '#1a1410';
-    ctx.font = `bold ${11 / this.camera.zoom}px DM Sans, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const isMinHome =
-      this.origin.mode === 'minor' ||
-      (M && M.MODES && M.MODES[this.origin.mode] && M.MODES[this.origin.mode].romanBase === 'minor');
-    const homeChordLabel = homeName + (isMinHome ? 'm' : '');
-    ctx.fillText(homeChordLabel || 'I', 0, -1 / this.camera.zoom);
-    ctx.fillStyle = homeHover ? 'rgba(26,20,16,0.75)' : 'rgba(26,20,16,0.55)';
-    ctx.font = `${7.5 / this.camera.zoom}px DM Sans, sans-serif`;
-    ctx.fillText('HOME', 0, 11 / this.camera.zoom);
-
-    ctx.fillStyle = 'rgba(232,201,138,0.75)';
-    ctx.font = `${10 / this.camera.zoom}px Cinzel, serif`;
-    ctx.fillText(
-      empty ? 'click to start' : 'click = tonic',
-      0,
-      homeR + 16 / this.camera.zoom
-    );
-
     if (empty && this._mode !== 'node') {
-      ctx.fillStyle = 'rgba(180,168,150,0.55)';
-      ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
-      ctx.fillText('outer dots = other first moves', 0, homeR + 30 / this.camera.zoom);
-    } else if (this.nodes && this.nodes.length === 1 && this.showHorizon && this._mode !== 'node') {
-      ctx.fillStyle = 'rgba(200,184,160,0.55)';
-      ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
-      ctx.fillText('Click outer dots for next · drag path to swap', 0, homeR + 30 / this.camera.zoom);
+      ctx.fillStyle = 'rgba(200,184,160,0.8)';
+      ctx.font = `${10 / this.camera.zoom}px Crimson Text, Georgia, serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('Click HOME to start on tonic · ring = Chase harmonic scale', act.cx || 0, (act.cy || 0) + (act.R || 100) * 0.95);
     }
 
     // Options: hollow rings around the *selected* path node (constellation)
@@ -1223,23 +1367,23 @@
           ? 'Release to set · audition: prev → ' + this.snapAlt.label + ' → next'
           : 'Move crosshair onto a labelled target to audition · release off-target = cancel'
         : this.hover && this.hover.type === 'home'
-          ? 'Centre = write-home tonic — click to start or land'
+          ? 'HOME = write-key tonic (Chase disk centre) — click to start/land'
           : this.hover && this.hover.type === 'horizon'
-            ? 'Option from selection · green ghost = join · click to write'
+            ? 'Option on/near harmonic scale · green ghost = join · click to write'
             : this.hover && this.hover.type === 'edge'
               ? 'Click edge to insert (steals time from neighbors)'
               : this.hover && this.hover.type === 'altNode'
                 ? 'Blue compare path — names show where versions differ'
                 : this.nodes && this.nodes.length
-                  ? 'Solid numbered = path · hollow around selection = options · drag path to swap'
-                  : 'Click the centre gold disc to start on the home chord';
+                  ? 'Path walks the Chase scale · shell = chromatic/tension · 2nd disk = previous key'
+                  : 'Click HOME to start · ring seats = I–V harmonic scale (Chase)';
     ctx.fillText(tip, 10, h - 12);
 
     // Map reading legend (top-left)
     ctx.font = '9px DM Sans, sans-serif';
     ctx.fillStyle = 'rgba(180,168,150,0.5)';
     ctx.fillText(
-      'Home centre · solid path · hollow options from selection · blue = compare',
+      'Chase disk = key · clockwise ≈ fifths homeward · outer shell = tension · dim disk = prev key',
       10,
       14
     );

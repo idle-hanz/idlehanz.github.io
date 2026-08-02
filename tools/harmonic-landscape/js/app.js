@@ -588,12 +588,13 @@
       if (q.indexOf('maj') === 0 || q === 'add9') mode = 'major';
     }
     setWritingHome(ch.root, mode, { transpose: false });
+    // map.setOrigin keeps previous key as a second Chase disk
     setSyncStatus(
-      'Modulate · write home now ' +
+      'Modulate · new Chase disk ' +
         keyLabel() +
         ' (from ' +
         ch.name +
-        ') · chords unchanged · map + From here re-centred'
+        ') · old key stays as dim disk · chords absolute'
     );
   }
 
