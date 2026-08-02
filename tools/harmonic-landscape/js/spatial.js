@@ -60,6 +60,7 @@
     this.onRequestAlts = null;
     this.onSwapChord = null;
     this.onPullChord = null; // (pathIndex, chord, meta) only when aimed at a target
+    this.onSelectAltNode = null; // click blue compare node
     this.onAimChange = null; // (pathIndex, target|{null}, meta) for live audition
     this.onInsertBetween = null; // (afterIndex) => void
     this.onTrajectory = null; // (caption) => void
@@ -280,6 +281,9 @@
     } else if (this.functionChart) {
       this._layoutFunctionChart();
     }
+    // Gold + blue paths re-snap (Function seats vs Chase) when view flips
+    if (this.path && this.path.length) this._layoutPath();
+    else if (this.altPath && this.altPath.length) this._layoutAltPath();
   };
 
   /**
@@ -770,40 +774,7 @@
     this.nodes = this.path.map((ch, i) => {
       let pos = null;
       if (useFn && ch) {
-        // Prefer exact root+quality on the Function chart (diatonic G, not G7)
-        const exact = this.functionNodes.find(
-          (n) =>
-            n.chord &&
-            n.chord.root === ch.root &&
-            n.chord.quality === ch.quality
-        );
-        // Soft: same root — prefer diatonic, then any chart seat (never free Chase pos)
-        const soft = exact
-          ? null
-          : this.functionNodes.find(
-              (n) => n.chord && n.chord.root === ch.root && n.role === 'diatonic'
-            ) ||
-            this.functionNodes.find((n) => n.chord && n.chord.root === ch.root);
-        const fn = exact || soft;
-        if (fn) {
-          // Stack multiple visits slightly so path steps don't fully cover each other
-          let stack = 0;
-          for (let j = 0; j < i; j++) {
-            const prev = this.path[j];
-            if (prev && prev.root === ch.root && prev.quality === ch.quality) stack++;
-          }
-          const disk = this._diskForChord(ch) || this._activeDisk();
-          const cx = (disk && disk.cx) || 0;
-          const cy = (disk && disk.cy) || 0;
-          const ang = Math.atan2(fn.y - cy, fn.x - cx) + Math.PI / 2;
-          pos = {
-            x: fn.x + Math.cos(ang) * stack * 6,
-            y: fn.y + Math.sin(ang) * stack * 5,
-            onScale: true,
-            shell: false,
-            seat: null,
-          };
-        }
+        pos = this._functionSeatForChord(ch, i, this.path);
       }
       if (!pos) pos = this._chordPos(ch, i, 0);
       const r = 16 + Math.min(11, (ch.duration || 4) * 1.15);
@@ -826,18 +797,118 @@
     if (this._mode !== 'node') this._applyCameraForMode();
   };
 
+  /**
+   * Place a chord on the Function chart (same rules as gold path).
+   * Returns null if not in Function view or no seat found.
+   */
+  SpatialMap.prototype._functionSeatForChord = function (ch, index, stackPath) {
+    if (
+      this.mapView !== 'function' ||
+      !this.functionNodes ||
+      !this.functionNodes.length ||
+      !ch
+    ) {
+      return null;
+    }
+    const exact = this.functionNodes.find(
+      (n) =>
+        n.chord && n.chord.root === ch.root && n.chord.quality === ch.quality
+    );
+    const soft = exact
+      ? null
+      : this.functionNodes.find(
+          (n) => n.chord && n.chord.root === ch.root && n.role === 'diatonic'
+        ) ||
+        this.functionNodes.find((n) => n.chord && n.chord.root === ch.root);
+    const fn = exact || soft;
+    if (!fn) return null;
+    let stack = 0;
+    const peers = stackPath || this.path || [];
+    for (let j = 0; j < index; j++) {
+      const prev = peers[j];
+      if (prev && prev.root === ch.root && prev.quality === ch.quality) stack++;
+    }
+    const disk = this._activeDisk();
+    const cx = (disk && disk.cx) || 0;
+    const cy = (disk && disk.cy) || 0;
+    const ang = Math.atan2(fn.y - cy, fn.x - cx) + Math.PI / 2;
+    return {
+      x: fn.x + Math.cos(ang) * stack * 6,
+      y: fn.y + Math.sin(ang) * stack * 5,
+      onScale: true,
+      shell: false,
+      seat: null,
+      fn: fn,
+    };
+  };
+
   SpatialMap.prototype._layoutAltPath = function () {
     const M = global.HLMusic;
     if (!M) {
       this.altNodes = [];
       return;
     }
+    const useFn =
+      this.mapView === 'function' && this.functionNodes && this.functionNodes.length;
+    const act = this._activeDisk();
     this.altNodes = (this.altPath || []).map((ch, i) => {
-      const pos = this._chordPos(ch, i, 1);
+      let pos = null;
+      if (useFn && ch) {
+        // Prefer beside the gold step at the same index (parallel C vs Cm etc.)
+        const gold = this.nodes && this.nodes[i];
+        if (gold && gold.chord && gold.chord.root === ch.root) {
+          const cx = (act && act.cx) || 0;
+          const cy = (act && act.cy) || 0;
+          const ang = Math.atan2(gold.y - cy, gold.x - cx);
+          // Slightly outward so blue sits next to gold, not on a distant Chase seat
+          pos = {
+            x: gold.x + Math.cos(ang) * 20,
+            y: gold.y + Math.sin(ang) * 17,
+            onScale: true,
+            shell: false,
+          };
+        }
+        if (!pos) {
+          // Same Function seat rules as gold path (never other-disk Chase coords)
+          const seat = this._functionSeatForChord(ch, i, this.altPath);
+          if (seat) {
+            const cx = (act && act.cx) || 0;
+            const cy = (act && act.cy) || 0;
+            const ang = Math.atan2(seat.y - cy, seat.x - cx);
+            pos = {
+              x: seat.x + Math.cos(ang) * 14,
+              y: seat.y + Math.sin(ang) * 12,
+              onScale: true,
+              shell: false,
+            };
+          }
+        }
+        if (!pos && M.chaseChordPos) {
+          // Last resort: angle on ACTIVE write-home disk only (ignore alt localTonic)
+          const base = M.chaseChordPos(ch, this.origin.tonic, this.origin.mode, act);
+          const scale = 0.95;
+          pos = {
+            x: (act.cx || 0) + (base.x - (act.cx || 0)) * scale,
+            y: (act.cy || 0) + (base.y - (act.cy || 0)) * scale,
+            onScale: !!base.onScale,
+            shell: !!base.shell,
+          };
+        }
+      }
+      if (!pos) pos = this._chordPos(ch, i, 1);
       const r = 13 + Math.min(9, (ch.duration || 4) * 1.05);
-      return { chord: ch, x: pos.x, y: pos.y, r, i, onScale: pos.onScale, shell: pos.shell };
+      return {
+        chord: ch,
+        x: pos.x,
+        y: pos.y,
+        r: r,
+        i: i,
+        onScale: pos.onScale,
+        shell: pos.shell,
+      };
     });
-    this._separateNodes(this.altNodes, 30);
+    // Chase only — Function keeps blue next to chart seats
+    if (!useFn) this._separateNodes(this.altNodes, 30);
   };
 
   SpatialMap.prototype._computeDivergent = function () {
@@ -1303,6 +1374,10 @@
     }
     if (hit && hit.type === 'edge' && this.onInsertBetween) {
       this.onInsertBetween(hit.afterIndex);
+      return;
+    }
+    if (hit && hit.type === 'altNode') {
+      if (this.onSelectAltNode) this.onSelectAltNode(hit.item);
       return;
     }
     this._mode = 'pan';
@@ -1807,6 +1882,17 @@
         const div = this.divergent.indexOf(i) >= 0;
         const altHover =
           this.hover && this.hover.type === 'altNode' && this.hover.item === n;
+        // Skip drawing a blue ghost that sits under an identical gold step
+        // (same root+quality) — only show diffs and true alt seats
+        const gold = this.nodes[i];
+        const sameAsGold =
+          gold &&
+          gold.chord &&
+          n.chord &&
+          gold.chord.root === n.chord.root &&
+          gold.chord.quality === n.chord.quality;
+        if (sameAsGold && !div && !altHover) return;
+
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r * (div ? 1.05 : 0.85), 0, Math.PI * 2);
         ctx.fillStyle = div ? 'rgba(126,184,218,0.55)' : 'rgba(126,184,218,0.28)';
@@ -1814,6 +1900,14 @@
         ctx.strokeStyle = div || altHover ? '#b8e0f5' : '#7eb8da';
         ctx.lineWidth = (div || altHover ? 2.5 : 1.2) / this.camera.zoom;
         ctx.stroke();
+        // Always name divergent blue chords so they aren't mysterious orphans
+        if (div || altHover) {
+          ctx.fillStyle = altHover ? '#fff4d6' : '#b8e0f5';
+          ctx.font = `bold ${9 / this.camera.zoom}px DM Sans, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(n.chord.name || '?', n.x, n.y);
+        }
         if (div) {
           ctx.beginPath();
           ctx.arc(n.x, n.y, n.r + 6 / this.camera.zoom, 0, Math.PI * 2);
@@ -1821,17 +1915,22 @@
           ctx.lineWidth = 1.5 / this.camera.zoom;
           ctx.stroke();
         }
-        // Compare tooltip on divergent steps
-        if ((altHover || (div && this.hover && this.hover.type === 'path' && this.hover.item && this.hover.item.i === i)) && this.nodes[i]) {
-          const gold = this.nodes[i].chord;
-          const blue = n.chord;
-          const tip =
-            'v? ' +
-            (gold.name || '?') +
-            '  ·  compare ' +
-            (blue.name || '?');
+        // Compare tooltip: gold → blue on hover
+        if (
+          (altHover ||
+            (div &&
+              this.hover &&
+              this.hover.type === 'path' &&
+              this.hover.item &&
+              this.hover.item.i === i)) &&
+          gold &&
+          gold.chord
+        ) {
           const label =
-            (gold.name || '?') + ' → ' + (blue.name || '?') + (div ? ' · differ' : ' · same');
+            (gold.chord.name || '?') +
+            ' → ' +
+            (n.chord.name || '?') +
+            (div ? ' · differ' : ' · same');
           ctx.fillStyle = 'rgba(10,8,6,0.88)';
           const tw = Math.max(80, label.length * 5.2) / this.camera.zoom;
           const th = 16 / this.camera.zoom;

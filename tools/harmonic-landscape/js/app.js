@@ -58,6 +58,25 @@
     };
     // Click empty scale seat → add that chord
     H.map.onSelectSeat = (seatInfo) => H.selectChaseSeat(seatInfo);
+    // Blue compare node: audition + explain (does not edit the gold path)
+    H.map.onSelectAltNode = (item) => {
+      if (!item || !item.chord) return;
+      H.A().ensure();
+      H.A().playChord({ chord: item.chord, soft: false, duration: 0.55 });
+      const gold = H.state.chords[item.i];
+      const bit = gold
+        ? ' · gold step ' +
+          (item.i + 1) +
+          ' is ' +
+          (gold.name || '?') +
+          (gold.root === item.chord.root && gold.quality === item.chord.quality
+            ? ' (same)'
+            : ' → blue ' + (item.chord.name || '?'))
+        : '';
+      H.setSyncStatus(
+        'Blue compare · ' + (item.chord.name || '?') + bit + ' · Alt-click a version chip to change'
+      );
+    };
     H.map.onHoverSeat = (seatInfo) => {
       if (!seatInfo || !seatInfo.chord) return;
       H.A().ensure();
