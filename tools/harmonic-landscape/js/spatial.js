@@ -297,33 +297,18 @@
   };
 
   SpatialMap.prototype.setMapView = function (view) {
-    // Keep the same write-home wheel: don't let layout re-frame the camera
-    const cam = {
-      tx: this.camera.tx,
-      ty: this.camera.ty,
-      tz: this.camera.tz,
-      x: this.camera.x,
-      y: this.camera.y,
-      zoom: this.camera.zoom,
-    };
+    const cam = this.snapshotCamera();
     this.mapView = view === 'function' ? 'function' : 'chase';
     if (this.mapView === 'chase') {
       this.functionNodes = [];
     } else if (this.functionChart) {
       this._layoutFunctionChart();
     }
-    // Gold + blue paths re-snap (Function seats vs Chase) when view flips
     this._keepCameraOnce = true;
     if (this.path && this.path.length) this._layoutPath();
     else if (this.altPath && this.altPath.length) this._layoutAltPath();
     this._keepCameraOnce = false;
-    // Restore pose so Chase ↔ Function feels like the same disk
-    this.camera.tx = cam.tx;
-    this.camera.ty = cam.ty;
-    this.camera.tz = cam.tz;
-    this.camera.x = cam.x;
-    this.camera.y = cam.y;
-    this.camera.zoom = cam.zoom;
+    this.restoreCamera(cam, { snap: true });
   };
 
   /** Snap view to the active write-home disk without changing zoom much. */
@@ -365,23 +350,37 @@
     const mode = chart.mode || this.origin.mode;
     const cx = disk.cx || 0;
     const cy = disk.cy || 0;
+    // Same R as Chase seats so the wheel is the same physical size in both views
     const R = disk.R || 120;
+    const SEAT_R = R * 0.72; // matches Chase scale-seat ring
+    const TONIC_R = R * 0.42;
+    const BORROW_R = R * 1.12; // matches Chase shell ring (not a bigger orbit)
+    const V7_R = R * 0.92;
 
-    // Place interchange on a dedicated outer orbit (equal spacing) so Fm
-    // never hides under F major at the same Chase angle.
+    // Chase harmonic-scale seats → exact same angles/radii for diatonic Function nodes
+    const scaleSeats =
+      M && M.circularHarmonicScale ? M.circularHarmonicScale(t, mode) : [];
+    const seatByRoot = {};
+    scaleSeats.forEach((s) => {
+      seatByRoot[s.root] = s;
+    });
+
+    // Interchange on the outer shell ring (same radius as Chase colour shell)
     const interList = chart.nodes.filter((n) => n.role === 'interchange');
     const interPos = {};
     interList.forEach((n, i) => {
-      const ang = -Math.PI / 2 + (i / Math.max(1, interList.length)) * Math.PI * 2;
-      const rad = R * 1.38;
+      const ch = n.chord;
+      // Prefer Chase angle for same root when it exists
+      const seat = ch && seatByRoot[ch.root];
+      const ang = seat
+        ? seat.angle
+        : -Math.PI / 2 + (i / Math.max(1, interList.length)) * Math.PI * 2;
       interPos[n.id] = {
-        x: cx + Math.cos(ang) * rad,
-        y: cy + Math.sin(ang) * rad * 0.88,
+        x: cx + Math.cos(ang) * BORROW_R,
+        y: cy + Math.sin(ang) * BORROW_R * 0.88,
       };
     });
 
-    // First pass: place diatonic / gates on a FIXED ring (never jump when Borrow toggles)
-    const diatonicScale = 0.9;
     const byId = {};
     chart.nodes.forEach((n) => {
       byId[n.id] = n;
@@ -398,11 +397,9 @@
       } else if (
         (n.role === 'secondary' || n.role === 'dominant') &&
         n.resolvesToId &&
-        M &&
-        M.chaseChordPos
+        M
       ) {
-        // Place V7s on a mid belt beside their TARGET, angularly offset so they
-        // do NOT sit on radial borrow-gate lines (home → outer purple orbit).
+        // V7s on mid belt beside target — still inside/near Chase shell
         const target = byId[n.resolvesToId];
         const probe =
           target && target.chord
@@ -411,23 +408,33 @@
                 root: parseInt(String(n.resolvesToId).split(':')[0], 10) || 0,
                 quality: 'maj',
               };
-        const base = M.chaseChordPos(probe, t, mode, { cx: cx, cy: cy, R: R });
-        const tAng = Math.atan2(base.y - cy, base.x - cx);
-        // Mid radius between home ring (~0.9R) and borrow orbit (~1.38R)
-        const rad = R * 1.08;
-        // Clockwise of target so resolve arrow is short & clear of purple radials
+        const seat = seatByRoot[probe.root];
+        const tAng = seat
+          ? seat.angle
+          : M.chaseChordPos
+            ? Math.atan2(
+                M.chaseChordPos(probe, t, mode, { cx: cx, cy: cy, R: R }).y - cy,
+                M.chaseChordPos(probe, t, mode, { cx: cx, cy: cy, R: R }).x - cx
+              )
+            : -Math.PI / 2;
         const ang = tAng + 0.52;
-        x = cx + Math.cos(ang) * rad;
-        y = cy + Math.sin(ang) * rad * 0.88;
-      } else if (M && M.chaseChordPos) {
-        // Home ring always fixed (I/IV/V never jump when Borrow toggles)
-        const base = M.chaseChordPos(ch, t, mode, { cx: cx, cy: cy, R: R });
-        const scale = diatonicScale;
-        x = cx + (base.x - cx) * scale;
-        y = cy + (base.y - cy) * scale;
+        x = cx + Math.cos(ang) * V7_R;
+        y = cy + Math.sin(ang) * V7_R * 0.88;
       } else {
-        x = cx;
-        y = cy;
+        // Diatonic / gates: same ring as Chase roman seats (same wheel)
+        const seat = seatByRoot[ch.root];
+        if (seat) {
+          const rad = seat.role === 'tonic' ? TONIC_R : SEAT_R;
+          x = cx + Math.cos(seat.angle) * rad;
+          y = cy + Math.sin(seat.angle) * rad * 0.88;
+        } else if (M && M.chaseChordPos) {
+          const base = M.chaseChordPos(ch, t, mode, { cx: cx, cy: cy, R: R });
+          x = base.x;
+          y = base.y;
+        } else {
+          x = cx;
+          y = cy;
+        }
       }
       this.functionNodes.push({
         id: n.id,
@@ -1083,10 +1090,14 @@
   };
 
   SpatialMap.prototype._applyCameraForMode = function () {
+    // Never clobber zoom while switching Chase ↔ Function
+    if (this._keepCameraOnce) return;
+    const keepZ = this.camera.tz > 0 ? this.camera.tz : 1;
     if (this.cameraMode === 'home' || !this.nodes.length) {
       this.camera.tx = 0;
       this.camera.ty = 0;
-      this.camera.tz = 1;
+      // Keep zoom — forcing tz=1 made every refresh jump to a different scale
+      this.camera.tz = keepZ;
       return;
     }
     if (this.cameraMode === 'follow') {
@@ -1094,10 +1105,12 @@
       if (n) {
         this.camera.tx = n.x;
         this.camera.ty = n.y;
-        this.camera.tz = 1.05;
+        // Preserve scale; only re-centre on the step
+        this.camera.tz = keepZ;
       }
       return;
     }
+    // Fit: re-frame path, but keep zoom if sticky
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     const all = this.nodes.concat(this.showAlt ? this.altNodes || [] : []);
     all.forEach((n) => {
@@ -1110,6 +1123,36 @@
     this.camera.ty = (minY + maxY) / 2;
     const span = Math.max(maxX - minX, maxY - minY, 80);
     this.camera.tz = Math.min(1.3, Math.max(0.55, (Math.min(this.w, this.h) * 0.55) / span));
+  };
+
+  /** Snapshot / restore camera (scale + pan). Snap visual immediately so zoom doesn't lerp. */
+  SpatialMap.prototype.snapshotCamera = function () {
+    return {
+      tx: this.camera.tx,
+      ty: this.camera.ty,
+      tz: this.camera.tz,
+      x: this.camera.x,
+      y: this.camera.y,
+      zoom: this.camera.zoom,
+    };
+  };
+
+  SpatialMap.prototype.restoreCamera = function (snap, opts) {
+    if (!snap) return;
+    opts = opts || {};
+    this.camera.tx = snap.tx;
+    this.camera.ty = snap.ty;
+    this.camera.tz = snap.tz > 0 ? snap.tz : 1;
+    // Hard-snap zoom so Chase↔Function never eases to a different scale
+    if (opts.snap !== false) {
+      this.camera.x = snap.tx;
+      this.camera.y = snap.ty;
+      this.camera.zoom = this.camera.tz;
+    } else {
+      this.camera.x = snap.x;
+      this.camera.y = snap.y;
+      this.camera.zoom = snap.zoom > 0 ? snap.zoom : this.camera.tz;
+    }
   };
 
   /** Analyze path shape for caption + swing suggestions */
