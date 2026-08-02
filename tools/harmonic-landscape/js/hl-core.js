@@ -20,19 +20,16 @@
       fromPackId: null, cellId: null, nameLocked: false, addRoot: 11, addQuality: "min",
       syncMsg: "", undoStack: [], redoStack: [], compareCellId: null, defaultDuration: 4,
       pendingTonic: null, pendingMode: null,
-      /** Function-view toggles (only used when map is in Function mode) */
+      /**
+       * Function-view layers (3 toggles only).
+       * home = diatonic ring + skeleton + path highlight
+       * dominants = V7→I + secondaries
+       * borrow = interchange orbit + gates (sparse paper set)
+       */
       functionOpts: {
-        showDiatonic: true,
-        showSkeleton: true,
-        showPrimaryV7: true,
-        showSecondaries: true,
-        showInterchange: true,
-        sparseBorrow: false,
-        showOrbit: true,
-        showGates: true,
-        hoverBothWays: true,
-        showChains: false,
-        showPath: true,
+        home: true,
+        dominants: true,
+        borrow: true,
       },
     }
   };

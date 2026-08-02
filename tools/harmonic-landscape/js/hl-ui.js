@@ -65,26 +65,18 @@ H.refreshAll = function () {
   H.syncFunctionOptsUI = function () {
     const fo = H.state.functionOpts || {};
     const map = {
-      'fo-diatonic': 'showDiatonic',
-      'fo-skeleton': 'showSkeleton',
-      'fo-primary': 'showPrimaryV7',
-      'fo-secondaries': 'showSecondaries',
-      'fo-interchange': 'showInterchange',
-      'fo-sparse': 'sparseBorrow',
-      'fo-orbit': 'showOrbit',
-      'fo-gates': 'showGates',
-      'fo-hover': 'hoverBothWays',
-      'fo-chains': 'showChains',
-      'fo-path': 'showPath',
+      'fo-home': 'home',
+      'fo-dominants': 'dominants',
+      'fo-borrow': 'borrow',
     };
     Object.keys(map).forEach((id) => {
       const el = H.$('#' + id);
-      if (el) el.checked = !!fo[map[id]];
+      if (el) el.checked = fo[map[id]] !== false;
     });
   };
 
   H.setFunctionOpt = function (key, value) {
-    if (!H.state.functionOpts) H.state.functionOpts = {};
+    if (!H.state.functionOpts) H.state.functionOpts = { home: true, dominants: true, borrow: true };
     H.state.functionOpts[key] = !!value;
     if (H.map && H.map.mapView === 'function') H.refreshMap();
   };

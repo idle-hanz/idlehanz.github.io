@@ -877,20 +877,12 @@
             <label class="ctl" style="margin-left:0.35rem;color:#c8b8a0" title="Show next-move dots around home (Chase view)"><input type="checkbox" id="tog-horizon" checked> Next-move dots</label>
             <label class="ctl" style="color:#c8b8a0" title="Show blue path only when a version is set as compare (Alt-click a chip)"><input type="checkbox" id="tog-alt"> Blue path</label>
           </div>
-          <!-- Function layers: second row under map tools (only when Function is active) -->
+          <!-- Function layers: 3 group toggles (only when Function is active) -->
           <div id="function-opts" class="function-opts" hidden>
-            <span class="function-opts-label">Function layers</span>
-            <label class="fo-ctl" title="Diatonic home-ring chords"><input type="checkbox" id="fo-diatonic" checked> Diatonic</label>
-            <label class="fo-ctl" title="Light I–IV–V–vi style links on the home ring"><input type="checkbox" id="fo-skeleton" checked> Skeleton</label>
-            <label class="fo-ctl" title="Primary V7 → I (G7→C in C)"><input type="checkbox" id="fo-primary" checked> V7→I</label>
-            <label class="fo-ctl" title="Secondary dominants V7/x → target"><input type="checkbox" id="fo-secondaries" checked> Secondaries</label>
-            <label class="fo-ctl" title="Modal interchange / borrow orbit"><input type="checkbox" id="fo-interchange" checked> Borrow</label>
-            <label class="fo-ctl" title="Only ♭III iv ♭VI ♭VII (paper chart core)"><input type="checkbox" id="fo-sparse"> Sparse borrow</label>
-            <label class="fo-ctl" title="Borrow chords can move to each other (hover)"><input type="checkbox" id="fo-orbit" checked> Orbit</label>
-            <label class="fo-ctl" title="I / IV / V in and out of borrow"><input type="checkbox" id="fo-gates" checked> Gates</label>
-            <label class="fo-ctl" title="Hover lights paths both into and out of a chord"><input type="checkbox" id="fo-hover" checked> Hover both ways</label>
-            <label class="fo-ctl" title="V/V chain into primary V7 (e.g. D7→G7)"><input type="checkbox" id="fo-chains"> V/V chains</label>
-            <label class="fo-ctl" title="Gold ring on chords that appear in your path"><input type="checkbox" id="fo-path" checked> Path</label>
+            <span class="function-opts-label">Show</span>
+            <label class="fo-ctl" title="Diatonic ring + light progressions + your path on the chart"><input type="checkbox" id="fo-home" checked> Home ring</label>
+            <label class="fo-ctl" title="Primary V7→I and secondary dominants V7/x → targets"><input type="checkbox" id="fo-dominants" checked> Dominants</label>
+            <label class="fo-ctl" title="Modal interchange orbit + I/IV/V gates (hover shows all moves)"><input type="checkbox" id="fo-borrow" checked> Borrow</label>
           </div>
         </div>
         <canvas id="map" aria-label="Harmonic path and directions"></canvas>

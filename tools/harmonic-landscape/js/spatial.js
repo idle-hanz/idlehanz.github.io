@@ -293,6 +293,8 @@
       return;
     }
     this._layoutFunctionChart();
+    // Snap path nodes onto chart seats so adding G doesn't draw a second G nearby
+    if (this.path && this.path.length) this._layoutPath();
   };
 
   SpatialMap.prototype._layoutFunctionChart = function () {
@@ -387,17 +389,22 @@
     const z = this.camera.zoom || 1;
     const hoverItem =
       this.hover && this.hover.type === 'functionNode' ? this.hover.item : null;
-    // Resolve hover to function node id
+    // Resolve hover to function node id (prefer explicit id from hit test)
     let hoverId = null;
-    if (hoverItem && hoverItem.chord) {
-      const hit = this.functionNodes.find(
-        (n) =>
-          n.chord &&
-          n.chord.root === hoverItem.chord.root &&
-          n.chord.quality === hoverItem.chord.quality &&
-          (hoverItem.role ? n.role === hoverItem.role || (hoverItem.role === 'secondary' && n.role === 'dominant') : true)
-      );
-      if (hit) hoverId = hit.id;
+    if (hoverItem) {
+      if (hoverItem.functionNodeId) hoverId = hoverItem.functionNodeId;
+      else if (hoverItem.chord) {
+        const hit = this.functionNodes.find(
+          (n) =>
+            n.chord &&
+            n.chord.root === hoverItem.chord.root &&
+            n.chord.quality === hoverItem.chord.quality &&
+            (!hoverItem.role ||
+              n.role === hoverItem.role ||
+              (hoverItem.role === 'secondary' && n.role === 'dominant'))
+        );
+        if (hit) hoverId = hit.id;
+      }
     }
 
     const fo = (this.functionChart && this.functionChart.opts) || {};
@@ -409,13 +416,36 @@
       return e.fromId === hoverId; // outbound only
     };
 
+    // Soft orbit ring always (when borrow on): connects interchange nodes in angle order
+    const inter = this.functionNodes.filter((n) => n.role === 'interchange');
+    if (fo.showOrbit !== false && inter.length >= 2) {
+      const ordered = inter.slice().sort((a, b) => Math.atan2(a.y, a.x) - Math.atan2(b.y, b.x));
+      ctx.beginPath();
+      ordered.forEach((n, i) => {
+        if (i === 0) ctx.moveTo(n.x, n.y);
+        else ctx.lineTo(n.x, n.y);
+      });
+      ctx.closePath();
+      ctx.strokeStyle = hoverId && ordered.some((n) => n.id === hoverId)
+        ? 'rgba(196,160,224,0.55)'
+        : 'rgba(196,160,224,0.22)';
+      ctx.lineWidth = 1.4 / z;
+      ctx.setLineDash([4 / z, 5 / z]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     // Edges under nodes — dim all, brighten paths from/to hovered chord
     (this.functionChart.edges || []).forEach((e) => {
       const a = byId[e.fromId];
       const b = byId[e.toId];
       if (!a || !b) return;
-      // Orbit edges: only when hovering borrow (unless always-show is desired — keep hover-only)
-      if (e.kind === 'orbit' && !edgeTouchesHover(e)) return;
+      // Orbit spokes: draw all from hovered borrow chord (complete star)
+      if (e.kind === 'orbit') {
+        if (!hoverId || !edgeTouchesHover(e)) return;
+        // only need one direction drawn when bothWays creates pairs
+        if (e.fromId !== hoverId) return;
+      }
 
       const lit = !hoverId || edgeTouchesHover(e);
       const dim = hoverId && !edgeTouchesHover(e);
@@ -700,8 +730,42 @@
     const M = global.HLMusic;
     if (!M) return;
     if (!this.disks || !this.disks.length) this._rebuildDisks(false);
+    const useFn =
+      this.mapView === 'function' && this.functionNodes && this.functionNodes.length;
     this.nodes = this.path.map((ch, i) => {
-      const pos = this._chordPos(ch, i, 0);
+      let pos = null;
+      if (useFn && ch) {
+        // Prefer exact root+quality on the Function chart (diatonic G, not G7)
+        const exact = this.functionNodes.find(
+          (n) =>
+            n.chord &&
+            n.chord.root === ch.root &&
+            n.chord.quality === ch.quality
+        );
+        const soft = exact
+          ? null
+          : this.functionNodes.find(
+              (n) => n.chord && n.chord.root === ch.root && n.role === 'diatonic'
+            );
+        const fn = exact || soft;
+        if (fn) {
+          // Stack multiple visits slightly so path steps don't fully cover each other
+          let stack = 0;
+          for (let j = 0; j < i; j++) {
+            const prev = this.path[j];
+            if (prev && prev.root === ch.root && prev.quality === ch.quality) stack++;
+          }
+          const ang = Math.atan2(fn.y, fn.x) + Math.PI / 2;
+          pos = {
+            x: fn.x + Math.cos(ang) * stack * 6,
+            y: fn.y + Math.sin(ang) * stack * 5,
+            onScale: true,
+            shell: false,
+            seat: null,
+          };
+        }
+      }
+      if (!pos) pos = this._chordPos(ch, i, 0);
       const r = 16 + Math.min(11, (ch.duration || 4) * 1.15);
       return {
         chord: ch,
@@ -714,7 +778,8 @@
         seat: pos.seat,
       };
     });
-    this._separateNodes(this.nodes, 34);
+    // In Function view keep nodes on chart seats (no free separation)
+    if (!useFn) this._separateNodes(this.nodes, 34);
     this._layoutAltPath();
     this._computeDivergent();
     this._rebuildScaleSeats();
@@ -1049,6 +1114,7 @@
             label: fn.label,
             job: fn.roman || fn.role,
             role: fn.role,
+            functionNodeId: fn.id,
           };
           // Dominant / secondary: write V7 → target as a 2-step package
           if (

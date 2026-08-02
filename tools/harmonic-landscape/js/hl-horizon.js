@@ -280,7 +280,27 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
    * (diatonic + secondaries + interchange + I/IV/V gates + edges).
    */
   H.functionOpts = function () {
-    return H.state.functionOpts || {};
+    const raw = H.state.functionOpts || {};
+    // Expand 3 top-level toggles into full chart flags
+    const home = raw.home !== false;
+    const dominants = raw.dominants !== false;
+    const borrow = raw.borrow !== false;
+    return {
+      home: home,
+      dominants: dominants,
+      borrow: borrow,
+      showDiatonic: home,
+      showSkeleton: home,
+      showPath: true,
+      showPrimaryV7: dominants,
+      showSecondaries: dominants,
+      showChains: false,
+      showInterchange: borrow,
+      sparseBorrow: true, // paper-style core: ♭III iv ♭VI ♭VII (+ i/v when full later)
+      showOrbit: borrow,
+      showGates: borrow,
+      hoverBothWays: true,
+    };
   };
 
   H.buildFunctionChart = function () {
@@ -289,7 +309,9 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
     if (!music.functionNeighborhood) {
       return { nodes: [], edges: [], tonic: H.state.tonic, mode: H.state.mode, opts: fo };
     }
-    const nb = music.functionNeighborhood(H.state.tonic, H.state.mode, { functionOpts: fo });
+    const nb = music.functionNeighborhood(H.state.tonic, H.state.mode, {
+      functionOpts: { sparseBorrow: fo.sparseBorrow },
+    });
     const preferFlat = nb.preferFlat;
     const stamp = (ch) => {
       const x = music.cloneChord ? music.cloneChord(ch) : { ...ch, notes: (ch.notes || []).slice() };
