@@ -874,7 +874,7 @@
             <button type="button" class="btn primary" id="btn-start-home" title="Start (or land) on the tonic chord">+ Home</button>
             <button type="button" class="btn ghost" id="btn-swing" title="Add a chord on the opposite side of home">+ Swing</button>
             <button type="button" class="btn ghost" id="btn-arch" title="Add V7 → home">Arch home</button>
-            <label class="ctl" style="margin-left:0.35rem;color:#c8b8a0" title="Show next-move dots around home (Chase view)"><input type="checkbox" id="tog-horizon" checked> Next-move dots</label>
+            <label class="ctl" style="margin-left:0.35rem;color:#c8b8a0" title="Chase only: path directions, cadences home, and modulation doors — not the full Function atlas (borrow/V7s live there). Scale seats stay clickable."><input type="checkbox" id="tog-horizon" checked> Next-move dots</label>
             <label class="ctl" style="color:#c8b8a0" title="Show blue path only when a version is set as compare (Alt-click a chip)"><input type="checkbox" id="tog-alt"> Blue path</label>
           </div>
           <!-- Function layers: home ring always on; Dominants + Borrow only -->
@@ -887,8 +887,8 @@
         <canvas id="map" aria-label="Harmonic path and directions"></canvas>
         <div class="map-footer">
           <div id="map-status" class="map-status">Select a step</div>
-          <div class="map-legend-line"><strong>Chase:</strong> scale seats · multi-disk = real key change · <strong>Function:</strong> same-key chart (secondaries → targets, borrow, I/IV/V gates) — not a new disk</div>
-          <div class="map-legend-line">Write home stages in dropdowns → Land here commits · gold path = your sequence</div>
+          <div class="map-legend-line"><strong>Chase:</strong> path journey · next-move dots = directions, cadences, mod doors · multi-disk = new key · <strong>Function:</strong> same-key atlas (diatonic, V7s, borrow) — Land/modulate auto-opens Chase</div>
+          <div class="map-legend-line">Write home stages → Land here commits · both views share the diatonic wheel · gold path = your sequence</div>
           <div id="traj-caption" class="traj-caption">Path shape appears here</div>
           <div id="time-strip" class="time-strip" title="Click select · drag edge to resize · double-click split"></div>
           <p class="foot" style="margin:0.25rem 0 0">Time strip = when each chord happens · drag edges to resize · double-click to split.</p>

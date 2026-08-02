@@ -45,8 +45,35 @@ H.refreshAll = function () {
     if (H.map) H.map._keepCameraOnce = false;
   }
 
+  /**
+   * After a committed write-home key change while on Function, jump to Chase.
+   * Multi-disk only reads clearly there. Returns true if the view flipped.
+   */
+  H.maybeChaseAfterKeyChange = function (opts) {
+    opts = opts || {};
+    if (!H.map || H.map.mapView !== 'function') return false;
+    H.setMapView('chase', { silent: true });
+    // Frame both disks when present
+    if (H.map.disks && H.map.disks.length > 1) {
+      H.map.camera.tz = Math.min(H.map.camera.tz || 1, 0.72);
+      H.map.camera.tx = 0;
+      H.map.camera.ty = 0;
+      H.map.camera.x = 0;
+      H.map.camera.y = 0;
+      H.map.camera.zoom = H.map.camera.tz;
+    }
+    if (!opts.silent) {
+      H.setSyncStatus(
+        opts.message ||
+          'New key → Chase · multi-disk journey · Function is same-key atlas only'
+      );
+    }
+    return true;
+  };
+
   /** Switch map between Chase (scale seats) and Function (neighbourhood chart). */
-  H.setMapView = function (view) {
+  H.setMapView = function (view, opts) {
+    opts = opts || {};
     view = view === 'function' ? 'function' : 'chase';
     // Freeze scale before anything runs — Home lock used to force zoom=1
     const camSnap = H.map && H.map.snapshotCamera ? H.map.snapshotCamera() : null;
@@ -81,11 +108,13 @@ H.refreshAll = function () {
       H.map.restoreCamera(camSnap, { snap: true });
     }
     if (H.map) H.map._keepCameraOnce = false;
-    H.setSyncStatus(
-      view === 'function'
-        ? 'Function view · same wheel & zoom as Chase · toggles under the map'
-        : 'Chase view · same wheel & zoom · multi-disk for true key changes'
-    );
+    if (!opts.silent) {
+      H.setSyncStatus(
+        view === 'function'
+          ? 'Function · same-key atlas (diatonic, V7s, borrow) · Land/modulate → Chase'
+          : 'Chase · journey on the scale · next-move = path/cadence/mod · multi-disk for new keys'
+      );
+    }
   };
 
   H.syncFunctionOptsUI = function () {

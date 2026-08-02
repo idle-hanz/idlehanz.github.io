@@ -2115,8 +2115,8 @@
       ctx.textAlign = 'center';
       ctx.fillText(
         this.mapView === 'function'
-          ? 'Function view · click a chord · blue V7 → gold target · purple = borrow'
-          : 'Click HOME to start on tonic · ring = Chase harmonic scale',
+          ? 'Function · same-key atlas · click chords · Land/modulate → Chase'
+          : 'Chase · click HOME or a roman seat · next-move = path / cadence / mod',
         act.cx || 0,
         (act.cy || 0) + (act.R || 100) * 0.95
       );
@@ -2684,7 +2684,7 @@
                           ? ' · drag a path chord onto a seat to move it'
                           : ' on other disk · switches write home')
                       : this.mapView === 'function'
-                        ? 'Function view · click chords · blue dashed = secondary resolve · purple = borrow gates'
+                        ? 'Function · same-key atlas · blue V7 · purple borrow · Land/mod → Chase'
                         : this.nodes && this.nodes.length
                           ? 'Click scale seats · Land here = new disk · drag onto I/IV/V… · hollow = suggestions'
                           : 'Click HOME or a roman seat (IV, V, vi…) to start';
@@ -2695,7 +2695,7 @@
     ctx.fillStyle = 'rgba(180,168,150,0.5)';
     ctx.fillText(
       this.mapView === 'function'
-        ? 'Function view · gold diatonic/gates · blue V7→target · purple borrow · same write-home key'
+        ? 'Function · gold diatonic · blue V7→target · purple borrow · same write-home key'
         : 'Chase disk = key · Land here = new disk · click dim disk centre to return · seats on any disk',
       10,
       14

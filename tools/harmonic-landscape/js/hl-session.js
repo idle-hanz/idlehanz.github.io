@@ -310,12 +310,27 @@ H.setSyncStatus = function (msg) {
     if (H.$('#mode')) H.$('#mode').value = H.state.mode;
     H.clearPendingHome();
 
+    const keyChanged = prevT !== nextT || prevM !== nextM;
+
+    // Function = same-key atlas. Real key change → Chase (two wheels).
+    let switchedToChase = false;
+    if (keyChanged && H.map && H.map.mapView === 'function' && H.maybeChaseAfterKeyChange) {
+      switchedToChase = H.maybeChaseAfterKeyChange({
+        silent: true,
+        message:
+          'New key → Chase · ' +
+          H.keyLabel() +
+          ' · multi-disk journey · Function stays same-key only',
+      });
+    }
+
     // Tell H.map about both keys before path layout
     if (H.map) {
       if (H.map.rememberKey) {
         H.map.rememberKey(prevT, prevM);
         H.map.rememberKey(nextT, nextM);
       }
+      // maybeChaseAfterKeyChange already refreshed; still ensure origin/path
       H.map.setOrigin(H.state.tonic, H.state.mode);
       H.map.setPath(H.state.chords, H.state.selected);
       H.map.setHorizon(H.buildHorizon({ forMap: true, limit: 14 }));
@@ -324,6 +339,9 @@ H.setSyncStatus = function (msg) {
         H.map.camera.tz = Math.min(H.map.camera.tz || 1, 0.72);
         H.map.camera.tx = 0;
         H.map.camera.ty = 0;
+        H.map.camera.x = 0;
+        H.map.camera.y = 0;
+        H.map.camera.zoom = H.map.camera.tz;
       }
     }
 
@@ -333,10 +351,31 @@ H.setSyncStatus = function (msg) {
       H.updateMapStatus();
       H.renderTimeStrip();
       H.refreshAltPath();
+      if (switchedToChase) {
+        H.setSyncStatus(
+          'Write home → ' +
+            H.keyLabel() +
+            ' · switched to Chase · multi-disk journey · Function is same-key only'
+        );
+      }
     } else {
       H.afterEdit();
+      if (switchedToChase) {
+        H.setSyncStatus(
+          'Write home → ' +
+            H.keyLabel() +
+            ' · switched to Chase · multi-disk journey · Function is same-key only'
+        );
+      }
     }
-    return { prevT, prevM, delta, transposed: !!opts.transpose };
+    return {
+      prevT: prevT,
+      prevM: prevM,
+      delta: delta,
+      transposed: !!opts.transpose,
+      keyChanged: keyChanged,
+      switchedToChase: switchedToChase,
+    };
   }
 
   H.transposeChord = function (ch, delta, newTonic, newMode) {
@@ -458,7 +497,10 @@ H.setSyncStatus = function (msg) {
     H.state._prevTonicForTranspose = H.state.tonic;
     H.pushUndo();
     // Pivot = selection (or last step): that step + later sit on the new disk
-    H.setWritingHome(dest.tonic, dest.mode, { transpose: false, retagFromSelected: true });
+    const result = H.setWritingHome(dest.tonic, dest.mode, {
+      transpose: false,
+      retagFromSelected: true,
+    });
     const disks = H.map && H.map.disks ? H.map.disks.length : 1;
     const pivot =
       H.state.selected >= 0 && H.state.selected < H.state.chords.length
@@ -470,7 +512,8 @@ H.setSyncStatus = function (msg) {
         (disks > 1 ? ' · ' + disks + ' Chase disks' : '') +
         ' · from step ' +
         pivot +
-        ' onward · earlier steps stay on previous key · pitches unchanged'
+        ' onward · earlier steps stay on previous key · pitches unchanged' +
+        (result && result.switchedToChase ? ' · switched to Chase' : '')
     );
   }
 

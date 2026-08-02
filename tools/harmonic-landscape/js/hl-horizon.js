@@ -164,6 +164,7 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       );
       if (ok) {
         // Don't retag whole path — only gravity + new chords; package just written uses new key below
+        // setWritingHome auto-flips Function → Chase when the key changes
         H.setWritingHome(item.modulateTo.tonic, item.modulateTo.mode || H.state.mode, {
           transpose: false,
           skipEdit: true,
@@ -173,6 +174,13 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
         const end = start + (fit.pieces ? fit.pieces.length : 0);
         for (let i = start; i < end; i++) {
           if (H.state.chords[i]) H.stampKey(H.state.chords[i], H.writeKey());
+        }
+        if (H.map && H.map.mapView === 'chase') {
+          H.setSyncStatus(
+            'Modulated → ' +
+              dest +
+              ' · Chase multi-disk · old key stays on its wheel'
+          );
         }
       }
     }
@@ -662,27 +670,49 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       });
     }
 
-    // Flavours — extra colour family moves (map + list)
-    const flavourSeeds = [
-      { d: 8, q: 'maj', label: '♭VI colour', kind: 'flavour', job: 'dark lift' },
-      { d: 10, q: 'maj', label: '♭VII modal', kind: 'flavour', job: 'epic' },
-      { d: 5, q: 'min', label: 'iv soft', kind: 'flavour', job: 'pad' },
-      { d: 1, q: 'maj', label: '♭II gate', kind: 'flavour', job: 'phrygian' },
-      { d: 1, q: 'dom7', label: '♭II7 noir', kind: 'flavour', job: 'noir' },
-      { d: 4, q: 'maj', label: 'Mediant', kind: 'flavour', job: 'cinematic' },
-      { d: 3, q: 'maj', label: 'III', kind: 'flavour', job: 'relative' },
-      { d: 7, q: 'dom7', label: 'V7 push', kind: 'flavour', job: 'tension' },
-    ];
+    // Flavours — same-key colour (Function atlas owns most of these).
+    // From-here list: full set. Chase map: only exit-oriented colours (mod doors).
+    const flavourSeeds = forMap
+      ? [
+          // Exit / pivot colour — not the static borrow catalogue (that's Function)
+          { d: 1, q: 'dom7', label: '♭II7 noir', kind: 'flavour', job: 'tritone exit', exit: true },
+          { d: 6, q: 'dom7', label: '♭V7', kind: 'flavour', job: 'tritone exit', exit: true },
+          { d: 3, q: 'maj', label: 'III', kind: 'flavour', job: 'relative door', exit: true },
+          { d: 4, q: 'maj', label: 'Mediant', kind: 'flavour', job: 'chromatic door', exit: true },
+        ]
+      : [
+          { d: 8, q: 'maj', label: '♭VI colour', kind: 'flavour', job: 'dark lift' },
+          { d: 10, q: 'maj', label: '♭VII modal', kind: 'flavour', job: 'epic' },
+          { d: 5, q: 'min', label: 'iv soft', kind: 'flavour', job: 'pad' },
+          { d: 1, q: 'maj', label: '♭II gate', kind: 'flavour', job: 'phrygian' },
+          { d: 1, q: 'dom7', label: '♭II7 noir', kind: 'flavour', job: 'noir' },
+          { d: 4, q: 'maj', label: 'Mediant', kind: 'flavour', job: 'cinematic' },
+          { d: 3, q: 'maj', label: 'III', kind: 'flavour', job: 'relative' },
+          { d: 7, q: 'dom7', label: 'V7 push', kind: 'flavour', job: 'tension' },
+        ];
     flavourSeeds.forEach((s) => {
       let ch = music.makeChord((t + s.d) % 12, s.q, {
-        region: s.d === 1 && s.q === 'dom7' ? 'tritone' : s.d === 4 ? 'chromatic' : 'interchange',
+        region:
+          s.d === 1 && s.q === 'dom7'
+            ? 'tritone'
+            : s.d === 6
+              ? 'tritone'
+              : s.d === 4 || s.d === 3
+                ? 'chromatic'
+                : 'interchange',
         tag: s.job,
         roman: s.label,
       });
       if (from && compose.bestInversion) ch = compose.bestInversion(from, ch);
       if (from && from.root === ch.root && from.quality === ch.quality) return;
-      // Skip if already listed as interchange/secondary
-      items.push({ chord: ch, kind: 'flavour', label: ch.name, job: s.job, section: 'colour' });
+      items.push({
+        chord: ch,
+        kind: 'flavour',
+        label: ch.name,
+        job: s.job,
+        section: 'colour',
+        exit: !!s.exit,
+      });
     });
 
     // Directions — 1 or 2 chord packages that still join the rest of the path
@@ -699,23 +729,25 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
             tonic: t,
             modeKey: H.state.mode,
             goalId: 'balanced',
-            count: 7,
+            count: forMap ? 6 : 7,
             path: H.state.chords.slice(0, Math.max(0, sel + 1)),
           })
-        : compose.suggestNext({
-            fromChord: from,
-            tonic: t,
-            modeKey: H.state.mode,
-            goalId: 'balanced',
-            count: 5,
-            path: H.state.chords,
-          }).map((s) => ({
-            chord: s.chord,
-            chords: [s.chord],
-            label: s.chord.name,
-            jobLabel: s.jobLabel,
-            steps: 1,
-          }));
+        : compose
+            .suggestNext({
+              fromChord: from,
+              tonic: t,
+              modeKey: H.state.mode,
+              goalId: 'balanced',
+              count: 5,
+              path: H.state.chords,
+            })
+            .map((s) => ({
+              chord: s.chord,
+              chords: [s.chord],
+              label: s.chord.name,
+              jobLabel: s.jobLabel,
+              steps: 1,
+            }));
       sug.forEach((s) => {
         const route = s.chords && s.chords.length ? s.chords : [s.chord];
         items.push({
@@ -723,14 +755,13 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
           kind: 'direction',
           label: s.label || route.map((c) => c.name).join(' → '),
           job: s.jobLabel || s.job || (route.length > 1 ? route.length + ' steps' : ''),
-          // Multi-chord packages replace/insert the whole path so the join still works
           route: route.length >= 2 ? route : undefined,
           steps: route.length,
         });
       });
     }
 
-    // Cadence colours — routes home
+    // Cadence colours — routes home (journey close; OK on Chase)
     if (from) {
       const routes = music.waysBackHome(from, t, H.state.mode, 4);
       routes.forEach((r) => {
@@ -745,17 +776,20 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       });
     }
 
-    // Modulation links
+    // Modulation links — primary Chase map story
     if (compose.modulationTargets) {
       const targets = compose.modulationTargets(t, H.state.mode, 5);
-      targets.slice(0, 4).forEach((tgt) => {
+      targets.slice(0, forMap ? 5 : 4).forEach((tgt) => {
         const into = compose.waysIntoKey
           ? compose.waysIntoKey(from || music.makeChord(t, 'min'), tgt.tonic, tgt.mode, 1)
           : [];
         const route = into[0];
         const first = route
           ? route.chords[0]
-          : music.makeChord(tgt.tonic, (music.MODES[tgt.mode] || {}).romanBase === 'minor' ? 'min' : 'maj');
+          : music.makeChord(
+              tgt.tonic,
+              (music.MODES[tgt.mode] || {}).romanBase === 'minor' ? 'min' : 'maj'
+            );
         items.push({
           chord: first,
           kind: 'modulate',
@@ -767,11 +801,36 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       });
     }
 
-    // Dedupe by root+quality+kind
+    // Plain diatonic scale seats (Chase roman rings) — map dots shouldn't restate them
+    const scaleSeatKeys = new Set();
+    if (music.circularHarmonicScale) {
+      music.circularHarmonicScale(t, H.state.mode).forEach((s) => {
+        let q = (s.qualities && s.qualities[0]) || 'maj';
+        if (s.role === 'dom') q = 'dom7';
+        scaleSeatKeys.add(s.root + ':' + q);
+        (s.qualities || []).forEach((qq) => scaleSeatKeys.add(s.root + ':' + qq));
+      });
+    }
+    const isPlainScaleSeat = (ch) => {
+      if (!ch) return false;
+      if (scaleSeatKeys.has(ch.root + ':' + ch.quality)) return true;
+      // Family match (e.g. Am7 vs Am seat)
+      if (music.qualityFamily) {
+        const fam = music.qualityFamily(ch.quality);
+        for (const k of scaleSeatKeys) {
+          const parts = k.split(':');
+          if (Number(parts[0]) === ch.root && music.qualityFamily(parts[1]) === fam) return true;
+        }
+      }
+      return false;
+    };
+
+    // Dedupe + rank
+    // Chase map: journey / leave-home first. Function list: atlas first.
     const seen = new Set();
     let out = [];
     const order = forMap
-      ? { direction: 0, flavour: 1, secondary: 1, interchange: 2, cadence: 3, modulate: 4 }
+      ? { modulate: 0, direction: 1, cadence: 2, flavour: 3 }
       : {
           home: -1,
           secondary: 0,
@@ -789,6 +848,23 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
     const maxList = forMap ? limit : 40;
     for (const it of items) {
       if (!it.chord) continue;
+      // Chase map: skip pure scale-seat restatements (click the roman seat instead)
+      // Keep multi-step packages, cadences, and modulates even if first chord is diatonic
+      if (forMap) {
+        const multi = (it.route && it.route.length > 1) || (it.steps && it.steps > 1);
+        if (
+          !multi &&
+          it.kind !== 'modulate' &&
+          it.kind !== 'cadence' &&
+          isPlainScaleSeat(it.chord)
+        ) {
+          continue;
+        }
+        // Atlas secondaries / borrow already live on Function — not on Chase map
+        if (it.kind === 'secondary' || it.kind === 'interchange' || it.kind === 'gate') {
+          continue;
+        }
+      }
       const k = it.kind + ':' + it.chord.root + ':' + it.chord.quality + ':' + (it.label || '');
       if (seen.has(k)) continue;
       seen.add(k);
