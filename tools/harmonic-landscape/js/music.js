@@ -182,73 +182,173 @@
     });
   }
 
+  /**
+   * Spell roots with flats in flat keys (and always for borrowed colour in major).
+   * C major stays mostly sharp-neutral, but borrow uses flats (Eb not D#).
+   */
+  function keyPrefersFlat(tonic, modeKey) {
+    const t = pc(tonic);
+    const isMin = (MODES[modeKey] || MODES.minor).romanBase === 'minor';
+    // Major flat keys: F Bb Eb Ab Db Gb
+    const flatMaj = { 5: 1, 10: 1, 3: 1, 8: 1, 1: 1, 6: 1 };
+    // Minor keys that usually use flats: D G C F Bb Eb minor
+    const flatMin = { 2: 1, 7: 1, 0: 1, 5: 1, 10: 1, 3: 1 };
+    return isMin ? !!flatMin[t] : !!flatMaj[t];
+  }
+
   /** Secondary dominants: V/x for each non-tonic diatonic target */
-  function secondaryDominants(tonic, modeKey) {
-    const diat = diatonicChords(tonic, modeKey, false);
+  function secondaryDominants(tonic, modeKey, opts) {
+    opts = opts || {};
+    const preferFlat = opts.preferFlat != null ? opts.preferFlat : keyPrefersFlat(tonic, modeKey);
+    const diat = diatonicChords(tonic, modeKey, false).map((c) =>
+      makeChord(c.root, c.quality, { region: 'diatonic', roman: c.roman, preferFlat })
+    );
     const out = [];
     diat.forEach((ch, i) => {
-      if (i === 0) return; // no V7/I as "secondary" of itself
+      if (i === 0) return; // V7→I handled as primary dominant
       const domRoot = (ch.root + 7) % 12;
       const v7 = makeChord(domRoot, 'dom7', {
         region: 'secondary',
-        roman: `V7/${ch.roman || noteName(ch.root)}`,
+        roman: `V7/${ch.roman || noteName(ch.root, preferFlat)}`,
         tag: 'secondary dominant',
+        preferFlat,
       });
-      // Who this dominant resolves to (for Function chart edges + From here labels)
       v7.resolveTarget = {
         root: ch.root,
         quality: ch.quality,
         roman: ch.roman || '',
         name: ch.name,
       };
+      // Secondaries resolve to their target only — not to each other
+      v7.canOrbitPeers = false;
       out.push(v7);
     });
     return out;
   }
 
   /**
+   * Primary V7 → I (belongs on the Function chart; not a "secondary").
+   */
+  function primaryDominant(tonic, modeKey, opts) {
+    opts = opts || {};
+    const preferFlat = opts.preferFlat != null ? opts.preferFlat : keyPrefersFlat(tonic, modeKey);
+    const t = pc(tonic);
+    const isMin = (MODES[modeKey] || MODES.minor).romanBase === 'minor';
+    const homeQ = isMin ? 'min' : 'maj';
+    const home = makeChord(t, homeQ, {
+      region: 'diatonic',
+      roman: isMin ? 'i' : 'I',
+      preferFlat,
+    });
+    const v7 = makeChord((t + 7) % 12, 'dom7', {
+      region: 'diatonic',
+      roman: 'V7',
+      tag: 'primary dominant',
+      preferFlat,
+    });
+    v7.resolveTarget = {
+      root: home.root,
+      quality: home.quality,
+      roman: home.roman,
+      name: home.name,
+    };
+    v7.canOrbitPeers = false;
+    v7.isPrimaryDominant = true;
+    return v7;
+  }
+
+  /**
+   * Classic modal interchange for Function charts.
+   * Major → parallel natural minor colours (flats): i, ♭III, iv, v, ♭VI, ♭VII
+   * Minor → parallel major colours: I, ii, IV, V, vi
+   * Prefer flats so C major shows Eb/Ab/Bb/Fm not D#/G#/A#.
+   */
+  function modalInterchange(tonic, modeKey, opts) {
+    opts = opts || {};
+    const t = pc(tonic);
+    const isMinor = (MODES[modeKey] || MODES.minor).romanBase === 'minor';
+    // Borrowed colour almost always spelled with flats in major keys
+    const preferFlat =
+      opts.preferFlat != null ? opts.preferFlat : !isMinor || keyPrefersFlat(tonic, modeKey);
+
+    if (!isMinor) {
+      // Major: borrow from natural minor (user chord-file orbit)
+      const specs = [
+        { d: 0, q: 'min', roman: 'i' },
+        { d: 3, q: 'maj', roman: '♭III' },
+        { d: 5, q: 'min', roman: 'iv' }, // Fm in C — must not be missing
+        { d: 7, q: 'min', roman: 'v' },
+        { d: 8, q: 'maj', roman: '♭VI' },
+        { d: 10, q: 'maj', roman: '♭VII' },
+      ];
+      return specs.map((s) => {
+        const ch = makeChord((t + s.d) % 12, s.q, {
+          region: 'interchange',
+          roman: s.roman,
+          tag: 'modal interchange',
+          preferFlat: true,
+        });
+        ch.canOrbitPeers = true; // borrow chords freely connect among themselves
+        return ch;
+      });
+    }
+
+    // Minor: borrow from parallel major
+    const specs = [
+      { d: 0, q: 'maj', roman: 'I' },
+      { d: 2, q: 'min', roman: 'ii' },
+      { d: 5, q: 'maj', roman: 'IV' },
+      { d: 7, q: 'maj', roman: 'V' },
+      { d: 9, q: 'min', roman: 'vi' },
+    ];
+    return specs.map((s) => {
+      const ch = makeChord((t + s.d) % 12, s.q, {
+        region: 'interchange',
+        roman: s.roman,
+        tag: 'modal interchange',
+        preferFlat,
+      });
+      ch.canOrbitPeers = true;
+      return ch;
+    });
+  }
+
+  /**
    * Neighbourhood chart for one key (user's "chord file" view):
-   * diatonic core, secondary dominants → targets, modal interchange, I/IV/V gates.
+   * diatonic core, V7→I, secondaries → targets, interchange orbit, I/IV/V gates.
    */
   function functionNeighborhood(tonic, modeKey) {
     const t = pc(tonic);
     const mode = modeKey || 'minor';
-    const diat = diatonicChords(t, mode, false);
-    const secondary = secondaryDominants(t, mode);
-    const interchange = modalInterchange(t, mode);
-    // Classic gates in/out of borrow: I, IV, V (same scale degrees)
+    const preferFlat = keyPrefersFlat(t, mode);
+    const diat = diatonicChords(t, mode, false).map((c) =>
+      makeChord(c.root, c.quality, {
+        region: 'diatonic',
+        roman: c.roman,
+        preferFlat,
+      })
+    );
+    const primary = primaryDominant(t, mode, { preferFlat });
+    const secondary = secondaryDominants(t, mode, { preferFlat });
+    const interchange = modalInterchange(t, mode, { preferFlat: true });
+    // Classic gates in/out of borrow: I, IV, V
     const gates = [diat[0], diat[3], diat[4]].filter(Boolean).map((c) => ({
       ...c,
       region: 'diatonic',
       tag: 'gate',
       notes: (c.notes || []).slice(),
+      canOrbitPeers: false,
     }));
     return {
       tonic: t,
       mode: mode,
+      preferFlat: preferFlat,
       diatonic: diat,
+      primaryDominant: primary,
       secondary: secondary,
       interchange: interchange,
       gates: gates,
     };
-  }
-
-  /** Modal interchange from parallel major/minor */
-  function modalInterchange(tonic, modeKey) {
-    const t = pc(tonic);
-    const isMinor = (MODES[modeKey] || MODES.minor).romanBase === 'minor';
-    const parallel = isMinor ? 'major' : 'minor';
-    const fromParallel = diatonicChords(t, parallel, false);
-    const homeSet = new Set(diatonicChords(t, modeKey, false).map((c) => c.root + ':' + c.quality));
-    return fromParallel
-      .filter((c) => !homeSet.has(c.root + ':' + c.quality))
-      .map((c) => ({
-        ...c,
-        region: 'interchange',
-        tag: 'modal interchange',
-        roman: c.roman ? `${c.roman}♭` : '',
-        id: c.id + ':int',
-      }));
   }
 
   /** Chromatic mediants: ± major/minor third, same quality or flipped */
@@ -991,8 +1091,10 @@
     withDuration,
     diatonicChords,
     secondaryDominants,
+    primaryDominant,
     modalInterchange,
     functionNeighborhood,
+    keyPrefersFlat,
     chromaticMediants,
     tritoneSubs,
     parallelModeChords,

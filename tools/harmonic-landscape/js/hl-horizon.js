@@ -281,16 +281,43 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
    */
   H.buildFunctionChart = function () {
     const music = H.M();
-    if (!music.functionNeighborhood) return { nodes: [], edges: [], tonic: H.state.tonic, mode: H.state.mode };
+    if (!music.functionNeighborhood) {
+      return { nodes: [], edges: [], tonic: H.state.tonic, mode: H.state.mode };
+    }
     const nb = music.functionNeighborhood(H.state.tonic, H.state.mode);
+    const preferFlat = nb.preferFlat;
     const stamp = (ch) => {
       const x = music.cloneChord ? music.cloneChord(ch) : { ...ch, notes: (ch.notes || []).slice() };
+      // Keep display name from makeChord (flat spelling when set)
       H.stampKey(x, H.writeKey());
       return x;
     };
     const nodes = [];
     const edges = [];
     const idOf = (ch) => ch.root + ':' + ch.quality;
+    const ensureDiatonicTarget = (rt) => {
+      if (!rt) return null;
+      const tid = rt.root + ':' + rt.quality;
+      let target = nodes.find((n) => n.id === tid);
+      if (!target) {
+        const tc = stamp(
+          music.makeChord(rt.root, rt.quality, {
+            region: 'diatonic',
+            roman: rt.roman || '',
+            preferFlat: preferFlat,
+          })
+        );
+        target = {
+          id: idOf(tc),
+          chord: tc,
+          role: 'diatonic',
+          label: tc.name,
+          roman: tc.roman || '',
+        };
+        nodes.push(target);
+      }
+      return target;
+    };
 
     (nb.diatonic || []).forEach((ch) => {
       const c = stamp(ch);
@@ -303,12 +330,32 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       });
     });
 
+    // Primary V7 → I (G7 → C in C major) — chart always includes this
+    if (nb.primaryDominant) {
+      const ch = stamp(nb.primaryDominant);
+      const tid = ch.resolveTarget
+        ? ch.resolveTarget.root + ':' + ch.resolveTarget.quality
+        : null;
+      nodes.push({
+        id: idOf(ch),
+        chord: ch,
+        role: 'dominant',
+        label: ch.name,
+        roman: ch.roman || 'V7',
+        resolvesToId: tid,
+        canOrbitPeers: false,
+      });
+      ensureDiatonicTarget(ch.resolveTarget);
+      if (tid) {
+        edges.push({ kind: 'resolve', fromId: idOf(ch), toId: tid, label: 'V7→I' });
+      }
+    }
+
+    // Secondaries: each only resolves to its own target (no peer links)
     (nb.secondary || []).forEach((ch) => {
       const c = stamp(ch);
       const tid =
-        ch.resolveTarget
-          ? ch.resolveTarget.root + ':' + ch.resolveTarget.quality
-          : null;
+        ch.resolveTarget ? ch.resolveTarget.root + ':' + ch.resolveTarget.quality : null;
       nodes.push({
         id: idOf(c),
         chord: c,
@@ -316,63 +363,57 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
         label: c.name,
         roman: c.roman || '',
         resolvesToId: tid,
+        canOrbitPeers: false,
       });
-      if (tid && ch.resolveTarget) {
-        let target = nodes.find((n) => n.id === tid);
-        if (!target) {
-          const tc = stamp(
-            music.makeChord(ch.resolveTarget.root, ch.resolveTarget.quality, {
-              region: 'diatonic',
-              roman: ch.resolveTarget.roman || '',
-            })
-          );
-          target = {
-            id: idOf(tc),
-            chord: tc,
-            role: 'diatonic',
-            label: tc.name,
-            roman: tc.roman || '',
-          };
-          nodes.push(target);
-        }
-        edges.push({
-          kind: 'resolve',
-          fromId: idOf(c),
-          toId: tid,
-          label: '→',
-        });
+      ensureDiatonicTarget(ch.resolveTarget);
+      if (tid) {
+        edges.push({ kind: 'resolve', fromId: idOf(c), toId: tid, label: '→' });
       }
     });
 
+    const interNodes = [];
     (nb.interchange || []).forEach((ch) => {
       const c = stamp(ch);
-      nodes.push({
+      const node = {
         id: idOf(c),
         chord: c,
         role: 'interchange',
         label: c.name,
         roman: c.roman || '',
-      });
+        canOrbitPeers: true,
+      };
+      nodes.push(node);
+      interNodes.push(node);
     });
 
-    // Gate chords already in diatonic; mark + edges to every interchange
+    // Interchange orbit: every borrow chord can move to every other borrow chord
+    for (let i = 0; i < interNodes.length; i++) {
+      for (let j = 0; j < interNodes.length; j++) {
+        if (i === j) continue;
+        edges.push({
+          kind: 'orbit',
+          fromId: interNodes[i].id,
+          toId: interNodes[j].id,
+          label: 'orbit',
+        });
+      }
+    }
+
+    // Gates I/IV/V ↔ each interchange (in/out of borrow)
     (nb.gates || []).forEach((g) => {
       const gid = idOf(g);
       const node = nodes.find((n) => n.id === gid);
       if (node) node.gate = true;
-      (nb.interchange || []).forEach((ic) => {
-        edges.push({
-          kind: 'gate',
-          fromId: gid,
-          toId: idOf(ic),
-          label: 'borrow',
-        });
+      interNodes.forEach((ic) => {
+        edges.push({ kind: 'gate', fromId: gid, toId: ic.id, label: 'borrow' });
+        edges.push({ kind: 'gate', fromId: ic.id, toId: gid, label: 'return' });
       });
     });
 
     return {
       tonic: nb.tonic,
       mode: nb.mode,
+      preferFlat: preferFlat,
       nodes: nodes,
       edges: edges,
     };
@@ -451,6 +492,31 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
     // Secondary dominants → target, modal interchange, I/IV/V gates
     if (music.functionNeighborhood && !forMap) {
       const nb = music.functionNeighborhood(t, H.state.mode);
+      // Primary V7 → I first (G7 → C in C major)
+      if (nb.primaryDominant) {
+        let v7 = music.cloneChord
+          ? music.cloneChord(nb.primaryDominant)
+          : { ...nb.primaryDominant, notes: (nb.primaryDominant.notes || []).slice() };
+        if (from && compose.bestInversion) v7 = compose.bestInversion(from, v7);
+        H.stampKey(v7, H.writeKey());
+        const rt = nb.primaryDominant.resolveTarget;
+        const tgt = rt
+          ? music.makeChord(rt.root, rt.quality, {
+              region: 'diatonic',
+              roman: rt.roman || '',
+              preferFlat: nb.preferFlat,
+            })
+          : null;
+        if (tgt) H.stampKey(tgt, H.writeKey());
+        items.push({
+          chord: v7,
+          kind: 'secondary',
+          label: tgt ? v7.name + ' → ' + tgt.name : v7.name,
+          job: 'V7 · primary dominant',
+          route: tgt ? [v7, tgt] : undefined,
+          section: 'secondary',
+        });
+      }
       (nb.secondary || []).forEach((sec) => {
         let v7 = music.cloneChord ? music.cloneChord(sec) : { ...sec, notes: (sec.notes || []).slice() };
         if (from && compose.bestInversion) v7 = compose.bestInversion(from, v7);
@@ -459,6 +525,7 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
           ? music.makeChord(sec.resolveTarget.root, sec.resolveTarget.quality, {
               region: 'diatonic',
               roman: sec.resolveTarget.roman || '',
+              preferFlat: nb.preferFlat,
             })
           : null;
         if (tgt) H.stampKey(tgt, H.writeKey());

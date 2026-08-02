@@ -303,24 +303,58 @@
     const disk = this._activeDisk();
     const t = chart.tonic != null ? chart.tonic : this.origin.tonic;
     const mode = chart.mode || this.origin.mode;
+    const cx = disk.cx || 0;
+    const cy = disk.cy || 0;
+    const R = disk.R || 120;
+
+    // Place interchange on a dedicated outer orbit (equal spacing) so Fm
+    // never hides under F major at the same Chase angle.
+    const interList = chart.nodes.filter((n) => n.role === 'interchange');
+    const interPos = {};
+    interList.forEach((n, i) => {
+      const ang = -Math.PI / 2 + (i / Math.max(1, interList.length)) * Math.PI * 2;
+      const rad = R * 1.38;
+      interPos[n.id] = {
+        x: cx + Math.cos(ang) * rad,
+        y: cy + Math.sin(ang) * rad * 0.88,
+      };
+    });
 
     chart.nodes.forEach((n) => {
       const ch = n.chord;
-      if (!ch || !M || !M.chaseChordPos) return;
-      const base = M.chaseChordPos(ch, t, mode, {
-        cx: disk.cx || 0,
-        cy: disk.cy || 0,
-        R: disk.R || 120,
-      });
-      // Belts: diatonic/gate on ring, secondary mid-shell, interchange outer
-      let scale = 1;
-      if (n.role === 'secondary') scale = 1.18;
-      else if (n.role === 'interchange') scale = 1.32;
-      else if (n.gate || n.role === 'diatonic') scale = n.gate ? 0.78 : 0.92;
-      const cx = disk.cx || 0;
-      const cy = disk.cy || 0;
-      const x = cx + (base.x - cx) * scale;
-      const y = cy + (base.y - cy) * scale;
+      if (!ch) return;
+      let x;
+      let y;
+      if (n.role === 'interchange' && interPos[n.id]) {
+        x = interPos[n.id].x;
+        y = interPos[n.id].y;
+      } else if (M && M.chaseChordPos) {
+        const base = M.chaseChordPos(ch, t, mode, { cx: cx, cy: cy, R: R });
+        // Belts: diatonic/gate on ring, secondary + primary dominant mid-shell
+        let scale = 0.92;
+        if (n.role === 'secondary' || n.role === 'dominant') scale = 1.2;
+        else if (n.gate || n.role === 'diatonic') scale = n.gate ? 0.78 : 0.92;
+        x = cx + (base.x - cx) * scale;
+        y = cy + (base.y - cy) * scale;
+        // G7 and G maj share a root — nudge primary/secondary slightly out
+        if ((n.role === 'secondary' || n.role === 'dominant') && n.chord) {
+          const diatSame = chart.nodes.find(
+            (o) =>
+              o.role === 'diatonic' &&
+              o.chord &&
+              o.chord.root === n.chord.root &&
+              o.id !== n.id
+          );
+          if (diatSame) {
+            scale = 1.28;
+            x = cx + (base.x - cx) * scale;
+            y = cy + (base.y - cy) * scale;
+          }
+        }
+      } else {
+        x = cx;
+        y = cy;
+      }
       this.functionNodes.push({
         id: n.id,
         chord: ch,
@@ -329,9 +363,15 @@
         roman: n.roman || '',
         gate: !!n.gate,
         resolvesToId: n.resolvesToId || null,
+        canOrbitPeers: !!n.canOrbitPeers,
         x: x,
         y: y,
-        r: n.role === 'secondary' ? 13 : n.role === 'interchange' ? 12 : 14,
+        r:
+          n.role === 'secondary' || n.role === 'dominant'
+            ? 13
+            : n.role === 'interchange'
+              ? 12
+              : 14,
       });
     });
   };
@@ -344,29 +384,61 @@
       byId[n.id] = n;
     });
     const z = this.camera.zoom || 1;
-    const hover =
+    const hoverItem =
       this.hover && this.hover.type === 'functionNode' ? this.hover.item : null;
+    // Resolve hover to function node id
+    let hoverId = null;
+    if (hoverItem && hoverItem.chord) {
+      const hit = this.functionNodes.find(
+        (n) =>
+          n.chord &&
+          n.chord.root === hoverItem.chord.root &&
+          n.chord.quality === hoverItem.chord.quality &&
+          (hoverItem.role ? n.role === hoverItem.role || (hoverItem.role === 'secondary' && n.role === 'dominant') : true)
+      );
+      if (hit) hoverId = hit.id;
+    }
 
-    // Edges under nodes
+    const edgeTouchesHover = (e) =>
+      hoverId && (e.fromId === hoverId || e.toId === hoverId);
+
+    // Edges under nodes — dim all, brighten paths from hovered chord
     (this.functionChart.edges || []).forEach((e) => {
       const a = byId[e.fromId];
       const b = byId[e.toId];
       if (!a || !b) return;
+      // Orbit edges: only draw when hovering an interchange node (keeps map readable)
+      if (e.kind === 'orbit' && !edgeTouchesHover(e)) return;
+
+      const lit = !hoverId || edgeTouchesHover(e);
+      const dim = hoverId && !edgeTouchesHover(e);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
       if (e.kind === 'resolve') {
-        ctx.strokeStyle = 'rgba(126,184,218,0.55)';
-        ctx.lineWidth = 1.8 / z;
+        ctx.strokeStyle = lit
+          ? 'rgba(126,184,218,' + (dim ? '0.08' : hoverId ? '0.95' : '0.55') + ')'
+          : 'rgba(126,184,218,0.55)';
+        ctx.lineWidth = (lit && hoverId ? 2.8 : 1.8) / z;
         ctx.setLineDash([5 / z, 4 / z]);
+      } else if (e.kind === 'orbit') {
+        ctx.strokeStyle = 'rgba(196,160,224,' + (hoverId ? '0.75' : '0.35') + ')';
+        ctx.lineWidth = (hoverId ? 2 : 1.2) / z;
+        ctx.setLineDash([2 / z, 4 / z]);
       } else {
-        ctx.strokeStyle = 'rgba(196,160,224,0.28)';
-        ctx.lineWidth = 1.1 / z;
+        // gate
+        ctx.strokeStyle = lit
+          ? 'rgba(196,160,224,' + (dim ? '0.06' : hoverId ? '0.85' : '0.28') + ')'
+          : 'rgba(196,160,224,0.28)';
+        ctx.lineWidth = (lit && hoverId ? 2.2 : 1.1) / z;
         ctx.setLineDash([3 / z, 5 / z]);
       }
+      if (dim) ctx.globalAlpha = 0.25;
       ctx.stroke();
+      ctx.globalAlpha = 1;
       ctx.setLineDash([]);
-      // small arrow head toward target
+      if (dim) return;
+      // arrow head toward target
       const ang = Math.atan2(b.y - a.y, b.x - a.x);
       const ax = b.x - Math.cos(ang) * (b.r + 4);
       const ay = b.y - Math.sin(ang) * (b.r + 4);
@@ -375,31 +447,37 @@
       ctx.lineTo(ax - Math.cos(ang - 0.4) * 7 / z, ay - Math.sin(ang - 0.4) * 7 / z);
       ctx.lineTo(ax - Math.cos(ang + 0.4) * 7 / z, ay - Math.sin(ang + 0.4) * 7 / z);
       ctx.closePath();
-      ctx.fillStyle = e.kind === 'resolve' ? 'rgba(126,184,218,0.7)' : 'rgba(196,160,224,0.4)';
+      ctx.fillStyle =
+        e.kind === 'resolve'
+          ? 'rgba(126,184,218,' + (hoverId ? '0.95' : '0.7') + ')'
+          : 'rgba(196,160,224,' + (hoverId ? '0.9' : '0.4') + ')';
       ctx.fill();
     });
 
     this.functionNodes.forEach((n) => {
       const col =
-        n.role === 'secondary'
+        n.role === 'secondary' || n.role === 'dominant'
           ? REGION.secondary
           : n.role === 'interchange'
             ? REGION.interchange
             : n.gate
               ? REGION.gate
               : REGION.diatonic;
-      const isH =
-        hover &&
-        hover.chord &&
-        hover.chord.root === n.chord.root &&
-        hover.chord.quality === n.chord.quality;
+      const isH = hoverId && n.id === hoverId;
+      const isNeighbor =
+        hoverId &&
+        (this.functionChart.edges || []).some(
+          (e) =>
+            (e.fromId === hoverId && e.toId === n.id) ||
+            (e.toId === hoverId && e.fromId === n.id)
+        );
       ctx.beginPath();
-      ctx.arc(n.x, n.y, n.r + (isH ? 2 : 0), 0, Math.PI * 2);
+      ctx.arc(n.x, n.y, n.r + (isH ? 3 : isNeighbor ? 1.5 : 0), 0, Math.PI * 2);
       ctx.fillStyle = isH ? col.fill : 'rgba(12,10,8,0.85)';
       ctx.fill();
-      ctx.strokeStyle = col.fill;
-      ctx.lineWidth = (isH ? 2.5 : 1.6) / z;
-      if (n.role === 'secondary') ctx.setLineDash([3 / z, 2 / z]);
+      ctx.strokeStyle = isNeighbor && !isH ? '#fff4d6' : col.fill;
+      ctx.lineWidth = (isH ? 2.8 : isNeighbor ? 2.2 : 1.6) / z;
+      if (n.role === 'secondary' || n.role === 'dominant') ctx.setLineDash([3 / z, 2 / z]);
       else ctx.setLineDash([]);
       ctx.stroke();
       ctx.setLineDash([]);
@@ -414,7 +492,6 @@
         ctx.fillText(n.roman, n.x, n.y + 9 / z);
       }
     });
-
   };
 
   SpatialMap.prototype.setPath = function (chords, currentIndex) {
@@ -944,7 +1021,7 @@
           const item = {
             chord: fn.chord,
             kind:
-              fn.role === 'secondary'
+              fn.role === 'secondary' || fn.role === 'dominant'
                 ? 'secondary'
                 : fn.role === 'interchange'
                   ? 'interchange'
@@ -955,8 +1032,11 @@
             job: fn.roman || fn.role,
             role: fn.role,
           };
-          // Secondary: write V7 → target as a 2-step package when resolve target exists
-          if (fn.role === 'secondary' && fn.resolvesToId) {
+          // Dominant / secondary: write V7 → target as a 2-step package
+          if (
+            (fn.role === 'secondary' || fn.role === 'dominant') &&
+            fn.resolvesToId
+          ) {
             const target = this.functionNodes.find((x) => x.id === fn.resolvesToId);
             if (target && target.chord) {
               item.route = [fn.chord, target.chord];
