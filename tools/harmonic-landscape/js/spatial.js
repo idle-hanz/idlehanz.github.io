@@ -664,25 +664,94 @@
     };
   };
 
-  SpatialMap.prototype._hitEdge = function (sx, sy) {
-    const w = this.screenToWorld(sx, sy);
-    const thresh = 14 / this.camera.zoom;
+  /**
+   * Control point for path edges — MUST match drawing (_draw path edges).
+   * Hit-testing used a straight line while paint used a curve → clicks missed
+   * the visible edge or fired on the wrong segment.
+   */
+  SpatialMap.prototype._edgeControl = function (a, b) {
+    const ax = a.x;
+    const ay = a.y;
+    const bx = b.x;
+    const by = b.y;
+    return {
+      ax,
+      ay,
+      bx,
+      by,
+      mx: (ax + bx) / 2 + (by - ay) * 0.08,
+      my: (ay + by) / 2 - (bx - ax) * 0.08,
+    };
+  };
+
+  SpatialMap.prototype._quadPoint = function (c, t) {
+    const omt = 1 - t;
+    return {
+      x: omt * omt * c.ax + 2 * omt * t * c.mx + t * t * c.bx,
+      y: omt * omt * c.ay + 2 * omt * t * c.my + t * t * c.by,
+    };
+  };
+
+  /**
+   * Closest point on the drawn quadratic edge (samples).
+   * Only mid-span counts for insert (avoid fighting path nodes at ends).
+   */
+  SpatialMap.prototype._closestOnEdge = function (a, b, wx, wy) {
+    const c = this._edgeControl(a, b);
+    const span = Math.hypot(b.x - a.x, b.y - a.y);
+    // Tiny / stacked edges: don't offer insert (would look like teleport)
+    if (span < 18) return null;
+    let bestT = 0.5;
+    let bestD = Infinity;
+    let bestP = { x: c.mx, y: c.my };
+    const steps = 28;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      // Mid-segment only — endpoints belong to path nodes
+      if (t < 0.18 || t > 0.82) continue;
+      const p = this._quadPoint(c, t);
+      const d = Math.hypot(wx - p.x, wy - p.y);
+      if (d < bestD) {
+        bestD = d;
+        bestT = t;
+        bestP = p;
+      }
+    }
+    return { t: bestT, d: bestD, x: bestP.x, y: bestP.y, span };
+  };
+
+  SpatialMap.prototype._hitEdge = function (sx, sy, opts) {
+    opts = opts || {};
+    const w =
+      opts.world ||
+      this.screenToWorld(sx, sy);
+    // ~12px screen — constant feel at any zoom
+    const thresh = opts.thresh != null ? opts.thresh : 12 / this.camera.zoom;
+    let best = null;
     for (let i = 0; i < this.nodes.length - 1; i++) {
       const a = this.nodes[i];
       const b = this.nodes[i + 1];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const len2 = dx * dx + dy * dy || 1;
-      let t = ((w.x - a.x) * dx + (w.y - a.y) * dy) / len2;
-      t = Math.max(0.15, Math.min(0.85, t));
-      const px = a.x + t * dx;
-      const py = a.y + t * dy;
-      const d = Math.hypot(w.x - px, w.y - py);
-      if (d < thresh) return { type: 'edge', afterIndex: i, x: px, y: py };
+      const hit = this._closestOnEdge(a, b, w.x, w.y);
+      if (!hit || hit.d > thresh) continue;
+      if (!best || hit.d < best.d) {
+        best = {
+          type: 'edge',
+          afterIndex: i,
+          x: hit.x,
+          y: hit.y,
+          d: hit.d,
+          t: hit.t,
+        };
+      }
     }
-    return null;
+    return best;
   };
 
+  /**
+   * Score-based hit test: pick the closest target so edges / seats / options
+   * don't steal from each other based on arbitrary check order.
+   * Lower score wins. Small type bias breaks ties predictably.
+   */
   SpatialMap.prototype._hit = function (sx, sy) {
     const w = this.screenToWorld(sx, sy);
     // While dragging a path chord, only aim targets matter
@@ -695,73 +764,117 @@
       }
       return null;
     }
-    // Path nodes first (your sequence)
-    for (let i = this.nodes.length - 1; i >= 0; i--) {
+
+    const cands = [];
+    const push = (type, item, d, bias) => {
+      if (d == null || d > 1e6) return;
+      cands.push({ type, item, d, score: d + (bias || 0), x: item && item.x, y: item && item.y });
+    };
+
+    // Path nodes — highest priority when under the cursor
+    for (let i = 0; i < this.nodes.length; i++) {
       const n = this.nodes[i];
-      const dx = w.x - n.x;
-      const dy = w.y - n.y;
-      if (dx * dx + dy * dy <= (n.r + 6) * (n.r + 6)) return { type: 'path', item: n };
+      const d = Math.hypot(w.x - n.x, w.y - n.y);
+      const rr = (n.r || 14) + 6;
+      if (d <= rr) push('path', n, d, -4); // slight prefer over everything
     }
-    // Chase scale seats (click to add) — active disk first, then other disks
-    if (this._mode !== 'node' && this.scaleSeats && this.scaleSeats.length) {
-      let bestSeat = null;
-      let bestD = Infinity;
-      for (let i = this.scaleSeats.length - 1; i >= 0; i--) {
-        const s = this.scaleSeats[i];
-        const dx = w.x - s.x;
-        const dy = w.y - s.y;
-        // Inactive disks: slightly smaller hit but still clickable
-        const pad = s.activeDisk ? 6 : 4;
-        const rr = (s.r || 16) + pad;
-        const d2 = dx * dx + dy * dy;
-        if (d2 <= rr * rr) {
-          // Prefer active-disk seats when both overlap
-          const score = d2 - (s.activeDisk ? 400 : 0);
-          if (score < bestD) {
-            bestD = score;
-            bestSeat = s;
-          }
-        }
-      }
-      if (bestSeat) return { type: 'seat', item: bestSeat };
+
+    // Path edges (curve mid-span) — before seats so journey insert works
+    const edge = this._hitEdge(sx, sy, { world: w });
+    if (edge) {
+      cands.push({
+        type: 'edge',
+        item: edge,
+        afterIndex: edge.afterIndex,
+        x: edge.x,
+        y: edge.y,
+        d: edge.d,
+        score: edge.d + 1.5, // path node still wins when overlapping
+      });
     }
-    if (this.showHorizon && this._mode !== 'node') {
-      for (let i = this.horizon.length - 1; i >= 0; i--) {
+
+    // Horizon options (hollow rings)
+    if (this.showHorizon) {
+      for (let i = 0; i < this.horizon.length; i++) {
         const h = this.horizon[i];
-        const dx = w.x - h.x;
-        const dy = w.y - h.y;
+        if (h.kind === 'home') continue;
+        const d = Math.hypot(w.x - h.x, w.y - h.y);
         const rr = (h.r || 10) + 8;
-        if (dx * dx + dy * dy <= rr * rr) return { type: 'horizon', item: h };
+        if (d <= rr) push('horizon', h, d, 0.5);
       }
     }
-    // Centre disc IS home — active disk, or inactive disk centre to re-land there
-    if (this._mode !== 'node') {
-      const act = this._activeDisk();
-      const dx = w.x - (act.cx || 0);
-      const dy = w.y - (act.cy || 0);
-      if (dx * dx + dy * dy <= 28 * 28) return { type: 'home' };
-      // Inactive disk centres: switch write home to that key (land without retag path)
-      for (let i = 0; i < (this.disks || []).length; i++) {
-        const d = this.disks[i];
-        if (d.active) continue;
-        const ddx = w.x - (d.cx || 0);
-        const ddy = w.y - (d.cy || 0);
-        if (ddx * ddx + ddy * ddy <= 22 * 22) {
-          return { type: 'diskHome', item: d };
+
+    // Chase scale seats
+    if (this.scaleSeats && this.scaleSeats.length) {
+      for (let i = 0; i < this.scaleSeats.length; i++) {
+        const s = this.scaleSeats[i];
+        const d = Math.hypot(w.x - s.x, w.y - s.y);
+        const pad = s.activeDisk ? 5 : 3;
+        const rr = (s.r || 16) + pad;
+        if (d <= rr) {
+          // Prefer active disk seats on ties
+          push('seat', s, d, s.activeDisk ? 2 : 3.5);
         }
       }
     }
-    if (this.showAlt && this._mode !== 'node' && this.altNodes && this.altNodes.length) {
-      for (let i = this.altNodes.length - 1; i >= 0; i--) {
-        const n = this.altNodes[i];
-        const dx = w.x - n.x;
-        const dy = w.y - n.y;
-        if (dx * dx + dy * dy <= (n.r + 5) * (n.r + 5)) return { type: 'altNode', item: n };
+
+    // Active home centre
+    const act = this._activeDisk();
+    {
+      const d = Math.hypot(w.x - (act.cx || 0), w.y - (act.cy || 0));
+      if (d <= 28) {
+        cands.push({
+          type: 'home',
+          item: null,
+          d,
+          score: d + 1,
+          x: act.cx,
+          y: act.cy,
+        });
       }
     }
-    const edge = this._hitEdge(sx, sy);
-    if (edge) return edge;
-    return null;
+
+    // Inactive disk centres
+    for (let i = 0; i < (this.disks || []).length; i++) {
+      const disk = this.disks[i];
+      if (disk.active) continue;
+      const d = Math.hypot(w.x - (disk.cx || 0), w.y - (disk.cy || 0));
+      if (d <= 22) {
+        cands.push({
+          type: 'diskHome',
+          item: disk,
+          d,
+          score: d + 2,
+          x: disk.cx,
+          y: disk.cy,
+        });
+      }
+    }
+
+    // Compare-path alt nodes
+    if (this.showAlt && this.altNodes && this.altNodes.length) {
+      for (let i = 0; i < this.altNodes.length; i++) {
+        const n = this.altNodes[i];
+        const d = Math.hypot(w.x - n.x, w.y - n.y);
+        if (d <= (n.r || 10) + 5) push('altNode', n, d, 4);
+      }
+    }
+
+    if (!cands.length) return null;
+    cands.sort((a, b) => a.score - b.score || a.d - b.d);
+    const win = cands[0];
+    if (win.type === 'edge') {
+      return {
+        type: 'edge',
+        afterIndex: win.afterIndex != null ? win.afterIndex : win.item.afterIndex,
+        x: win.x,
+        y: win.y,
+        d: win.d,
+      };
+    }
+    if (win.type === 'home') return { type: 'home' };
+    if (win.type === 'diskHome') return { type: 'diskHome', item: win.item };
+    return { type: win.type, item: win.item };
   };
 
   SpatialMap.prototype._down = function (e) {
@@ -1322,13 +1435,17 @@
     }
 
     // Primary path edges — journey trail (dim past, bright current during play)
+    // Curve geometry shared with _hitEdge via _edgeControl
     for (let i = 0; i < this.nodes.length - 1; i++) {
       const a = this.nodes[i];
       const b = this.nodes[i + 1];
-      const ax = a.x;
-      const ay = a.y;
-      const bx = b.x;
-      const by = b.y;
+      const ec = this._edgeControl(a, b);
+      const ax = ec.ax;
+      const ay = ec.ay;
+      const bx = ec.bx;
+      const by = ec.by;
+      const mx = ec.mx;
+      const my = ec.my;
       const st = this._edgeStyle(a, b);
       const playing = this.playing;
       let alpha = 1;
@@ -1342,8 +1459,6 @@
       const bKey = (b.chord.localTonic != null ? b.chord.localTonic : this.origin.tonic) + ':' + (b.chord.localMode || this.origin.mode);
       const crossKey = aKey !== bKey;
       ctx.beginPath();
-      const mx = (ax + bx) / 2 + (by - ay) * 0.08;
-      const my = (ay + by) / 2 - (bx - ax) * 0.08;
       ctx.moveTo(ax, ay);
       ctx.quadraticCurveTo(mx, my, bx, by);
       ctx.strokeStyle = crossKey ? 'rgba(167,139,250,0.9)' : st.color;
@@ -1666,5 +1781,121 @@
     this.camera.tz = 1;
   };
 
-  global.HLSpatial = { SpatialMap, REGION };
+  /**
+   * Offline map hit-test self-check (no audio/DOM paint needed).
+   * Returns { ok, failures: string[] }. Call from console: HLSpatial.selfTest()
+   */
+  function selfTest() {
+    const failures = [];
+    const assert = (cond, msg) => {
+      if (!cond) failures.push(msg);
+    };
+
+    // Minimal fake canvas
+    const canvas = {
+      getContext: () => ({
+        setTransform: () => {},
+        clearRect: () => {},
+      }),
+      getBoundingClientRect: () => ({ width: 600, height: 400, left: 0, top: 0 }),
+      width: 600,
+      height: 400,
+      style: {},
+      addEventListener: () => {},
+      setPointerCapture: () => {},
+    };
+    // Avoid real listeners / rAF
+    const protoBind = SpatialMap.prototype._bind;
+    SpatialMap.prototype._bind = function () {};
+    const map = new SpatialMap(canvas);
+    SpatialMap.prototype._bind = protoBind;
+    map.w = 600;
+    map.h = 400;
+    map.camera = { x: 0, y: 0, zoom: 1, tx: 0, ty: 0, tz: 1 };
+    map.origin = { tonic: 11, mode: 'minor' };
+    map.disks = [{ cx: 0, cy: 0, R: 160, tonic: 11, mode: 'minor', active: true }];
+    map.nodes = [
+      { x: -80, y: 0, r: 18, i: 0, chord: { root: 11, quality: 'min', localTonic: 11 } },
+      { x: 80, y: 0, r: 18, i: 1, chord: { root: 4, quality: 'min', localTonic: 11 } },
+      { x: 40, y: 70, r: 18, i: 2, chord: { root: 6, quality: 'dom7', localTonic: 11 } },
+    ];
+    map.path = map.nodes.map((n) => n.chord);
+    map.scaleSeats = [
+      { x: 0, y: -60, r: 22, activeDisk: true, roman: 'i', chord: { root: 11 } },
+    ];
+    map.horizon = [];
+    map.showHorizon = true;
+    map.showAlt = false;
+    map.altNodes = [];
+
+    // 1) Midpoint of first edge (curve bows up slightly) should be edge
+    const c01 = map._edgeControl(map.nodes[0], map.nodes[1]);
+    const mid = map._quadPoint(c01, 0.5);
+    // world → screen for _hit (uses screen coords)
+    const toScreen = (wx, wy) => ({
+      sx: wx * map.camera.zoom + map.w / 2,
+      sy: wy * map.camera.zoom + map.h / 2,
+    });
+    let s = toScreen(mid.x, mid.y);
+    let hit = map._hit(s.sx, s.sy);
+    assert(hit && hit.type === 'edge' && hit.afterIndex === 0, 'mid curve → edge 0, got ' + (hit && hit.type));
+
+    // 2) Near path node should be path, not edge
+    s = toScreen(map.nodes[0].x, map.nodes[0].y);
+    hit = map._hit(s.sx, s.sy);
+    assert(hit && hit.type === 'path' && hit.item.i === 0, 'on node 0 → path, got ' + (hit && hit.type));
+
+    // 3) Far away → null
+    s = toScreen(300, 300);
+    hit = map._hit(s.sx, s.sy);
+    assert(!hit, 'far point → null, got ' + (hit && hit.type));
+
+    // 4) Straight-line midpoint != curve midpoint: old bug would miss curve
+    const straightMid = { x: 0, y: 0 }; // nodes at y=0
+    // Curve control pulls perpendicular; mid of quad is slightly off y=0
+    assert(Math.abs(mid.y) > 0.5 || Math.abs(c01.my) > 0.5, 'curve has bend (control offset)');
+    const onStraight = map._closestOnEdge(map.nodes[0], map.nodes[1], straightMid.x, straightMid.y);
+    const onCurve = map._closestOnEdge(map.nodes[0], map.nodes[1], mid.x, mid.y);
+    assert(onCurve && onCurve.d < 2, 'closest on curve mid is ~0');
+    // Clicking the visual mid should beat clicking only the chord
+    s = toScreen(mid.x, mid.y);
+    hit = map._hit(s.sx, s.sy);
+    assert(hit && hit.type === 'edge', 'curve mid hit is edge');
+
+    // 5) Seat at (0,-60) — not edge
+    s = toScreen(0, -60);
+    hit = map._hit(s.sx, s.sy);
+    assert(hit && hit.type === 'seat', 'seat hit, got ' + (hit && hit.type));
+
+    // 6) Tiny edge ignored
+    map.nodes = [
+      { x: 0, y: 0, r: 16, i: 0, chord: { root: 0 } },
+      { x: 5, y: 0, r: 16, i: 1, chord: { root: 1 } },
+    ];
+    const tiny = map._closestOnEdge(map.nodes[0], map.nodes[1], 2.5, 0);
+    assert(tiny == null, 'tiny edge returns null');
+
+    // 7) Circular blend root sanity (inline mirror of app helper)
+    const blend = (a, b, t) => {
+      let d = (b - a + 12) % 12;
+      if (d > 6) d -= 12;
+      return ((a + Math.round(d * t)) % 12 + 12) % 12;
+    };
+    // B(11)→C(0): short arc is +1 → mid is B or C, never F# (6) from arithmetic mean
+    assert(blend(11, 0, 0.5) === 0 || blend(11, 0, 0.5) === 11, 'B→C mid on short arc not F#');
+    assert(blend(11, 0, 0.5) !== 6, 'B→C must not use arithmetic mean (F#)');
+    // C(0)→G(7): short arc is −5 → mid near Bb/A, not E
+    const cg = blend(0, 7, 0.5);
+    assert(cg === 9 || cg === 10 || cg === 11 || cg === 0, 'C→G short-arc mid, got ' + cg);
+    // Arithmetic mean of 11 and 0 is the classic wrong answer
+    assert(Math.round((11 + 0) / 2) % 12 === 6, 'sanity: arithmetic mean is F#');
+
+    return {
+      ok: failures.length === 0,
+      failures,
+      passed: 7 - failures.length,
+    };
+  }
+
+  global.HLSpatial = { SpatialMap, REGION, selfTest };
 })(typeof window !== 'undefined' ? window : globalThis);

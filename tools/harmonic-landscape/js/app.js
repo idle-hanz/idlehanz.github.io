@@ -990,17 +990,87 @@
   }
 
   /**
+   * Pick a bridge chord between a → b that lands on a sensible Chase seat.
+   * Prefer a diatonic scale seat of a's key that lies between them on the circle;
+   * fall back to shortest-arc mid root (NOT arithmetic mean of pitch classes).
+   */
+  function bridgeChordBetween(a, b, duration) {
+    const bridgeKey = keyOf(a);
+    const music = M();
+    let root = circularBlendRoot(a.root, b.root, 0.5);
+    let quality = bridgeKey.mode === 'major' ? 'maj' : 'min';
+    let roman = '→';
+    let region = 'diatonic';
+
+    // Prefer a scale seat of a's disk that isn't a or b
+    if (music.circularHarmonicScale) {
+      const seats = music.circularHarmonicScale(bridgeKey.tonic, bridgeKey.mode);
+      const mid = circularBlendRoot(a.root, b.root, 0.5);
+      let best = null;
+      let bestDist = 99;
+      seats.forEach((s) => {
+        if (s.root === a.root || s.root === b.root) return;
+        let d = Math.abs(((s.root - mid + 12) % 12) - 6);
+        d = 6 - d; // distance on circle to mid
+        // also prefer between a and b on shortest arc
+        const arc = ((b.root - a.root + 12) % 12);
+        const forward = arc <= 6;
+        const fromA = ((s.root - a.root + 12) % 12);
+        const onArc = forward ? fromA > 0 && fromA < arc : fromA > arc && fromA < 12;
+        const score = d + (onArc ? 0 : 2);
+        if (score < bestDist) {
+          bestDist = score;
+          best = s;
+        }
+      });
+      if (best) {
+        root = best.root;
+        roman = best.roman || '→';
+        if (best.role === 'dom') quality = 'dom7';
+        else if (best.qualities && best.qualities[0]) quality = best.qualities[0];
+        else quality = bridgeKey.mode === 'major' ? 'maj' : 'min';
+      }
+    }
+
+    let ch = music.makeChord(root, quality, {
+      duration,
+      region,
+      tag: 'insert',
+      roman,
+    });
+    if (C().bestInversion) {
+      ch = C().bestInversion(a, ch);
+      ch.duration = duration;
+      ch.tag = 'insert';
+      ch.roman = roman;
+    }
+    stampKey(ch, bridgeKey);
+    return ch;
+  }
+
+  /**
    * Insert between two chords without lengthening the cell:
    * steal duration from neighbors (prefer previous).
+   * Map edge click → this.
    */
   function insertBetweenWithTiming(afterIndex) {
-    pushUndo();
     const a = state.chords[afterIndex];
     const b = state.chords[afterIndex + 1];
-    if (!a || !b) return;
+    if (!a || !b) {
+      setSyncStatus('Edge insert needs two steps — click the line between them');
+      return;
+    }
 
+    // Guard: both already tiny — don't collapse into 0.5 cascade
     const da = a.duration || 4;
     const db = b.duration || 4;
+    if (da + db < 2) {
+      setSyncStatus('Neighbors too short to insert (need ≥ 2 beats combined)');
+      return;
+    }
+
+    pushUndo();
+
     // Target insert length 1–2 beats, taken from neighbors so total stays constant
     let takeA = 0;
     let takeB = 0;
@@ -1009,42 +1079,52 @@
       takeA = 1;
       takeB = 1;
       insertDur = 2;
+    } else if (da >= 2.5 && db >= 1.5) {
+      takeA = 1;
+      takeB = 0.5;
+      insertDur = 1.5;
     } else if (da >= 2) {
-      takeA = Math.min(2, da - 1);
+      takeA = Math.min(1.5, Math.max(0.5, snapBeats(da - 1)));
       insertDur = takeA;
     } else if (db >= 2) {
-      takeB = Math.min(2, db - 1);
+      takeB = Math.min(1.5, Math.max(0.5, snapBeats(db - 1)));
       insertDur = takeB;
     } else {
-      // Both already short — take 0.5 each if possible
+      // Both short but combined ≥ 2: take 0.5 each if possible
       takeA = da > 1 ? 0.5 : 0;
       takeB = db > 1 ? 0.5 : 0;
-      insertDur = Math.max(0.5, takeA + takeB) || 1;
-      if (takeA + takeB === 0) {
-        // last resort: keep total by shortening a slightly
-        takeA = 0.5;
-        insertDur = 0.5;
+      insertDur = Math.max(0.5, takeA + takeB);
+      if (takeA + takeB < 0.5) {
+        // last resort: steal 0.5 from the longer one only
+        if (da >= db && da > 0.5) {
+          takeA = 0.5;
+          insertDur = 0.5;
+        } else if (db > 0.5) {
+          takeB = 0.5;
+          insertDur = 0.5;
+        } else {
+          state.undoStack.pop(); // abort undo we pushed
+          setSyncStatus('Neighbors too short to insert');
+          return;
+        }
       }
     }
 
-    // Bridge inherits the left neighbor's disk (same region of the journey)
-    const bridgeKey = keyOf(a);
-    const midRoot = Math.round((a.root + b.root) / 2) % 12;
-    let ch = M().makeChord(midRoot, bridgeKey.mode === 'major' ? 'maj' : 'min', {
-      duration: insertDur,
-      region: 'diatonic',
-      tag: 'insert',
-      roman: '→',
-    });
-    if (C().bestInversion) {
-      ch = C().bestInversion(a, ch);
-      ch.duration = insertDur;
-      ch.tag = 'insert';
+    // Never leave neighbors below 0.5
+    if (da - takeA < 0.5) {
+      takeA = Math.max(0, da - 0.5);
+      insertDur = takeA + takeB;
     }
-    stampKey(ch, bridgeKey);
+    if (db - takeB < 0.5) {
+      takeB = Math.max(0, db - 0.5);
+      insertDur = takeA + takeB;
+    }
+    insertDur = Math.max(0.5, snapBeats(insertDur));
 
-    state.chords[afterIndex] = M().withDuration(a, Math.max(0.5, da - takeA));
-    state.chords[afterIndex + 1] = M().withDuration(b, Math.max(0.5, db - takeB));
+    const ch = bridgeChordBetween(a, b, insertDur);
+
+    state.chords[afterIndex] = M().withDuration(a, Math.max(0.5, snapBeats(da - takeA)));
+    state.chords[afterIndex + 1] = M().withDuration(b, Math.max(0.5, snapBeats(db - takeB)));
     state.chords.splice(afterIndex + 1, 0, ch);
     state.selected = afterIndex + 1;
     state.fromPackId = null;
@@ -1053,7 +1133,16 @@
     A().playChord({ chord: ch });
     const total = state.chords.reduce((s, c) => s + (c.duration || 0), 0);
     setSyncStatus(
-      'Inserted (timing kept) · ' + insertDur + 'b from neighbors · total ' + total + ' beats'
+      'Insert on edge · ' +
+        ch.name +
+        ' · ' +
+        insertDur +
+        'b from neighbors · total ' +
+        total +
+        'b · between ' +
+        a.name +
+        ' → ' +
+        b.name
     );
   }
 
