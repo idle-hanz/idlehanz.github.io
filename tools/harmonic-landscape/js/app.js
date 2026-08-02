@@ -265,6 +265,12 @@
     }
     if (H.$('#btn-swing')) H.$('#btn-swing').addEventListener('click', H.suggestSwingNext);
     if (H.$('#btn-arch')) H.$('#btn-arch').addEventListener('click', H.suggestArchHome);
+    if (H.$('#view-chase')) {
+      H.$('#view-chase').addEventListener('click', () => H.setMapView('chase'));
+    }
+    if (H.$('#view-function')) {
+      H.$('#view-function').addEventListener('click', () => H.setMapView('function'));
+    }
     if (H.$('#tog-horizon')) {
       H.$('#tog-horizon').addEventListener('change', (e) => {
         H.map.setShowHorizon(e.target.checked);

@@ -25,10 +25,32 @@ H.refreshAll = function () {
     H.ensurePathOwned();
     H.map.setOrigin(H.state.tonic, H.state.mode);
     H.map.setPath(H.state.chords, H.state.selected);
-    // Canvas shows a short ranked constellation; From here list keeps the full catalog
-    H.map.setHorizon(H.buildHorizon({ forMap: true, limit: 14 }));
+    // Chase: next-move constellation. Function: neighbourhood chart for write home.
+    if (H.map.mapView === 'function' && H.buildFunctionChart) {
+      H.map.setFunctionChart(H.buildFunctionChart());
+      H.map.setHorizon([]);
+    } else {
+      if (H.map.setFunctionChart) H.map.setFunctionChart(null);
+      H.map.setHorizon(H.buildHorizon({ forMap: true, limit: 14 }));
+    }
     H.renderTimeStrip();
     H.refreshAltPath();
+  }
+
+  /** Switch map between Chase (scale seats) and Function (neighbourhood chart). */
+  H.setMapView = function (view) {
+    view = view === 'function' ? 'function' : 'chase';
+    if (H.map && H.map.setMapView) H.map.setMapView(view);
+    const chaseBtn = H.$('#view-chase');
+    const fnBtn = H.$('#view-function');
+    if (chaseBtn) chaseBtn.classList.toggle('active', view === 'chase');
+    if (fnBtn) fnBtn.classList.toggle('active', view === 'function');
+    H.refreshMap();
+    H.setSyncStatus(
+      view === 'function'
+        ? 'Function view · same key neighbourhood · blue = secondary · purple = borrow · gold = diatonic/gates'
+        : 'Chase view · scale seats · multi-disk for true key changes'
+    );
   }
 
   H.renderTimeStrip = function () {
@@ -599,35 +621,86 @@ H.refreshAll = function () {
     const host = H.$('#list-from-here') || H.$('#list-direction');
     if (!host) return;
     host.innerHTML = '';
-    // Clear legacy hosts
     ['list-flavour', 'list-direction', 'list-cadence', 'list-modulate'].forEach((id) => {
       const el = document.getElementById(id);
       if (el && el !== host) el.innerHTML = '';
     });
 
     const items = H.buildHorizon();
-    // Prefer directions first, then flavours, cadences, modulate
-    const order = { home: -1, direction: 0, flavour: 1, cadence: 2, modulate: 3 };
-    items.sort((a, b) => (order[a.kind] != null ? order[a.kind] : 9) - (order[b.kind] != null ? order[b.kind] : 9));
+    const order = {
+      home: -1,
+      secondary: 0,
+      interchange: 1,
+      gate: 2,
+      direction: 3,
+      flavour: 4,
+      cadence: 5,
+      modulate: 6,
+    };
+    items.sort(
+      (a, b) =>
+        (order[a.kind] != null ? order[a.kind] : 9) - (order[b.kind] != null ? order[b.kind] : 9)
+    );
 
-    const hasNext =
-      H.state.selected >= 0 && H.state.selected < H.state.chords.length - 1;
+    const hasNext = H.state.selected >= 0 && H.state.selected < H.state.chords.length - 1;
     const tipDefault = hasNext
       ? 'Click = replace next · Shift+click = insert · hover = audition'
       : 'Click = append · Shift+click = insert · hover = audition';
     const kindLabel = {
       home: 'Home',
+      secondary: 'V7/x',
+      interchange: 'Borrow',
+      gate: 'Gate',
       direction: 'Dir',
       flavour: 'Colour',
       cadence: 'Cadence',
       modulate: 'Mod',
     };
+    const sectionMeta = {
+      secondary: { title: 'Secondary dominants', hint: 'Pull into a scale chord (V7 → target)' },
+      interchange: { title: 'Modal interchange', hint: 'Borrowed colour from the parallel mode' },
+      gate: { title: 'Gates (I · IV · V)', hint: 'Ways in and out of borrowed colour' },
+      move: { title: 'Moves & cadences', hint: 'Directions, colour, home routes, modulate' },
+    };
+    const sectionOf = (it) => {
+      if (it.kind === 'secondary') return 'secondary';
+      if (it.kind === 'interchange') return 'interchange';
+      if (it.kind === 'gate') return 'gate';
+      if (it.kind === 'home') return 'move';
+      return 'move';
+    };
 
+    let lastSec = null;
     items.forEach((it) => {
+      const sec = sectionOf(it);
+      if (sec !== lastSec) {
+        lastSec = sec;
+        const meta = sectionMeta[sec] || sectionMeta.move;
+        const head = document.createElement('div');
+        head.className = 'hz-section';
+        head.innerHTML =
+          '<div class="hz-section-title">' +
+          H.escapeHtml(meta.title) +
+          '</div><div class="hz-section-hint">' +
+          H.escapeHtml(meta.hint) +
+          '</div>';
+        host.appendChild(head);
+      }
+
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'hz kind-' + it.kind;
-      b.title = tipDefault + (it.kind === 'modulate' ? ' · may change home key' : '');
+      b.title =
+        tipDefault +
+        (it.kind === 'modulate'
+          ? ' · may change home key'
+          : it.kind === 'secondary'
+            ? ' · secondary dominant package'
+            : it.kind === 'interchange'
+              ? ' · borrowed chord'
+              : it.kind === 'gate'
+                ? ' · diatonic gate'
+                : '');
       b.innerHTML =
         '<span class="hz-tag">' +
         (kindLabel[it.kind] || it.kind) +
@@ -640,7 +713,6 @@ H.refreshAll = function () {
         H.A().ensure();
         const pieces =
           it.route && it.route.length ? it.route : it.chord ? [it.chord] : [];
-        // Context audition: selected → package → following chord if any
         const seq = [];
         const sel =
           H.state.selected >= 0 && H.state.chords[H.state.selected]
@@ -648,14 +720,11 @@ H.refreshAll = function () {
             : null;
         if (sel) seq.push(sel);
         pieces.forEach((c) => seq.push(c));
-        const afterIdx = (H.state.selected >= 0 ? H.state.selected : -1) + 1 + pieces.length;
-        // On hover we don't mutate — approximate after as current next when single step replace
         if (pieces.length === 1 && H.state.chords[H.state.selected + 2]) {
           seq.push(H.state.chords[H.state.selected + 2]);
         } else if (pieces.length >= 2 && H.state.chords[H.state.selected + 1 + pieces.length]) {
           seq.push(H.state.chords[H.state.selected + 1 + pieces.length]);
         } else if (hasNext && pieces.length === 1 && H.state.chords[H.state.selected + 1]) {
-          // will replace next — show join into what was after next
           if (H.state.chords[H.state.selected + 2]) seq.push(H.state.chords[H.state.selected + 2]);
         }
         if (seq.length >= 2) {

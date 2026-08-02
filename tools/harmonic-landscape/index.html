@@ -551,6 +551,9 @@
     .hz.kind-direction strong { color: var(--blue); }
     .hz.kind-cadence strong { color: var(--gold2); }
     .hz.kind-modulate strong { color: var(--purple); }
+    .hz.kind-secondary strong { color: #7eb8da; }
+    .hz.kind-interchange strong { color: #c4a0e0; }
+    .hz.kind-gate strong { color: var(--gold2); }
     .hz-tag {
       display: inline-block;
       font-size: 0.58rem;
@@ -567,6 +570,26 @@
     .hz.kind-direction .hz-tag { border-color: rgba(126,184,218,0.4); color: var(--blue); }
     .hz.kind-cadence .hz-tag { border-color: rgba(232,201,138,0.4); color: var(--gold2); }
     .hz.kind-modulate .hz-tag { border-color: rgba(167,139,250,0.4); color: var(--purple); }
+    .hz.kind-secondary .hz-tag { border-color: rgba(126,184,218,0.45); color: #7eb8da; }
+    .hz.kind-interchange .hz-tag { border-color: rgba(196,160,224,0.45); color: #c4a0e0; }
+    .hz.kind-gate .hz-tag { border-color: rgba(232,201,138,0.4); color: var(--gold2); }
+    .hz-section {
+      margin: 0.55rem 0 0.25rem;
+      padding-bottom: 0.15rem;
+      border-bottom: 1px solid rgba(196,165,116,0.15);
+    }
+    .hz-section:first-child { margin-top: 0.1rem; }
+    .hz-section-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--gold2);
+      letter-spacing: 0.02em;
+    }
+    .hz-section-hint {
+      font-size: 0.62rem;
+      color: var(--muted);
+      margin-top: 0.08rem;
+    }
     #list-from-here { max-height: calc(100vh - 12rem); overflow: auto; padding-right: 0.15rem; }
     .slot.diff {
       border-color: rgba(126,184,218,0.55);
@@ -790,17 +813,20 @@
           <button type="button" class="btn ghost" id="cam-follow" title="Follow playhead">Follow</button>
           <button type="button" class="btn ghost" id="btn-home">Recentre</button>
           <span style="width:0.35rem"></span>
+          <button type="button" class="btn primary active" id="view-chase" title="Circular harmonic scale seats (multi-disk for true key changes)">Chase</button>
+          <button type="button" class="btn ghost" id="view-function" title="Same-key neighbourhood: diatonic, secondary dominants, modal interchange, I/IV/V gates">Function</button>
+          <span style="width:0.35rem"></span>
           <button type="button" class="btn primary" id="btn-start-home" title="Start (or land) on the tonic chord">+ Home</button>
           <button type="button" class="btn ghost" id="btn-swing" title="Add a chord on the opposite side of home">+ Swing</button>
           <button type="button" class="btn ghost" id="btn-arch" title="Add V7 → home">Arch home</button>
-          <label class="ctl" style="margin-left:0.35rem;color:#c8b8a0" title="Show next-move dots around home (same ideas as From here)"><input type="checkbox" id="tog-horizon" checked> Next-move dots</label>
+          <label class="ctl" style="margin-left:0.35rem;color:#c8b8a0" title="Show next-move dots around home (Chase view)"><input type="checkbox" id="tog-horizon" checked> Next-move dots</label>
           <label class="ctl" style="color:#c8b8a0" title="Show blue path only when a version is set as compare (Alt-click a chip)"><input type="checkbox" id="tog-alt"> Blue path</label>
         </div>
         <canvas id="map" aria-label="Harmonic path and directions"></canvas>
         <div class="map-footer">
           <div id="map-status" class="map-status">Select a step</div>
-          <div class="map-legend-line"><strong>Map (Chase):</strong> each key is its own disk · change Write home/Mode to <em>stage</em> (map stays put) → select pivot step → <strong>Land here</strong> opens the new disk · click roman seats / drag onto seats · purple dashed edge = key change</div>
-          <div class="map-legend-line">Active disk = WRITE home · other disks = earlier keys · clockwise ≈ fifths-down</div>
+          <div class="map-legend-line"><strong>Chase:</strong> scale seats · multi-disk = real key change · <strong>Function:</strong> same-key chart (secondaries → targets, borrow, I/IV/V gates) — not a new disk</div>
+          <div class="map-legend-line">Write home stages in dropdowns → Land here commits · gold path = your sequence</div>
           <div id="traj-caption" class="traj-caption">Path shape appears here</div>
           <div id="time-strip" class="time-strip" title="Click select · drag edge to resize · double-click split"></div>
           <p class="foot" style="margin:0.25rem 0 0">Time strip = when each chord happens · drag edges to resize · double-click to split.</p>
@@ -810,7 +836,7 @@
       <!-- From here (unified horizon) -->
       <aside class="col col-horizon">
         <h2 style="margin:0 0 0.25rem">From here</h2>
-        <p class="foot" style="margin:0 0 0.45rem;padding:0">From the <strong>selected</strong> step. Click rewrites the continuation and <em>keeps total length</em> (fits into the next step’s beats). <kbd>Shift</kbd>+click inserts by stealing from neighbors. Hover = audition.</p>
+        <p class="foot" style="margin:0 0 0.45rem;padding:0">From the <strong>selected</strong> step in the <strong>write home</strong> key. Sections: secondaries, borrow, gates, then moves. Click rewrites continuation (keeps length). <kbd>Shift</kbd>+click inserts. Hover = audition. Pair with map <strong>Function</strong> view.</p>
         <div id="list-from-here"></div>
         <!-- legacy hosts kept empty for safety -->
         <div id="list-flavour" hidden></div>

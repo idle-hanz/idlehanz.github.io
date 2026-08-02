@@ -6,8 +6,9 @@
 
   const REGION = {
     diatonic:    { fill: '#c4a574', ghost: 'rgba(196,165,116,0.35)' },
-    secondary:   { fill: '#7eb8da', ghost: 'rgba(126,184,218,0.4)' },
-    interchange: { fill: '#9b7bb8', ghost: 'rgba(155,123,184,0.4)' },
+    secondary:   { fill: '#7eb8da', ghost: 'rgba(126,184,218,0.45)' },
+    interchange: { fill: '#c4a0e0', ghost: 'rgba(196,160,224,0.4)' },
+    gate:        { fill: '#e8c98a', ghost: 'rgba(232,201,138,0.5)' },
     chromatic:   { fill: '#d4786a', ghost: 'rgba(212,120,106,0.45)' },
     tritone:     { fill: '#e85d4c', ghost: 'rgba(232,93,76,0.5)' },
     parallel:    { fill: '#6bb38a', ghost: 'rgba(107,179,138,0.4)' },
@@ -39,6 +40,10 @@
     this.current = -1;
     this.playing = -1;
     this.cameraMode = 'home';
+    /** 'chase' = scale seats · 'function' = neighbourhood chart (same key) */
+    this.mapView = 'chase';
+    this.functionChart = null; // { nodes, edges, tonic, mode }
+    this.functionNodes = [];
     this.showHorizon = true;
     this.showAlt = true;
     this.camera = { x: 0, y: 0, zoom: 1, tx: 0, ty: 0, tz: 1 };
@@ -266,6 +271,150 @@
 
   SpatialMap.prototype.setShowAlt = function (on) {
     this.showAlt = !!on;
+  };
+
+  SpatialMap.prototype.setMapView = function (view) {
+    this.mapView = view === 'function' ? 'function' : 'chase';
+    if (this.mapView === 'chase') {
+      this.functionNodes = [];
+    } else if (this.functionChart) {
+      this._layoutFunctionChart();
+    }
+  };
+
+  /**
+   * Function / neighbourhood chart for active write-home disk.
+   * chart: { nodes:[{id,chord,role,label,roman,resolvesToId,gate}], edges:[{kind,fromId,toId}] }
+   */
+  SpatialMap.prototype.setFunctionChart = function (chart) {
+    this.functionChart = chart || null;
+    if (!chart || this.mapView !== 'function') {
+      this.functionNodes = [];
+      return;
+    }
+    this._layoutFunctionChart();
+  };
+
+  SpatialMap.prototype._layoutFunctionChart = function () {
+    const M = global.HLMusic;
+    const chart = this.functionChart;
+    this.functionNodes = [];
+    if (!chart || !chart.nodes || !chart.nodes.length) return;
+    const disk = this._activeDisk();
+    const t = chart.tonic != null ? chart.tonic : this.origin.tonic;
+    const mode = chart.mode || this.origin.mode;
+
+    chart.nodes.forEach((n) => {
+      const ch = n.chord;
+      if (!ch || !M || !M.chaseChordPos) return;
+      const base = M.chaseChordPos(ch, t, mode, {
+        cx: disk.cx || 0,
+        cy: disk.cy || 0,
+        R: disk.R || 120,
+      });
+      // Belts: diatonic/gate on ring, secondary mid-shell, interchange outer
+      let scale = 1;
+      if (n.role === 'secondary') scale = 1.18;
+      else if (n.role === 'interchange') scale = 1.32;
+      else if (n.gate || n.role === 'diatonic') scale = n.gate ? 0.78 : 0.92;
+      const cx = disk.cx || 0;
+      const cy = disk.cy || 0;
+      const x = cx + (base.x - cx) * scale;
+      const y = cy + (base.y - cy) * scale;
+      this.functionNodes.push({
+        id: n.id,
+        chord: ch,
+        role: n.role || 'diatonic',
+        label: n.label || ch.name,
+        roman: n.roman || '',
+        gate: !!n.gate,
+        resolvesToId: n.resolvesToId || null,
+        x: x,
+        y: y,
+        r: n.role === 'secondary' ? 13 : n.role === 'interchange' ? 12 : 14,
+      });
+    });
+  };
+
+  /** Draw Function neighbourhood: resolution edges + role-coloured nodes */
+  SpatialMap.prototype._drawFunctionChart = function (ctx) {
+    if (!this.functionChart || !this.functionNodes.length) return;
+    const byId = {};
+    this.functionNodes.forEach((n) => {
+      byId[n.id] = n;
+    });
+    const z = this.camera.zoom || 1;
+    const hover =
+      this.hover && this.hover.type === 'functionNode' ? this.hover.item : null;
+
+    // Edges under nodes
+    (this.functionChart.edges || []).forEach((e) => {
+      const a = byId[e.fromId];
+      const b = byId[e.toId];
+      if (!a || !b) return;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      if (e.kind === 'resolve') {
+        ctx.strokeStyle = 'rgba(126,184,218,0.55)';
+        ctx.lineWidth = 1.8 / z;
+        ctx.setLineDash([5 / z, 4 / z]);
+      } else {
+        ctx.strokeStyle = 'rgba(196,160,224,0.28)';
+        ctx.lineWidth = 1.1 / z;
+        ctx.setLineDash([3 / z, 5 / z]);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // small arrow head toward target
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      const ax = b.x - Math.cos(ang) * (b.r + 4);
+      const ay = b.y - Math.sin(ang) * (b.r + 4);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(ax - Math.cos(ang - 0.4) * 7 / z, ay - Math.sin(ang - 0.4) * 7 / z);
+      ctx.lineTo(ax - Math.cos(ang + 0.4) * 7 / z, ay - Math.sin(ang + 0.4) * 7 / z);
+      ctx.closePath();
+      ctx.fillStyle = e.kind === 'resolve' ? 'rgba(126,184,218,0.7)' : 'rgba(196,160,224,0.4)';
+      ctx.fill();
+    });
+
+    this.functionNodes.forEach((n) => {
+      const col =
+        n.role === 'secondary'
+          ? REGION.secondary
+          : n.role === 'interchange'
+            ? REGION.interchange
+            : n.gate
+              ? REGION.gate
+              : REGION.diatonic;
+      const isH =
+        hover &&
+        hover.chord &&
+        hover.chord.root === n.chord.root &&
+        hover.chord.quality === n.chord.quality;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r + (isH ? 2 : 0), 0, Math.PI * 2);
+      ctx.fillStyle = isH ? col.fill : 'rgba(12,10,8,0.85)';
+      ctx.fill();
+      ctx.strokeStyle = col.fill;
+      ctx.lineWidth = (isH ? 2.5 : 1.6) / z;
+      if (n.role === 'secondary') ctx.setLineDash([3 / z, 2 / z]);
+      else ctx.setLineDash([]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = isH ? '#0a0806' : 'rgba(230,220,200,0.92)';
+      ctx.font = `bold ${9 / z}px DM Sans, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(n.label || n.chord.name, n.x, n.y - (n.roman ? 3 / z : 0));
+      if (n.roman) {
+        ctx.fillStyle = isH ? 'rgba(10,8,6,0.75)' : 'rgba(180,168,150,0.85)';
+        ctx.font = `${7.5 / z}px DM Sans, sans-serif`;
+        ctx.fillText(n.roman, n.x, n.y + 9 / z);
+      }
+    });
+
   };
 
   SpatialMap.prototype.setPath = function (chords, currentIndex) {
@@ -786,8 +935,41 @@
       );
     }
 
-    // Horizon options (hollow rings)
-    if (this.showHorizon) {
+    // Function neighbourhood nodes (click = write like From here)
+    if (this.mapView === 'function' && this.functionNodes && this.functionNodes.length) {
+      for (let i = 0; i < this.functionNodes.length; i++) {
+        const fn = this.functionNodes[i];
+        const d = Math.hypot(w.x - fn.x, w.y - fn.y);
+        if (d <= (fn.r || 12) + 6) {
+          const item = {
+            chord: fn.chord,
+            kind:
+              fn.role === 'secondary'
+                ? 'secondary'
+                : fn.role === 'interchange'
+                  ? 'interchange'
+                  : fn.gate
+                    ? 'gate'
+                    : 'direction',
+            label: fn.label,
+            job: fn.roman || fn.role,
+            role: fn.role,
+          };
+          // Secondary: write V7 → target as a 2-step package when resolve target exists
+          if (fn.role === 'secondary' && fn.resolvesToId) {
+            const target = this.functionNodes.find((x) => x.id === fn.resolvesToId);
+            if (target && target.chord) {
+              item.route = [fn.chord, target.chord];
+              item.label = fn.label + ' → ' + (target.label || target.chord.name);
+            }
+          }
+          add({ type: 'functionNode', item: item }, d, 0.2);
+        }
+      }
+    }
+
+    // Horizon options (hollow rings) — Chase next-move dots
+    if (this.showHorizon && this.mapView !== 'function') {
       for (let i = 0; i < this.horizon.length; i++) {
         const h = this.horizon[i];
         if (h.kind === 'home') continue;
@@ -796,8 +978,8 @@
       }
     }
 
-    // Chase scale seats
-    if (this.scaleSeats && this.scaleSeats.length) {
+    // Chase scale seats (hidden as primary targets in Function view)
+    if (this.scaleSeats && this.scaleSeats.length && this.mapView !== 'function') {
       for (let i = 0; i < this.scaleSeats.length; i++) {
         const s = this.scaleSeats[i];
         const d = Math.hypot(w.x - s.x, w.y - s.y);
@@ -859,6 +1041,11 @@
     }
     if (hit && hit.type === 'seat') {
       if (this.onSelectSeat) this.onSelectSeat(hit.item);
+      return;
+    }
+    if (hit && hit.type === 'functionNode') {
+      // Same write path as From here / horizon
+      if (this.onSelectHorizon) this.onSelectHorizon(hit.item);
       return;
     }
     if (hit && hit.type === 'horizon') {
@@ -952,6 +1139,10 @@
     }
     if (hit && hit.type === 'seat' && (!prev || prev.item !== hit.item)) {
       if (this.onHoverSeat) this.onHoverSeat(hit.item);
+      this.canvas.style.cursor = 'pointer';
+    }
+    if (hit && hit.type === 'functionNode' && (!prev || prev.item !== hit.item)) {
+      if (this.onHoverHorizon) this.onHoverHorizon(hit.item);
       this.canvas.style.cursor = 'pointer';
     }
     if (hit && hit.type === 'home' && (!prev || prev.type !== 'home')) {
@@ -1108,9 +1299,9 @@
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Harmonic-scale seats — large enough to click / drop onto
+      // Harmonic-scale seats (Chase) — dim/skip on active disk in Function view
       const seats =
-        M && M.circularHarmonicScale
+        M && M.circularHarmonicScale && !(this.mapView === 'function' && active)
           ? M.circularHarmonicScale(disk.tonic, disk.mode)
           : [];
       seats.forEach((s) => {
@@ -1207,6 +1398,11 @@
       ctx.globalAlpha = 1;
     });
 
+    // Function neighbourhood chart (same write-home key — not a second disk)
+    if (this.mapView === 'function') {
+      this._drawFunctionChart(ctx);
+    }
+
     // Bridge: path edges that cross disks get a soft glow (modulation leap)
     // (drawn later with path edges; tag nodes with disk id for style)
 
@@ -1226,12 +1422,19 @@
       ctx.fillStyle = 'rgba(200,184,160,0.8)';
       ctx.font = `${10 / this.camera.zoom}px Crimson Text, Georgia, serif`;
       ctx.textAlign = 'center';
-      ctx.fillText('Click HOME to start on tonic · ring = Chase harmonic scale', act.cx || 0, (act.cy || 0) + (act.R || 100) * 0.95);
+      ctx.fillText(
+        this.mapView === 'function'
+          ? 'Function view · click a chord · blue V7 → gold target · purple = borrow'
+          : 'Click HOME to start on tonic · ring = Chase harmonic scale',
+        act.cx || 0,
+        (act.cy || 0) + (act.R || 100) * 0.95
+      );
     }
 
     // Options: hollow rings on true Chase seats (same place the path will land)
     // Hidden while dragging — drag uses Chase seats as drop targets instead
-    if (this.showHorizon && this._mode !== 'node' && this.horizon.length) {
+    // Also hidden in Function view (neighbourhood nodes replace next-move dots)
+    if (this.showHorizon && this.mapView !== 'function' && this._mode !== 'node' && this.horizon.length) {
       const ax =
         (this.horizon[0] && this.horizon[0]._anchor && this.horizon[0]._anchor.x) ||
         (this.nodes[this.current] && this.nodes[this.current].x) ||
@@ -1687,28 +1890,36 @@
           ? 'HOME = write-key tonic (Chase disk centre) — click to start/land'
           : this.hover && this.hover.type === 'diskHome'
             ? 'Previous key disk — click centre to make it write home again (path keeps ownership)'
-            : this.hover && this.hover.type === 'horizon'
-              ? 'Option on/near harmonic scale · green ghost = join · click to write'
-              : this.hover && this.hover.type === 'edge'
-                ? 'Click green + on the curve to insert a bridge chord (keeps total length)'
-                : this.hover && this.hover.type === 'altNode'
-                  ? 'Blue compare path — names show where versions differ'
-                  : this.hover && this.hover.type === 'seat'
-                    ? 'Click seat to add ' +
-                      (this.hover.item.roman || '') +
-                      (this.hover.item.activeDisk
-                        ? ' · drag a path chord onto a seat to move it'
-                        : ' on other disk · switches write home')
-                    : this.nodes && this.nodes.length
-                      ? 'Click scale seats · Land here = new disk · drag onto I/IV/V… · hollow = suggestions'
-                      : 'Click HOME or a roman seat (IV, V, vi…) to start';
+            : this.hover && this.hover.type === 'functionNode'
+              ? 'Function chart · click to write ' +
+                ((this.hover.item && this.hover.item.label) || '') +
+                ' · same key neighbourhood'
+              : this.hover && this.hover.type === 'horizon'
+                ? 'Option on/near harmonic scale · green ghost = join · click to write'
+                : this.hover && this.hover.type === 'edge'
+                  ? 'Click green + on the curve to insert a bridge chord (keeps total length)'
+                  : this.hover && this.hover.type === 'altNode'
+                    ? 'Blue compare path — names show where versions differ'
+                    : this.hover && this.hover.type === 'seat'
+                      ? 'Click seat to add ' +
+                        (this.hover.item.roman || '') +
+                        (this.hover.item.activeDisk
+                          ? ' · drag a path chord onto a seat to move it'
+                          : ' on other disk · switches write home')
+                      : this.mapView === 'function'
+                        ? 'Function view · click chords · blue dashed = secondary resolve · purple = borrow gates'
+                        : this.nodes && this.nodes.length
+                          ? 'Click scale seats · Land here = new disk · drag onto I/IV/V… · hollow = suggestions'
+                          : 'Click HOME or a roman seat (IV, V, vi…) to start';
     ctx.fillText(tip, 10, h - 12);
 
     // Map reading legend (top-left)
     ctx.font = '9px DM Sans, sans-serif';
     ctx.fillStyle = 'rgba(180,168,150,0.5)';
     ctx.fillText(
-      'Chase disk = key · Land here = new disk · click dim disk centre to return · seats on any disk',
+      this.mapView === 'function'
+        ? 'Function view · gold diatonic/gates · blue V7→target · purple borrow · same write-home key'
+        : 'Chase disk = key · Land here = new disk · click dim disk centre to return · seats on any disk',
       10,
       14
     );

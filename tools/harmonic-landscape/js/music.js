@@ -187,15 +187,50 @@
     const diat = diatonicChords(tonic, modeKey, false);
     const out = [];
     diat.forEach((ch, i) => {
-      if (i === 0) return;
+      if (i === 0) return; // no V7/I as "secondary" of itself
       const domRoot = (ch.root + 7) % 12;
-      out.push(makeChord(domRoot, 'dom7', {
+      const v7 = makeChord(domRoot, 'dom7', {
         region: 'secondary',
         roman: `V7/${ch.roman || noteName(ch.root)}`,
         tag: 'secondary dominant',
-      }));
+      });
+      // Who this dominant resolves to (for Function chart edges + From here labels)
+      v7.resolveTarget = {
+        root: ch.root,
+        quality: ch.quality,
+        roman: ch.roman || '',
+        name: ch.name,
+      };
+      out.push(v7);
     });
     return out;
+  }
+
+  /**
+   * Neighbourhood chart for one key (user's "chord file" view):
+   * diatonic core, secondary dominants → targets, modal interchange, I/IV/V gates.
+   */
+  function functionNeighborhood(tonic, modeKey) {
+    const t = pc(tonic);
+    const mode = modeKey || 'minor';
+    const diat = diatonicChords(t, mode, false);
+    const secondary = secondaryDominants(t, mode);
+    const interchange = modalInterchange(t, mode);
+    // Classic gates in/out of borrow: I, IV, V (same scale degrees)
+    const gates = [diat[0], diat[3], diat[4]].filter(Boolean).map((c) => ({
+      ...c,
+      region: 'diatonic',
+      tag: 'gate',
+      notes: (c.notes || []).slice(),
+    }));
+    return {
+      tonic: t,
+      mode: mode,
+      diatonic: diat,
+      secondary: secondary,
+      interchange: interchange,
+      gates: gates,
+    };
   }
 
   /** Modal interchange from parallel major/minor */
@@ -957,6 +992,7 @@
     diatonicChords,
     secondaryDominants,
     modalInterchange,
+    functionNeighborhood,
     chromaticMediants,
     tritoneSubs,
     parallelModeChords,

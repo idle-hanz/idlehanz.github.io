@@ -267,12 +267,116 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
   }
 
   H.regionFromKind = function (kind) {
-    if (kind === 'home') return 'diatonic';
+    if (kind === 'home' || kind === 'gate' || kind === 'diatonic') return 'diatonic';
     if (kind === 'cadence') return 'diatonic';
+    if (kind === 'secondary') return 'secondary';
+    if (kind === 'interchange' || kind === 'flavour') return 'interchange';
     if (kind === 'modulate') return 'chromatic';
-    if (kind === 'flavour') return 'interchange';
     return 'diatonic';
   }
+
+  /**
+   * Function / neighbourhood chart for the active write home
+   * (diatonic + secondaries + interchange + I/IV/V gates + edges).
+   */
+  H.buildFunctionChart = function () {
+    const music = H.M();
+    if (!music.functionNeighborhood) return { nodes: [], edges: [], tonic: H.state.tonic, mode: H.state.mode };
+    const nb = music.functionNeighborhood(H.state.tonic, H.state.mode);
+    const stamp = (ch) => {
+      const x = music.cloneChord ? music.cloneChord(ch) : { ...ch, notes: (ch.notes || []).slice() };
+      H.stampKey(x, H.writeKey());
+      return x;
+    };
+    const nodes = [];
+    const edges = [];
+    const idOf = (ch) => ch.root + ':' + ch.quality;
+
+    (nb.diatonic || []).forEach((ch) => {
+      const c = stamp(ch);
+      nodes.push({
+        id: idOf(c),
+        chord: c,
+        role: 'diatonic',
+        label: c.name,
+        roman: c.roman || '',
+      });
+    });
+
+    (nb.secondary || []).forEach((ch) => {
+      const c = stamp(ch);
+      const tid =
+        ch.resolveTarget
+          ? ch.resolveTarget.root + ':' + ch.resolveTarget.quality
+          : null;
+      nodes.push({
+        id: idOf(c),
+        chord: c,
+        role: 'secondary',
+        label: c.name,
+        roman: c.roman || '',
+        resolvesToId: tid,
+      });
+      if (tid && ch.resolveTarget) {
+        let target = nodes.find((n) => n.id === tid);
+        if (!target) {
+          const tc = stamp(
+            music.makeChord(ch.resolveTarget.root, ch.resolveTarget.quality, {
+              region: 'diatonic',
+              roman: ch.resolveTarget.roman || '',
+            })
+          );
+          target = {
+            id: idOf(tc),
+            chord: tc,
+            role: 'diatonic',
+            label: tc.name,
+            roman: tc.roman || '',
+          };
+          nodes.push(target);
+        }
+        edges.push({
+          kind: 'resolve',
+          fromId: idOf(c),
+          toId: tid,
+          label: '→',
+        });
+      }
+    });
+
+    (nb.interchange || []).forEach((ch) => {
+      const c = stamp(ch);
+      nodes.push({
+        id: idOf(c),
+        chord: c,
+        role: 'interchange',
+        label: c.name,
+        roman: c.roman || '',
+      });
+    });
+
+    // Gate chords already in diatonic; mark + edges to every interchange
+    (nb.gates || []).forEach((g) => {
+      const gid = idOf(g);
+      const node = nodes.find((n) => n.id === gid);
+      if (node) node.gate = true;
+      (nb.interchange || []).forEach((ic) => {
+        edges.push({
+          kind: 'gate',
+          fromId: gid,
+          toId: idOf(ic),
+          label: 'borrow',
+        });
+      });
+    });
+
+    return {
+      tonic: nb.tonic,
+      mode: nb.mode,
+      nodes: nodes,
+      edges: edges,
+    };
+  };
 
   /** Tonic / home chord for current writing key */
   H.makeHomeChord = function (opts) {
@@ -343,7 +447,58 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       }
     }
 
-    // Flavours — colour family moves
+    // ── Function neighbourhood (same key as Write home) ──
+    // Secondary dominants → target, modal interchange, I/IV/V gates
+    if (music.functionNeighborhood && !forMap) {
+      const nb = music.functionNeighborhood(t, H.state.mode);
+      (nb.secondary || []).forEach((sec) => {
+        let v7 = music.cloneChord ? music.cloneChord(sec) : { ...sec, notes: (sec.notes || []).slice() };
+        if (from && compose.bestInversion) v7 = compose.bestInversion(from, v7);
+        H.stampKey(v7, H.writeKey());
+        const tgt = sec.resolveTarget
+          ? music.makeChord(sec.resolveTarget.root, sec.resolveTarget.quality, {
+              region: 'diatonic',
+              roman: sec.resolveTarget.roman || '',
+            })
+          : null;
+        if (tgt) H.stampKey(tgt, H.writeKey());
+        items.push({
+          chord: v7,
+          kind: 'secondary',
+          label: tgt ? v7.name + ' → ' + tgt.name : v7.name,
+          job: sec.roman || 'secondary',
+          route: tgt ? [v7, tgt] : undefined,
+          section: 'secondary',
+        });
+      });
+      (nb.interchange || []).forEach((ic) => {
+        let ch = music.cloneChord ? music.cloneChord(ic) : { ...ic, notes: (ic.notes || []).slice() };
+        if (from && compose.bestInversion) ch = compose.bestInversion(from, ch);
+        H.stampKey(ch, H.writeKey());
+        items.push({
+          chord: ch,
+          kind: 'interchange',
+          label: ch.name,
+          job: (ch.roman || 'borrow') + ' · interchange',
+          section: 'interchange',
+        });
+      });
+      (nb.gates || []).forEach((g) => {
+        let ch = music.cloneChord ? music.cloneChord(g) : { ...g, notes: (g.notes || []).slice() };
+        if (from && from.root === ch.root && from.quality === ch.quality) return;
+        if (from && compose.bestInversion) ch = compose.bestInversion(from, ch);
+        H.stampKey(ch, H.writeKey());
+        items.push({
+          chord: ch,
+          kind: 'gate',
+          label: ch.name,
+          job: (ch.roman || 'I/IV/V') + ' · gate in/out of borrow',
+          section: 'gate',
+        });
+      });
+    }
+
+    // Flavours — extra colour family moves (map + list)
     const flavourSeeds = [
       { d: 8, q: 'maj', label: '♭VI colour', kind: 'flavour', job: 'dark lift' },
       { d: 10, q: 'maj', label: '♭VII modal', kind: 'flavour', job: 'epic' },
@@ -362,7 +517,8 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       });
       if (from && compose.bestInversion) ch = compose.bestInversion(from, ch);
       if (from && from.root === ch.root && from.quality === ch.quality) return;
-      items.push({ chord: ch, kind: 'flavour', label: ch.name, job: s.job });
+      // Skip if already listed as interchange/secondary
+      items.push({ chord: ch, kind: 'flavour', label: ch.name, job: s.job, section: 'colour' });
     });
 
     // Directions — 1 or 2 chord packages that still join the rest of the path
@@ -447,25 +603,34 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       });
     }
 
-    // Dedupe by root+quality+kind, prefer directions when H.mapping
+    // Dedupe by root+quality+kind
     const seen = new Set();
     let out = [];
     const order = forMap
-      ? { direction: 0, flavour: 1, cadence: 2, modulate: 3 }
-      : { home: -1, direction: 0, flavour: 1, cadence: 2, modulate: 3 };
+      ? { direction: 0, flavour: 1, secondary: 1, interchange: 2, cadence: 3, modulate: 4 }
+      : {
+          home: -1,
+          secondary: 0,
+          interchange: 1,
+          gate: 2,
+          direction: 3,
+          flavour: 4,
+          cadence: 5,
+          modulate: 6,
+        };
     items.sort(
       (a, b) =>
         (order[a.kind] != null ? order[a.kind] : 9) - (order[b.kind] != null ? order[b.kind] : 9)
     );
+    const maxList = forMap ? limit : 40;
     for (const it of items) {
       if (!it.chord) continue;
       const k = it.kind + ':' + it.chord.root + ':' + it.chord.quality + ':' + (it.label || '');
       if (seen.has(k)) continue;
       seen.add(k);
       out.push(it);
-      if (out.length >= (forMap ? limit : 22)) break;
+      if (out.length >= maxList) break;
     }
-    // Map: mix so we don't only show directions
     if (forMap && out.length > limit) out = out.slice(0, limit);
     return out;
   }
