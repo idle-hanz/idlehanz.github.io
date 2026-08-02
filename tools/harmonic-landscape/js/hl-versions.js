@@ -264,9 +264,6 @@ H.resolveCompareCell = function (song) {
       '<button type="button" class="btn ghost" id="btn-var-parallel" title="Fork parallel maj/min">+ Parallel</button>' +
       '<button type="button" class="btn ghost" id="btn-var-darken" title="Fork darker">+ Darken</button>' +
       '<button type="button" class="btn ghost" id="btn-ab-ver" title="Play this then blue compare">A/B listen</button>' +
-      (H.state.compareCellId
-        ? '<button type="button" class="btn ghost" id="btn-clear-blue" title="Hide blue compare path">Clear blue</button>'
-        : '') +
       (cur
         ? '<button type="button" class="btn ghost btn-danger" id="btn-var-del" title="Delete the version you are editing">Delete current</button>'
         : '') +
@@ -713,7 +710,7 @@ H.resolveCompareCell = function (song) {
         cell.name +
         '”' +
         detail +
-        ' · gold=new · blue=parent · Clear blue when you only want one path'
+        ' · gold=new · blue=parent · Alt-click blue chip to clear compare'
     );
     H.playSeq({ once: true, force: true });
   }

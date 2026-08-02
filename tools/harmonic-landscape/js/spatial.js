@@ -322,6 +322,13 @@
       };
     });
 
+    // First pass: place diatonic / gates on a FIXED ring (never jump when Borrow toggles)
+    const diatonicScale = 0.9;
+    const byId = {};
+    chart.nodes.forEach((n) => {
+      byId[n.id] = n;
+    });
+
     chart.nodes.forEach((n) => {
       const ch = n.chord;
       if (!ch) return;
@@ -330,29 +337,38 @@
       if (n.role === 'interchange' && interPos[n.id]) {
         x = interPos[n.id].x;
         y = interPos[n.id].y;
-      } else if (M && M.chaseChordPos) {
-        const base = M.chaseChordPos(ch, t, mode, { cx: cx, cy: cy, R: R });
-        // Belts: diatonic/gate on ring, secondary + primary dominant mid-shell
-        let scale = 0.92;
-        if (n.role === 'secondary' || n.role === 'dominant') scale = 1.2;
-        else if (n.gate || n.role === 'diatonic') scale = n.gate ? 0.78 : 0.92;
+      } else if (
+        (n.role === 'secondary' || n.role === 'dominant') &&
+        n.resolvesToId &&
+        M &&
+        M.chaseChordPos
+      ) {
+        // Sit just outside the TARGET seat so G7→C is a short arrow, not through G maj
+        const target = byId[n.resolvesToId];
+        const tCh = (target && target.chord) || {
+          root: n.resolvesToId.split(':')[0] | 0,
+          quality: 'maj',
+        };
+        // Build a probe chord for target seat
+        const probe =
+          target && target.chord
+            ? target.chord
+            : { root: parseInt(String(n.resolvesToId).split(':')[0], 10) || 0, quality: 'maj' };
+        const base = M.chaseChordPos(probe, t, mode, { cx: cx, cy: cy, R: R });
+        // Slightly outside the diatonic ring, same angle as target
+        const scale = 1.22;
         x = cx + (base.x - cx) * scale;
         y = cy + (base.y - cy) * scale;
-        // G7 and G maj share a root — nudge primary/secondary slightly out
-        if ((n.role === 'secondary' || n.role === 'dominant') && n.chord) {
-          const diatSame = chart.nodes.find(
-            (o) =>
-              o.role === 'diatonic' &&
-              o.chord &&
-              o.chord.root === n.chord.root &&
-              o.id !== n.id
-          );
-          if (diatSame) {
-            scale = 1.28;
-            x = cx + (base.x - cx) * scale;
-            y = cy + (base.y - cy) * scale;
-          }
-        }
+        // Tiny tangential nudge so label doesn't sit on the resolve arrow
+        const ang = Math.atan2(base.y - cy, base.x - cx) + 0.28;
+        x += Math.cos(ang) * R * 0.08;
+        y += Math.sin(ang) * R * 0.07;
+      } else if (M && M.chaseChordPos) {
+        // Home ring (incl. I/IV/V gates): always same radius — Borrow never moves them
+        const base = M.chaseChordPos(ch, t, mode, { cx: cx, cy: cy, R: R });
+        const scale = diatonicScale;
+        x = cx + (base.x - cx) * scale;
+        y = cy + (base.y - cy) * scale;
       } else {
         x = cx;
         y = cy;
