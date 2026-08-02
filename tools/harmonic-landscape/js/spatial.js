@@ -608,10 +608,13 @@
         const radius = s.role === 'tonic' ? disk.R * 0.42 : disk.R * 0.72;
         const x = disk.cx + Math.cos(s.angle) * radius;
         const y = disk.cy + Math.sin(s.angle) * radius * 0.88;
+        // Stamp disk ownership on seat chords so drop/click keep multi-disk correct
+        ch.localTonic = disk.tonic;
+        ch.localMode = disk.mode;
         this.scaleSeats.push({
           x,
           y,
-          r: disk.active ? 22 : 12,
+          r: disk.active ? 22 : 16,
           root: s.root,
           roman: s.roman,
           role: s.role,
@@ -670,16 +673,28 @@
       const dy = w.y - n.y;
       if (dx * dx + dy * dy <= (n.r + 6) * (n.r + 6)) return { type: 'path', item: n };
     }
-    // Chase scale seats (click to add) — active disk preferred
+    // Chase scale seats (click to add) — active disk first, then other disks
     if (this._mode !== 'node' && this.scaleSeats && this.scaleSeats.length) {
+      let bestSeat = null;
+      let bestD = Infinity;
       for (let i = this.scaleSeats.length - 1; i >= 0; i--) {
         const s = this.scaleSeats[i];
-        if (!s.activeDisk) continue;
         const dx = w.x - s.x;
         const dy = w.y - s.y;
-        const rr = (s.r || 16) + 6;
-        if (dx * dx + dy * dy <= rr * rr) return { type: 'seat', item: s };
+        // Inactive disks: slightly smaller hit but still clickable
+        const pad = s.activeDisk ? 6 : 4;
+        const rr = (s.r || 16) + pad;
+        const d2 = dx * dx + dy * dy;
+        if (d2 <= rr * rr) {
+          // Prefer active-disk seats when both overlap
+          const score = d2 - (s.activeDisk ? 400 : 0);
+          if (score < bestD) {
+            bestD = score;
+            bestSeat = s;
+          }
+        }
       }
+      if (bestSeat) return { type: 'seat', item: bestSeat };
     }
     if (this.showHorizon && this._mode !== 'node') {
       for (let i = this.horizon.length - 1; i >= 0; i--) {
@@ -690,12 +705,22 @@
         if (dx * dx + dy * dy <= rr * rr) return { type: 'horizon', item: h };
       }
     }
-    // Centre disc IS home
+    // Centre disc IS home — active disk, or inactive disk centre to re-land there
     if (this._mode !== 'node') {
       const act = this._activeDisk();
       const dx = w.x - (act.cx || 0);
       const dy = w.y - (act.cy || 0);
       if (dx * dx + dy * dy <= 28 * 28) return { type: 'home' };
+      // Inactive disk centres: switch write home to that key (land without retag path)
+      for (let i = 0; i < (this.disks || []).length; i++) {
+        const d = this.disks[i];
+        if (d.active) continue;
+        const ddx = w.x - (d.cx || 0);
+        const ddy = w.y - (d.cy || 0);
+        if (ddx * ddx + ddy * ddy <= 22 * 22) {
+          return { type: 'diskHome', item: d };
+        }
+      }
     }
     if (this.showAlt && this._mode !== 'node' && this.altNodes && this.altNodes.length) {
       for (let i = this.altNodes.length - 1; i >= 0; i--) {
@@ -742,6 +767,12 @@
     }
     if (hit && hit.type === 'home') {
       if (this.onSelectHome) this.onSelectHome();
+      return;
+    }
+    if (hit && hit.type === 'diskHome') {
+      // Click centre of a previous-key disk → re-activate that write home
+      if (this.onSelectDiskHome) this.onSelectDiskHome(hit.item);
+      else if (this.onSelectHome && hit.item && hit.item.active) this.onSelectHome();
       return;
     }
     if (hit && hit.type === 'edge' && this.onInsertBetween) {
@@ -1556,26 +1587,30 @@
           : 'Move crosshair onto a labelled target to audition · release off-target = cancel'
         : this.hover && this.hover.type === 'home'
           ? 'HOME = write-key tonic (Chase disk centre) — click to start/land'
-          : this.hover && this.hover.type === 'horizon'
-            ? 'Option on/near harmonic scale · green ghost = join · click to write'
-            : this.hover && this.hover.type === 'edge'
-              ? 'Click edge to insert (steals time from neighbors)'
-              : this.hover && this.hover.type === 'altNode'
-                ? 'Blue compare path — names show where versions differ'
-                : this.hover && this.hover.type === 'seat'
-                  ? 'Click seat to add ' +
-                    (this.hover.item.roman || '') +
-                    ' · drag a path chord onto a seat to move it'
-                  : this.nodes && this.nodes.length
-                    ? 'Click scale seats to add · drag path chord onto I/IV/V… to move · hollow = suggestions'
-                    : 'Click HOME or a roman seat (IV, V, vi…) to start';
+          : this.hover && this.hover.type === 'diskHome'
+            ? 'Previous key disk — click centre to make it write home again (path keeps ownership)'
+            : this.hover && this.hover.type === 'horizon'
+              ? 'Option on/near harmonic scale · green ghost = join · click to write'
+              : this.hover && this.hover.type === 'edge'
+                ? 'Click edge to insert (steals time from neighbors)'
+                : this.hover && this.hover.type === 'altNode'
+                  ? 'Blue compare path — names show where versions differ'
+                  : this.hover && this.hover.type === 'seat'
+                    ? 'Click seat to add ' +
+                      (this.hover.item.roman || '') +
+                      (this.hover.item.activeDisk
+                        ? ' · drag a path chord onto a seat to move it'
+                        : ' on other disk · switches write home')
+                    : this.nodes && this.nodes.length
+                      ? 'Click scale seats · Land here = new disk · drag onto I/IV/V… · hollow = suggestions'
+                      : 'Click HOME or a roman seat (IV, V, vi…) to start';
     ctx.fillText(tip, 10, h - 12);
 
     // Map reading legend (top-left)
     ctx.font = '9px DM Sans, sans-serif';
     ctx.fillStyle = 'rgba(180,168,150,0.5)';
     ctx.fillText(
-      'Chase disk = key · clockwise ≈ fifths homeward · outer shell = tension · dim disk = prev key',
+      'Chase disk = key · Land here = new disk · click dim disk centre to return · seats on any disk',
       10,
       14
     );

@@ -63,6 +63,49 @@
     state.cellId = snap.cellId;
   }
 
+  // ─── Multi-disk ownership (localTonic / localMode) ─────────
+  // Each path step owns a Chase disk. Write home (state.tonic/mode) is gravity
+  // for NEW steps only. Edits must keep a step on its disk; Land here / modulate
+  // switch gravity and retag from the pivot.
+
+  function writeKey() {
+    return { tonic: state.tonic, mode: state.mode };
+  }
+
+  function keyOf(ch) {
+    if (!ch) return writeKey();
+    return {
+      tonic: ch.localTonic != null ? ch.localTonic : state.tonic,
+      mode: ch.localMode || state.mode,
+    };
+  }
+
+  /** Stamp a chord onto a disk (default = current write home). */
+  function stampKey(ch, key) {
+    if (!ch) return ch;
+    const k = key || writeKey();
+    ch.localTonic = ((Number(k.tonic) % 12) + 12) % 12;
+    ch.localMode = k.mode || state.mode;
+    if (map && map.rememberKey) map.rememberKey(ch.localTonic, ch.localMode);
+    return ch;
+  }
+
+  /** Keep disk ownership when replacing/editing an existing step. */
+  function keepKey(ch, from) {
+    return stampKey(ch, keyOf(from));
+  }
+
+  function ensurePathOwned() {
+    state.chords.forEach((ch) => {
+      if (ch && ch.localTonic == null) stampKey(ch, writeKey());
+    });
+  }
+
+  function keyLabelFor(key) {
+    const k = key || writeKey();
+    return (M().noteName(k.tonic) || '?') + ' ' + (k.mode || 'minor');
+  }
+
   /**
    * Session / snapshot chord → Landscape chord object.
    * Preserves free pitch sets (custom) instead of forcing a named triad.
@@ -156,6 +199,16 @@
     map.onHoverHome = () => {
       A().ensure();
       A().playChord({ chord: makeHomeChord(), soft: true, duration: 0.4 });
+    };
+    // Click centre of an older Chase disk → switch write home back (path ownership stays)
+    map.onSelectDiskHome = (disk) => {
+      if (!disk) return;
+      setWritingHome(disk.tonic, disk.mode || state.mode, { transpose: false });
+      setSyncStatus(
+        'Write home → ' +
+          keyLabel() +
+          ' · older disk reactivated · path steps keep their disks · Land here retags from selection'
+      );
     };
     map.onRequestAlts = (pathIndex, chord) => buildAimTargets(pathIndex, chord);
     map.onSwapChord = (pathIndex, newChord) => {
@@ -550,7 +603,7 @@
       const notes = (ch.notes || []).map((n) => (n + delta) % 12);
       const root = (ch.root + delta) % 12;
       const bass = ch.bassPc != null ? (ch.bassPc + delta) % 12 : root;
-      return M().makeCustomChord
+      let n = M().makeCustomChord
         ? M().makeCustomChord(root, notes, {
             duration: ch.duration,
             roman: ch.roman,
@@ -560,14 +613,18 @@
             bassPc: bass,
           })
         : (() => {
-            const n = M().cloneChord(ch);
-            n.root = root;
-            n.notes = notes;
-            n.bassPc = bass;
-            n.localTonic = newTonic;
-            n.localMode = newMode;
-            return n;
+            const x = M().cloneChord(ch);
+            x.root = root;
+            x.notes = notes;
+            x.bassPc = bass;
+            return x;
           })();
+      // Rotate this step's disk with the pitches (multi-disk stays multi-disk)
+      const ownT = ch.localTonic != null ? ch.localTonic : state.tonic;
+      n.localTonic =
+        newTonic != null ? newTonic : ((ownT + delta) % 12 + 12) % 12;
+      n.localMode = newMode || ch.localMode || state.mode;
+      return n;
     }
     let n = M().makeChord((ch.root + delta) % 12, ch.quality, {
       duration: ch.duration,
@@ -582,8 +639,10 @@
       n.tag = ch.tag;
       n.region = ch.region;
     }
-    n.localTonic = newTonic != null ? newTonic : state.tonic;
-    n.localMode = newMode || state.mode;
+    const ownT = ch.localTonic != null ? ch.localTonic : state.tonic;
+    n.localTonic =
+      newTonic != null ? newTonic : ((ownT + delta) % 12 + 12) % 12;
+    n.localMode = newMode || ch.localMode || state.mode;
     return n;
   }
 
@@ -593,13 +652,33 @@
     delta = ((delta % 12) + 12) % 12;
     if (!delta || !state.chords.length) return;
     pushUndo();
-    state.chords = state.chords.map((ch) =>
-      transposeChord(ch, delta, opts.moveHome ? (state.tonic + delta) % 12 : state.tonic, state.mode)
-    );
+    // Each step keeps its relative disk: rotate localTonic with the pitches
+    state.chords = state.chords.map((ch) => {
+      if (opts.moveHome || opts.forceWriteHome) {
+        return transposeChord(
+          ch,
+          delta,
+          opts.moveHome ? (state.tonic + delta) % 12 : state.tonic,
+          state.mode
+        );
+      }
+      // Preserve multi-disk: null newTonic → rotate each chord's own key
+      return transposeChord(ch, delta, null, ch.localMode || state.mode);
+    });
     if (opts.moveHome) {
       state.tonic = (state.tonic + delta) % 12;
       if ($('#tonic')) $('#tonic').value = String(state.tonic);
-      if (map) map.setOrigin(state.tonic, state.mode);
+      if (map) {
+        if (map.rememberKey) map.rememberKey(state.tonic, state.mode);
+        map.setOrigin(state.tonic, state.mode);
+      }
+    } else if (map) {
+      // Disks move with rotated ownership
+      ensurePathOwned();
+      state.chords.forEach((ch) => {
+        if (map.rememberKey) map.rememberKey(ch.localTonic, ch.localMode);
+      });
+      map.setPath(state.chords, state.selected);
     }
     afterEdit();
     setSyncStatus(
@@ -613,6 +692,7 @@
   /**
    * Modulation: set writing home from the selected chord (chords stay absolute).
    * Map / From here now treat that chord as the new centre of gravity.
+   * Earlier steps stay on the previous disk; pivot + later join the new disk.
    */
   function landSelectionAsHome() {
     const ch =
@@ -623,20 +703,21 @@
       setSyncStatus('Select a chord first, then Land here');
       return;
     }
-    let mode = state.mode;
+    // Prefer the chord's existing disk mode if already owned
+    let mode = ch.localMode || state.mode;
     const q = ch.quality || '';
     if (q.indexOf('min') === 0 || q === 'halfdim' || q === 'dim') mode = 'minor';
-    else if (q.indexOf('maj') === 0 || q === 'dom7' || q === 'sus4' || q === 'add9') {
-      // dom7 often dominant of a major/minor — keep major-ish as major home
-      mode = q === 'dom7' ? state.mode : 'major';
-      if (q.indexOf('maj') === 0 || q === 'add9') mode = 'major';
-    }
+    else if (q.indexOf('maj') === 0 || q === 'sus4' || q === 'add9') mode = 'major';
+    else if (q === 'dom7') mode = ch.localMode || state.mode;
     // Pivot chord + later steps sit on the new disk; earlier steps stay on old key disk
+    pushUndo();
     setWritingHome(ch.root, mode, { transpose: false, retagFromSelected: true });
+    const disks = map && map.disks ? map.disks.length : 1;
     setSyncStatus(
-      'Modulate · new disk ' +
+      'Land here · new disk ' +
         keyLabel() +
-        ' · steps before stay on previous key · walk the new ring, Land here again to return'
+        (disks > 1 ? ' · ' + disks + ' Chase disks' : '') +
+        ' · steps before stay on previous key · click seats on either disk · Land here again to return'
     );
   }
 
@@ -649,12 +730,13 @@
     }
     const delta = (state.tonic - prev + 12) % 12;
     if (!delta) return;
-    // Temporarily set tonic back to compute... actually chords still at old pitch,
-    // write home already at new. Transpose chords by delta from prev to current home.
+    // Collapse to one disk: all steps move pitches + ownership onto write home
     pushUndo();
-    state.chords = state.chords.map((ch) => transposeChord(ch, delta, state.tonic, state.mode));
+    state.chords = state.chords.map((ch) =>
+      transposeChord(ch, delta, state.tonic, state.mode)
+    );
     afterEdit();
-    setSyncStatus('Transposed sequence into ' + keyLabel() + ' · all chords moved');
+    setSyncStatus('Transposed sequence into ' + keyLabel() + ' · all chords moved onto write-home disk');
     state._prevTonicForTranspose = state.tonic;
   }
 
@@ -686,28 +768,31 @@
   }
 
   /** Chord for a Chase scale seat (default quality on that seat). */
-  function chordFromChaseSeat(seat) {
+  function chordFromChaseSeat(seat, key) {
     if (!seat) return null;
+    const k = key || writeKey();
     let q = (seat.qualities && seat.qualities[0]) || 'maj';
     if (seat.role === 'dom') q = 'dom7';
     if (seat.role === 'leading' || seat.role === 'supertonic') {
-      q = seat.qualities[0] || (state.mode === 'major' ? 'dim' : 'halfdim');
+      q = seat.qualities[0] || (k.mode === 'major' ? 'dim' : 'halfdim');
     }
-    return M().makeChord(seat.root, q, {
+    const ch = M().makeChord(seat.root, q, {
       duration: stepDuration(),
       region: 'diatonic',
       roman: seat.roman || '',
       tag: 'chase',
     });
+    return stampKey(ch, k);
   }
 
   /**
    * Drag targets on the (large) Chase chart: full scale seats + useful tension shells.
-   * Room comes from a bigger disk, not from starving the palette.
+   * Built in the path chord's own key so multi-disk drag stays on that disk.
    */
   function buildAimTargets(pathIndex, chord) {
     const list = [];
     const seen = new Set();
+    const diskKey = keyOf(chord || state.chords[pathIndex]);
     const add = (ch, label, role) => {
       if (!ch) return;
       const k = ch.root + ':' + ch.quality;
@@ -715,15 +800,16 @@
       if (chord && ch.root === chord.root && ch.quality === chord.quality) return;
       seen.add(k);
       ch = { ...ch, duration: (chord && chord.duration) || stepDuration() };
+      stampKey(ch, diskKey);
       list.push({ chord: ch, label: label || ch.name, role: role || '' });
     };
 
-    // Full circular harmonic scale
+    // Full circular harmonic scale of THIS chord's disk
     if (M().circularHarmonicScale) {
       M()
-        .circularHarmonicScale(state.tonic, state.mode)
+        .circularHarmonicScale(diskKey.tonic, diskKey.mode)
         .forEach((seat) => {
-          const ch = chordFromChaseSeat(seat);
+          const ch = chordFromChaseSeat(seat, diskKey);
           add(ch, ch.name, seat.roman);
         });
     }
@@ -737,7 +823,7 @@
       { d: 3, q: 'maj', role: 'III', region: 'chromatic' },
     ].forEach((s) => {
       add(
-        M().makeChord((state.tonic + s.d) % 12, s.q, { region: s.region, tag: 'shell' }),
+        M().makeChord((diskKey.tonic + s.d) % 12, s.q, { region: s.region, tag: 'shell' }),
         null,
         s.role
       );
@@ -746,30 +832,52 @@
     // Quality family on same root (inversions less important on big chart)
     if (C().closeAlternates) {
       C()
-        .closeAlternates(chord, state.tonic, state.mode, 4)
+        .closeAlternates(chord, diskKey.tonic, diskKey.mode, 4)
         .forEach((a) => add(a.chord, a.label, a.role || 'alt'));
     }
 
     return list;
   }
 
-  /** Click a Chase seat: write that scale chord into the path. */
+  /**
+   * Click a Chase seat: write that scale chord into the path.
+   * Seat on inactive disk → write onto that disk and switch write home (no full-path retag).
+   */
   function selectChaseSeat(seatInfo) {
     if (!seatInfo) return;
+    const disk = seatInfo.disk;
+    const diskKey = disk
+      ? { tonic: disk.tonic, mode: disk.mode || state.mode }
+      : writeKey();
     const ch =
       seatInfo.chord ||
-      chordFromChaseSeat(seatInfo.seat || seatInfo);
+      chordFromChaseSeat(seatInfo.seat || seatInfo, diskKey);
     if (!ch) return;
     ch.duration = stepDuration();
-    ch.localTonic = state.tonic;
-    ch.localMode = state.mode;
+    stampKey(ch, diskKey);
+
+    // Clicking another disk's seat switches gravity so From here / new steps match
+    const switched =
+      disk &&
+      !disk.active &&
+      (disk.tonic !== state.tonic || (disk.mode || state.mode) !== state.mode);
+    if (switched) {
+      setWritingHome(disk.tonic, disk.mode || state.mode, {
+        transpose: false,
+        skipEdit: true,
+      });
+    }
+
     A().ensure();
     A().playChord({ chord: ch, soft: true, duration: 0.4 });
     commitHorizon({
       chord: ch,
       kind: 'direction',
       label: ch.name,
-      job: (seatInfo.roman || seatInfo.role || 'scale') + ' seat',
+      job:
+        (seatInfo.roman || seatInfo.role || 'scale') +
+        ' seat' +
+        (switched ? ' · write home → ' + keyLabelFor(diskKey) : ''),
     });
   }
 
@@ -811,8 +919,10 @@
       }
     }
 
+    // Bridge inherits the left neighbor's disk (same region of the journey)
+    const bridgeKey = keyOf(a);
     const midRoot = Math.round((a.root + b.root) / 2) % 12;
-    let ch = M().makeChord(midRoot, state.mode === 'major' ? 'maj' : 'min', {
+    let ch = M().makeChord(midRoot, bridgeKey.mode === 'major' ? 'maj' : 'min', {
       duration: insertDur,
       region: 'diatonic',
       tag: 'insert',
@@ -823,8 +933,7 @@
       ch.duration = insertDur;
       ch.tag = 'insert';
     }
-    ch.localTonic = state.tonic;
-    ch.localMode = state.mode;
+    stampKey(ch, bridgeKey);
 
     state.chords[afterIndex] = M().withDuration(a, Math.max(0.5, da - takeA));
     state.chords[afterIndex + 1] = M().withDuration(b, Math.max(0.5, db - takeB));
@@ -883,25 +992,30 @@
     if (pathIndex < 0 || pathIndex >= state.chords.length) return;
     pushUndo();
     const prev = state.chords[pathIndex];
+    // Prefer key already on newChord (aim targets stamp disk), else keep slot's disk
+    const ownKey =
+      newChord && newChord.localTonic != null
+        ? { tonic: newChord.localTonic, mode: newChord.localMode || state.mode }
+        : keyOf(prev);
     let ch = M().cloneChord(newChord);
     ch.duration = prev.duration || 4;
-    ch.localTonic = state.tonic;
-    ch.localMode = state.mode;
+    stampKey(ch, ownKey);
     ch.tag = ch.tag || 'pulled';
     if (C().bestInversion && pathIndex > 0) {
       ch = C().bestInversion(state.chords[pathIndex - 1], ch);
       ch.duration = prev.duration || 4;
+      stampKey(ch, ownKey);
     }
     state.chords[pathIndex] = ch;
 
     if (opts.pullNeighbors && opts.pullStrength > 0) {
       const t = Math.min(1, opts.pullStrength) * 0.55; // how far neighbors move
-      // Previous: blend root toward new chord
+      // Previous: blend root toward new chord — stay on neighbor's own disk
       if (pathIndex > 0) {
         const p = state.chords[pathIndex - 1];
+        const pKey = keyOf(p);
         const newRoot = circularBlendRoot(p.root, ch.root, t);
         let pq = p.quality;
-        // keep quality family mostly
         let pn = M().makeChord(newRoot, pq, {
           duration: p.duration,
           region: p.region || 'diatonic',
@@ -911,17 +1025,15 @@
         if (C().bestInversion && pathIndex > 1) {
           pn = C().bestInversion(state.chords[pathIndex - 2], pn);
           pn.duration = p.duration;
-        } else if (C().withBass && p.bassPc != null) {
-          // try keep relative bass if possible
         }
-        pn.localTonic = state.tonic;
-        pn.localMode = state.mode;
+        stampKey(pn, pKey);
         pn.tag = 'tugged';
         state.chords[pathIndex - 1] = pn;
       }
-      // Next: blend toward new chord from its side
+      // Next: blend toward new chord from its side — keep next's disk
       if (pathIndex < state.chords.length - 1) {
         const n = state.chords[pathIndex + 1];
+        const nKey = keyOf(n);
         const newRoot = circularBlendRoot(n.root, ch.root, t * 0.85);
         let nn = M().makeChord(newRoot, n.quality, {
           duration: n.duration,
@@ -933,8 +1045,7 @@
           nn = C().bestInversion(ch, nn);
           nn.duration = n.duration;
         }
-        nn.localTonic = state.tonic;
-        nn.localMode = state.mode;
+        stampKey(nn, nKey);
         nn.tag = 'tugged';
         state.chords[pathIndex + 1] = nn;
       }
@@ -942,7 +1053,7 @@
 
     state.selected = pathIndex;
     state.fromPackId = null;
-    map._mode = null;
+    if (map) map._mode = null;
     afterEdit();
     A().ensure();
     A().playChord({ chord: state.chords[pathIndex] });
@@ -976,8 +1087,8 @@
       ch.duration = dur;
       ch.tag = 'entered';
     }
-    ch.localTonic = state.tonic;
-    ch.localMode = state.mode;
+    // Picker always writes onto current write-home disk
+    stampKey(ch, writeKey());
     return ch;
   }
 
@@ -1699,15 +1810,14 @@
   function smoothVoicings() {
     if (!state.chords.length || !C().smoothCellVoicings) return;
     pushUndo();
+    // Capture ownership before smooth (compose may drop localTonic)
+    const keys = state.chords.map((c) => keyOf(c));
     state.chords = C().smoothCellVoicings(state.chords);
-    state.chords.forEach((c) => {
-      c.localTonic = state.tonic;
-      c.localMode = state.mode;
-    });
+    state.chords.forEach((c, i) => stampKey(c, keys[i] || writeKey()));
     state.fromPackId = null;
     afterEdit();
     A().ensure();
-    playSeq({ once: true, force: true, label: 'Smoothed voicings · playing once' });
+    playSeq({ once: true, force: true, label: 'Smoothed voicings · multi-disk ownership kept' });
   }
 
   /**
@@ -1844,6 +1954,7 @@
     if (i < 0 || !state.chords[i]) return;
     pushUndo();
     const prev = state.chords[i];
+    const ownKey = keyOf(prev);
     let ch = M().makeChord(root, quality, {
       duration: prev.duration,
       roman: prev.roman,
@@ -1856,8 +1967,7 @@
       if (tones.includes(prev.bassPc)) ch = C().withBass(ch, prev.bassPc);
     }
     ch.duration = prev.duration;
-    ch.localTonic = state.tonic;
-    ch.localMode = state.mode;
+    stampKey(ch, ownKey);
     state.chords[i] = ch;
     state.fromPackId = null;
     afterEdit();
@@ -1925,9 +2035,9 @@
   function fitHorizonIntoSequence(sel, rawPieces, mode) {
     const pieces = rawPieces.map((p) => {
       const c = M().cloneChord(p);
-      // Own the current write-home disk unless already tagged
-      if (c.localTonic == null) c.localTonic = state.tonic;
-      if (!c.localMode) c.localMode = state.mode;
+      // Keep package ownership if set (seat on other disk); else write-home disk
+      if (c.localTonic == null) stampKey(c, writeKey());
+      else stampKey(c, { tonic: c.localTonic, mode: c.localMode || state.mode });
       return c;
     });
     const totalBefore = beatSum(state.chords);
@@ -2089,23 +2199,20 @@
         const start = fit.writeAt;
         const end = start + (fit.pieces ? fit.pieces.length : 0);
         for (let i = start; i < end; i++) {
-          if (state.chords[i]) {
-            state.chords[i].localTonic = state.tonic;
-            state.chords[i].localMode = state.mode;
-          }
+          if (state.chords[i]) stampKey(state.chords[i], writeKey());
         }
       }
     }
 
-    // New path steps inherit current write home (multi-disk ownership)
+    // New path steps inherit current write home unless already owned (seat on other disk)
     if (fit.pieces && fit.pieces.length) {
       for (let i = fit.writeAt; i < fit.writeAt + fit.pieces.length; i++) {
         if (state.chords[i] && state.chords[i].localTonic == null) {
-          state.chords[i].localTonic = state.tonic;
-          state.chords[i].localMode = state.mode;
+          stampKey(state.chords[i], writeKey());
         }
       }
     }
+    ensurePathOwned();
 
     state.selected = Math.min(
       fit.writeAt + fit.pieces.length - 1,
@@ -2158,6 +2265,11 @@
   /** Build the chord(s) a horizon item would write (durations assigned later by fit). */
   function horizonPieces(item) {
     const region = item.chord && (item.chord.region || regionFromKind(item.kind));
+    // Prefer ownership already on the package (e.g. seat click on inactive disk)
+    const pkgKey =
+      item.chord && item.chord.localTonic != null
+        ? { tonic: item.chord.localTonic, mode: item.chord.localMode || state.mode }
+        : writeKey();
     if (item.route && item.route.length) {
       return item.route.map((c) => {
         const x = M().cloneChord(c);
@@ -2165,8 +2277,11 @@
         x.duration = c.duration || 2;
         x.tag = item.kind || x.tag || 'horizon';
         x.region = x.region || region;
-        x.localTonic = state.tonic;
-        x.localMode = state.mode;
+        const ck =
+          c.localTonic != null
+            ? { tonic: c.localTonic, mode: c.localMode || state.mode }
+            : pkgKey;
+        stampKey(x, ck);
         return x;
       });
     }
@@ -2174,8 +2289,7 @@
     ch.duration = item.chord.duration || 2;
     ch.tag = item.kind || 'horizon';
     ch.region = region;
-    ch.localTonic = state.tonic;
-    ch.localMode = state.mode;
+    stampKey(ch, pkgKey);
     return [ch];
   }
 
@@ -2200,8 +2314,7 @@
       roman: isMin ? 'i' : 'I',
       tag: 'home',
     });
-    ch.localTonic = state.tonic;
-    ch.localMode = state.mode;
+    stampKey(ch, writeKey());
     return ch;
   }
 
@@ -2613,6 +2726,7 @@
   }
 
   function refreshMap() {
+    ensurePathOwned();
     map.setOrigin(state.tonic, state.mode);
     map.setPath(state.chords, state.selected);
     // Canvas shows a short ranked constellation; From here list keeps the full catalog
@@ -2813,8 +2927,7 @@
     if (C().bestInversion) ch = C().bestInversion(last, ch);
     ch.duration = 4;
     ch.tag = 'swing';
-    ch.localTonic = state.tonic;
-    ch.localMode = state.mode;
+    stampKey(ch, writeKey());
     state.chords.push(ch);
     state.selected = state.chords.length - 1;
     state.fromPackId = null;
@@ -2838,8 +2951,7 @@
     });
     if (C().bestInversion) ch = C().bestInversion(last, ch);
     ch.duration = 2;
-    ch.localTonic = state.tonic;
-    ch.localMode = state.mode;
+    stampKey(ch, writeKey());
     state.chords.push(ch);
     // Then tonic
     let home = M().makeChord(t, state.mode === 'major' ? 'maj' : 'min', {
@@ -2850,8 +2962,7 @@
     });
     if (C().bestInversion) home = C().bestInversion(ch, home);
     home.duration = 4;
-    home.localTonic = state.tonic;
-    home.localMode = state.mode;
+    stampKey(home, writeKey());
     state.chords.push(home);
     state.selected = state.chords.length - 1;
     state.fromPackId = null;
@@ -2894,6 +3005,15 @@
       state.chords.length < 2
         ? ' · tip: click another outer dot for the next step, or drag this chord to aim a swap'
         : '';
+    const own = keyOf(ch);
+    const diskNote =
+      own.tonic !== state.tonic || own.mode !== state.mode
+        ? ' · on ' + keyLabelFor(own) + ' disk'
+        : '';
+    const multi =
+      map && map.disks && map.disks.length > 1
+        ? ' · ' + map.disks.length + ' disks'
+        : '';
     el.textContent =
       'Step ' +
       (i + 1) +
@@ -2904,6 +3024,8 @@
       ' · ' +
       (ch.duration || 4) +
       'b' +
+      diskNote +
+      multi +
       side +
       play +
       coach;

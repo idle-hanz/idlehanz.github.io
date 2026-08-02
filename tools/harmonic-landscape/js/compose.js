@@ -199,14 +199,19 @@
     const out = [];
     for (let i = 0; i < chords.length; i++) {
       const prev = i ? out[i - 1] : null;
-      const smoothed = bestInversion(prev, chords[i]);
+      const src = chords[i];
+      const smoothed = bestInversion(prev, src);
       out.push({
         ...smoothed,
-        duration: chords[i].duration,
-        id: chords[i].id,
-        roman: chords[i].roman,
-        tag: chords[i].tag,
-        region: chords[i].region,
+        duration: src.duration,
+        id: src.id,
+        roman: src.roman,
+        tag: src.tag,
+        region: src.region,
+        // Multi-disk: keep each step on its Chase disk
+        localTonic: src.localTonic != null ? src.localTonic : smoothed.localTonic,
+        localMode: src.localMode || smoothed.localMode,
+        custom: src.custom || smoothed.custom,
       });
     }
     return out;
