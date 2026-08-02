@@ -1439,9 +1439,14 @@
 
     if (hit && hit.type === 'path') {
       this._mode = 'node';
+      // Lock camera to current visual pose so aim coords stay stable
+      this.camera.tx = this.camera.x;
+      this.camera.ty = this.camera.y;
+      this.camera.tz = this.camera.zoom;
       this._dragNode = hit.item;
       this._dragOrigin = { x: hit.item.x, y: hit.item.y };
       this._dragPos = { x: hit.item.x, y: hit.item.y };
+      this._snapSticky = null; // hysteresis for aim target
       this.current = hit.item.i;
       if (this.onSelectPath) this.onSelectPath(hit.item.i, hit.item.chord);
       let alts = [];
@@ -1513,7 +1518,10 @@
         const d = Math.hypot(w.x - a.x, w.y - a.y);
         // Prefer strong joins when two pads compete
         const bias = a.tier === 'good' ? -14 : a.tier === 'ok' ? -4 : 6;
-        const scored = d + bias;
+        // Sticky hysteresis: current lock is harder to lose (stops pad flicker / shake)
+        const sticky =
+          this._snapSticky && this._snapSticky === a ? -10 : 0;
+        const scored = d + bias + sticky;
         if (scored < bestScore) {
           bestScore = scored;
           bestRawD = d;
@@ -1521,18 +1529,21 @@
         }
       });
       const lockR =
-        this.snapRadius * (best && best.tier === 'weak' ? 0.72 : best && best.tier === 'good' ? 1.15 : 1);
-      const pullR = this.snapRadius * (best && best.tier === 'good' ? 1.85 : 1.5);
+        this.snapRadius *
+        (best && best.tier === 'weak' ? 0.72 : best && best.tier === 'good' ? 1.15 : 1);
+      // Softer magnet — less pull thrash near pad boundaries
+      const pullR = this.snapRadius * (best && best.tier === 'good' ? 1.55 : 1.25);
       let mx = w.x;
       let my = w.y;
       if (best && bestRawD < pullR) {
         const t = 1 - bestRawD / pullR;
-        const ease = t * t * (best.tier === 'good' ? 0.82 : 0.65);
+        const ease = t * t * (best.tier === 'good' ? 0.55 : 0.4);
         mx = w.x + (best.x - w.x) * ease;
         my = w.y + (best.y - w.y) * ease;
       }
       // Hard lock only inside snap radius (weaker pads harder to lock)
       if (!best || bestRawD > lockR) best = null;
+      this._snapSticky = best;
       this._dragPos = { x: mx, y: my };
       const prev = this.snapAlt;
       this.snapAlt = best;
@@ -1608,6 +1619,7 @@
     this._dragNode = null;
     this._dragOrigin = null;
     this._dragPos = null;
+    this._snapSticky = null;
     this._last = null;
     this.alts = [];
     this.snapAlt = null;
@@ -1649,11 +1661,18 @@
       requestAnimationFrame(loop);
       this.pulseT += 0.05;
       const cam = this.camera;
-      if (this._mode !== 'pan') {
-        cam.x += (cam.tx - cam.x) * 0.1;
-        cam.y += (cam.ty - cam.y) * 0.1;
+      // Freeze camera while panning or aiming a path chord. If we keep lerping
+      // during drag, screenToWorld drifts every frame (mouse still → world moves)
+      // and the whole map looks like it is shaking.
+      if (this._mode === 'pan' || this._mode === 'node') {
+        cam.x = cam.tx;
+        cam.y = cam.ty;
+        cam.zoom = cam.tz;
+      } else {
+        cam.x += (cam.tx - cam.x) * 0.12;
+        cam.y += (cam.ty - cam.y) * 0.12;
+        cam.zoom += (cam.tz - cam.zoom) * 0.12;
       }
-      cam.zoom += (cam.tz - cam.zoom) * 0.1;
       this.draw();
     };
     loop();
