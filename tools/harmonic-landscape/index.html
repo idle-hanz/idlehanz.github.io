@@ -675,14 +675,14 @@
         <span id="sync-status" class="key" style="font-size:0.72rem;color:var(--muted)"></span>
       </nav>
       <div class="ctrls">
-        <label class="ctl" title="Writing home — map centre &amp; From here gravity. Does not move your chords.">Write home
+        <label class="ctl" title="Pick the destination key — map does not move until you hit Land here">Write home
           <select id="tonic"></select>
         </label>
-        <label class="ctl" title="Mode of the writing home (major/minor colour of the compass)">Mode
+        <label class="ctl" title="Mode for the staged write home — applied with Land here">Mode
           <select id="mode"></select>
         </label>
-        <button type="button" class="btn ghost" id="btn-land-home" title="Set writing home from the selected chord (modulation — chords stay put)">Land here</button>
-        <button type="button" class="btn ghost" id="btn-transpose-all" title="Transpose the whole sequence so it follows Write home (old behaviour)">Transpose all</button>
+        <button type="button" class="btn ghost" id="btn-land-home" title="Commit Write home + Mode as a new Chase disk from the selected step (pitches stay put)">Land here</button>
+        <button type="button" class="btn ghost" id="btn-transpose-all" title="Transpose the whole sequence so pitches follow Write home (moves notes)">Transpose all</button>
         <label class="ctl">BPM
           <input type="number" id="bpm" min="40" max="200" value="96">
         </label>
@@ -781,7 +781,7 @@
         <canvas id="map" aria-label="Harmonic path and directions"></canvas>
         <div class="map-footer">
           <div id="map-status" class="map-status">Select a step</div>
-          <div class="map-legend-line"><strong>Map (Chase):</strong> each key is its own disk · click roman seats to add · drag path chords onto seats · <strong>Land here</strong> / modulate opens a <em>new disk</em> (old key pattern stays) · Land again on an old-key chord to return · purple dashed edge = key change</div>
+          <div class="map-legend-line"><strong>Map (Chase):</strong> each key is its own disk · change Write home/Mode to <em>stage</em> (map stays put) → select pivot step → <strong>Land here</strong> opens the new disk · click roman seats / drag onto seats · purple dashed edge = key change</div>
           <div class="map-legend-line">Active disk = WRITE home · other disks = earlier keys · clockwise ≈ fifths-down</div>
           <div id="traj-caption" class="traj-caption">Path shape appears here</div>
           <div id="time-strip" class="time-strip" title="Click select · drag edge to resize · double-click split"></div>

@@ -33,6 +33,12 @@
     compareCellId: null,
     /** Default length for newly appended chords (From here / Add / Home start) */
     defaultDuration: 4,
+    /**
+     * Staged write-home from the dropdowns. Map does NOT move until Land here.
+     * null = no pending stage (dropdowns match committed state.tonic / state.mode).
+     */
+    pendingTonic: null,
+    pendingMode: null,
   };
 
   let map = null;
@@ -336,9 +342,13 @@
       const bEl = $('#bpm');
       if (bEl) bEl.value = state.bpm;
     }
+    // Session load is committed home — drop any staged dropdown land
+    state.pendingTonic = null;
+    state.pendingMode = null;
     state.selected = Math.max(0, Math.min(state.chords.length - 1, meta.focusIndex || 0));
     map.setOrigin(state.tonic, state.mode);
     recognize({ preserveName: true });
+    updateLandButton();
   }
 
   function ingestHandoffOrSession() {
@@ -521,10 +531,58 @@
     return M().noteName(state.tonic) + ' ' + (M().MODES[state.mode] || {}).name;
   }
 
+  /** Key currently shown in the Write home / Mode dropdowns (may be staged). */
+  function dropdownKey() {
+    const tEl = $('#tonic');
+    const mEl = $('#mode');
+    const t =
+      tEl && tEl.value !== ''
+        ? parseInt(tEl.value, 10)
+        : state.pendingTonic != null
+          ? state.pendingTonic
+          : state.tonic;
+    const m =
+      mEl && mEl.value
+        ? mEl.value
+        : state.pendingMode != null
+          ? state.pendingMode
+          : state.mode;
+    return {
+      tonic: ((Number(t) % 12) + 12) % 12,
+      mode: m || state.mode,
+    };
+  }
+
+  function hasPendingHome() {
+    const d = dropdownKey();
+    return d.tonic !== state.tonic || d.mode !== state.mode;
+  }
+
+  function clearPendingHome() {
+    state.pendingTonic = null;
+    state.pendingMode = null;
+    updateLandButton();
+  }
+
+  /** Highlight Land here when dropdowns differ from the live map home. */
+  function updateLandButton() {
+    const btn = $('#btn-land-home');
+    if (!btn) return;
+    const pending = hasPendingHome();
+    btn.classList.toggle('primary', pending);
+    btn.classList.toggle('ghost', !pending);
+    btn.title = pending
+      ? 'Commit staged key ' +
+        keyLabelFor(dropdownKey()) +
+        ' — open that Chase disk (map stays put until you click)'
+      : 'Land here — use Write home + Mode as the new disk from the selected step';
+  }
+
   /**
    * Writing home = active Chase disk + From here gravity.
    * Existing chords keep their localTonic so each key's pattern stays on its own disk.
    * New chords after this use the new write home.
+   * Call this only on commit (Land here, modulate package, empty-path setup) — not while staging dropdowns.
    */
   function setWritingHome(tonic, mode, opts) {
     opts = opts || {};
@@ -565,8 +623,11 @@
 
     state.tonic = nextT;
     state.mode = nextM;
+    state.pendingTonic = null;
+    state.pendingMode = null;
     if ($('#tonic')) $('#tonic').value = String(state.tonic);
     if ($('#mode')) $('#mode').value = state.mode;
+    updateLandButton();
 
     // Tell map about both keys before path layout
     if (map) {
@@ -690,35 +751,82 @@
   }
 
   /**
-   * Modulation: set writing home from the selected chord (chords stay absolute).
-   * Map / From here now treat that chord as the new centre of gravity.
-   * Earlier steps stay on the previous disk; pivot + later join the new disk.
+   * Commit Write home + Mode from the dropdowns.
+   * Flow: pick key/mode (map stays put) → select the pivot step → Land here.
+   * Chords keep absolute pitches; selected + later join the new disk; earlier stay.
    */
   function landSelectionAsHome() {
-    const ch =
-      state.selected >= 0 && state.chords[state.selected]
-        ? state.chords[state.selected]
-        : state.chords[state.chords.length - 1];
-    if (!ch) {
-      setSyncStatus('Select a chord first, then Land here');
+    const dest = dropdownKey();
+    const sameHome = dest.tonic === state.tonic && dest.mode === state.mode;
+
+    // Empty path: just set the compass (nothing to retag)
+    if (!state.chords.length) {
+      state._prevTonicForTranspose = state.tonic;
+      setWritingHome(dest.tonic, dest.mode, { transpose: false });
+      setSyncStatus('Write home → ' + keyLabel() + ' · empty path · click Home or a seat to start');
       return;
     }
-    // Prefer the chord's existing disk mode if already owned
-    let mode = ch.localMode || state.mode;
-    const q = ch.quality || '';
-    if (q.indexOf('min') === 0 || q === 'halfdim' || q === 'dim') mode = 'minor';
-    else if (q.indexOf('maj') === 0 || q === 'sus4' || q === 'add9') mode = 'major';
-    else if (q === 'dom7') mode = ch.localMode || state.mode;
-    // Pivot chord + later steps sit on the new disk; earlier steps stay on old key disk
+
+    if (sameHome) {
+      setSyncStatus(
+        'Already on ' +
+          keyLabel() +
+          ' · pick a different Write home / Mode, then Land here · or Transpose all to move pitches'
+      );
+      updateLandButton();
+      return;
+    }
+
+    state._prevTonicForTranspose = state.tonic;
     pushUndo();
-    setWritingHome(ch.root, mode, { transpose: false, retagFromSelected: true });
+    // Pivot = selection (or last step): that step + later sit on the new disk
+    setWritingHome(dest.tonic, dest.mode, { transpose: false, retagFromSelected: true });
     const disks = map && map.disks ? map.disks.length : 1;
+    const pivot =
+      state.selected >= 0 && state.selected < state.chords.length
+        ? state.selected + 1
+        : state.chords.length;
     setSyncStatus(
-      'Land here · new disk ' +
+      'Land here · disk ' +
         keyLabel() +
         (disks > 1 ? ' · ' + disks + ' Chase disks' : '') +
-        ' · steps before stay on previous key · click seats on either disk · Land here again to return'
+        ' · from step ' +
+        pivot +
+        ' onward · earlier steps stay on previous key · pitches unchanged'
     );
+  }
+
+  /** Stage Write home / Mode without moving the map (until Land here). */
+  function stageWriteHomeFromDropdowns(opts) {
+    opts = opts || {};
+    const dest = dropdownKey();
+    state.pendingTonic = dest.tonic;
+    state.pendingMode = dest.mode;
+
+    // Empty path: nothing to protect — apply immediately so Home / seats work
+    if (!state.chords.length) {
+      state._prevTonicForTranspose = state.tonic;
+      setWritingHome(dest.tonic, dest.mode, { transpose: false });
+      if (!opts.silent) {
+        setSyncStatus('Write home → ' + keyLabel() + ' · empty path');
+      }
+      return;
+    }
+
+    updateLandButton();
+    if (!opts.silent) {
+      if (hasPendingHome()) {
+        setSyncStatus(
+          'Staged ' +
+            keyLabelFor(dest) +
+            ' · map still ' +
+            keyLabel() +
+            ' (nothing moved) · select pivot step, then Land here'
+        );
+      } else {
+        setSyncStatus('Write home already ' + keyLabel() + ' · change key/mode to stage a land');
+      }
+    }
   }
 
   /** Old behaviour: move every chord so they follow the Write home dropdown. */
@@ -3369,32 +3477,17 @@
     // Track last write-home for optional "Transpose all" after a home change
     state._prevTonicForTranspose = state.tonic;
 
-    $('#tonic').addEventListener('change', (e) => {
-      const prev = state.tonic;
-      const next = parseInt(e.target.value, 10);
-      state._prevTonicForTranspose = prev;
-      // Default: move compass only (modulation / re-centre) — do NOT transpose
-      setWritingHome(next, state.mode, { transpose: false });
-      setSyncStatus(
-        'Write home → ' +
-          keyLabel() +
-          (state.chords.length
-            ? ' · chords stay put · Land here = from selection · Transpose all = move pitches'
-            : ' · empty path · Home centre is this tonic')
-      );
+    // Dropdowns only STAGE a new home — map does not move until Land here
+    $('#tonic').addEventListener('change', () => {
+      stageWriteHomeFromDropdowns();
     });
-    $('#mode').addEventListener('change', (e) => {
-      const next = e.target.value;
-      setWritingHome(state.tonic, next, { transpose: false });
-      setSyncStatus(
-        'Write mode → ' +
-          keyLabel() +
-          ' · From here + map colours update · chords unchanged (use Parallel vary to flip qualities)'
-      );
+    $('#mode').addEventListener('change', () => {
+      stageWriteHomeFromDropdowns();
     });
     if ($('#btn-land-home')) {
       $('#btn-land-home').addEventListener('click', landSelectionAsHome);
     }
+    updateLandButton();
     if ($('#btn-transpose-all')) {
       $('#btn-transpose-all').addEventListener('click', () => {
         if (!state.chords.length) {
