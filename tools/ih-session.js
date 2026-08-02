@@ -459,6 +459,9 @@
       tag: c.tag || '',
     };
     if (notes.length) out.notes = notes;
+    // Multi-disk / modulation: which Chase key owns this step
+    if (c.localTonic != null) out.localTonic = ((c.localTonic % 12) + 12) % 12;
+    if (c.localMode) out.localMode = c.localMode;
     if (isCustom) {
       out.custom = true;
       out.name = c.name || customChordLabel(root, notes.length ? notes : [root]);

@@ -109,6 +109,7 @@
     }
     ch.localTonic = sc.localTonic != null ? sc.localTonic : state.tonic;
     ch.localMode = sc.localMode || state.mode;
+    if (map && map.rememberKey) map.rememberKey(ch.localTonic, ch.localMode);
     return ch;
   }
 
@@ -469,8 +470,8 @@
 
   /**
    * Writing home = active Chase disk + From here gravity.
-   * Does NOT retag existing chords (they keep localTonic so old-key patterns stay on their disk).
-   * New chords written after this use the new home.
+   * Existing chords keep their localTonic so each key's pattern stays on its own disk.
+   * New chords after this use the new write home.
    */
   function setWritingHome(tonic, mode, opts) {
     opts = opts || {};
@@ -480,42 +481,63 @@
     const nextM = mode || state.mode;
     const delta = (nextT - prevT + 12) % 12;
 
-    if (opts.transpose && delta && state.chords.length) {
-      pushUndo();
-      state.chords = state.chords.map((ch) => transposeChord(ch, delta, nextT, nextM));
-    }
-
-    // Optional: mark from selected step onward as belonging to the new key (modulation from pivot)
-    if (opts.retagFromSelected && !opts.transpose && state.chords.length) {
-      const from =
-        state.selected >= 0 ? state.selected : state.chords.length - 1;
-      for (let i = Math.max(0, from); i < state.chords.length; i++) {
-        state.chords[i].localTonic = nextT;
-        state.chords[i].localMode = nextM;
-      }
-    }
-
-    // Ensure every chord has a local key (legacy) — only fill missing, never overwrite
+    // Stamp ownership BEFORE switching gravity (so old path stays on old disk)
     state.chords.forEach((ch) => {
       if (ch.localTonic == null) ch.localTonic = prevT;
       if (!ch.localMode) ch.localMode = prevM;
     });
 
+    if (opts.transpose && delta && state.chords.length) {
+      pushUndo();
+      state.chords = state.chords.map((ch) => transposeChord(ch, delta, nextT, nextM));
+    }
+
+    // Modulation pivot: selected + later steps move to the new disk; earlier stay
+    if (opts.retagFromSelected && !opts.transpose && state.chords.length) {
+      const from =
+        state.selected >= 0 && state.selected < state.chords.length
+          ? state.selected
+          : state.chords.length - 1;
+      for (let i = 0; i < state.chords.length; i++) {
+        if (i < from) {
+          // freeze on previous write home
+          state.chords[i].localTonic = prevT;
+          state.chords[i].localMode = prevM;
+        } else {
+          state.chords[i].localTonic = nextT;
+          state.chords[i].localMode = nextM;
+        }
+      }
+    }
+
     state.tonic = nextT;
     state.mode = nextM;
     if ($('#tonic')) $('#tonic').value = String(state.tonic);
     if ($('#mode')) $('#mode').value = state.mode;
-    if (map) map.setOrigin(state.tonic, state.mode);
+
+    // Tell map about both keys before path layout
+    if (map) {
+      if (map.rememberKey) {
+        map.rememberKey(prevT, prevM);
+        map.rememberKey(nextT, nextM);
+      }
+      map.setOrigin(state.tonic, state.mode);
+      map.setPath(state.chords, state.selected);
+      map.setHorizon(buildHorizon({ forMap: true, limit: 14 }));
+      if (map.disks && map.disks.length > 1 && map.cameraMode === 'home') {
+        // Zoom out enough to see both disks
+        map.camera.tz = Math.min(map.camera.tz || 1, 0.72);
+        map.camera.tx = 0;
+        map.camera.ty = 0;
+      }
+    }
 
     if (opts.skipEdit) {
-      if (map) {
-        map.setOrigin(state.tonic, state.mode);
-        map.setPath(state.chords, state.selected);
-        map.setHorizon(buildHorizon({ forMap: true, limit: 14 }));
-      }
       renderTitle();
       renderHorizonLists();
       updateMapStatus();
+      renderTimeStrip();
+      refreshAltPath();
     } else {
       afterEdit();
     }

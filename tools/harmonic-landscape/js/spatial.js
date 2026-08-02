@@ -117,10 +117,11 @@
       mode: mode || 'minor',
     };
     const prev = this.origin;
-    const changed =
-      prev && (prev.tonic !== next.tonic || prev.mode !== next.mode);
+    if (prev && (prev.tonic !== next.tonic || prev.mode !== next.mode)) {
+      this.rememberKey(prev.tonic, prev.mode);
+    }
     this.origin = next;
-    // Rebuild multi-disk set from path keys + new write home
+    this.rememberKey(next.tonic, next.mode);
     this._rebuildDisks();
     if (this.path && this.path.length) {
       this._layoutPath();
@@ -133,44 +134,47 @@
   };
 
   /**
-   * One Chase disk per key used in the path + current write home.
-   * Active write-home at origin; other keys orbit by fifths distance so you can
-   * keep the old-key pattern, walk a new disk, then return.
+   * One Chase disk per remembered key + keys used in the path.
+   * Active write-home at origin; other keys clearly offset so both patterns stay visible.
    */
   SpatialMap.prototype._rebuildDisks = function () {
     const M = global.HLMusic;
-    const R = Math.min(this.w || 500, this.h || 360) * 0.42;
+    const R = Math.min(this.w || 500, this.h || 360) * 0.38;
     const keys = new Map();
 
-    // Always include current write home (active)
-    const activeId = this._keyId(this.origin.tonic, this.origin.mode);
-    keys.set(activeId, {
-      tonic: this.origin.tonic,
-      mode: this.origin.mode,
-      active: true,
-    });
+    const addKey = (tonic, mode, active) => {
+      if (tonic == null) return;
+      const t = ((tonic % 12) + 12) % 12;
+      const m = mode || 'minor';
+      const id = this._keyId(t, m);
+      const prev = keys.get(id);
+      keys.set(id, {
+        tonic: t,
+        mode: m,
+        active: !!(active || (prev && prev.active)),
+      });
+      this.rememberKey(t, m);
+    };
 
-    // Keys already used by chords (preserve multi-key journey)
+    // Ledger first (modulation history)
+    (this.keyLedger || []).forEach((k) => addKey(k.tonic, k.mode, false));
+
+    // Path ownership
     (this.path || []).forEach((ch) => {
       if (!ch) return;
-      const t = ch.localTonic != null ? ch.localTonic : this.origin.tonic;
-      const m = ch.localMode || this.origin.mode;
-      const id = this._keyId(t, m);
-      if (!keys.has(id)) {
-        keys.set(id, { tonic: t, mode: m, active: false });
-      }
+      const t = ch.localTonic != null ? ch.localTonic : null;
+      const m = ch.localMode || null;
+      if (t != null) addKey(t, m || this.origin.mode, false);
     });
 
-    // Keep any previous disks that still matter (write-home history)
-    (this.disks || []).forEach((d) => {
-      const id = this._keyId(d.tonic, d.mode);
-      if (!keys.has(id)) {
-        keys.set(id, { tonic: d.tonic, mode: d.mode, active: false });
-      }
+    // Current write home (active)
+    addKey(this.origin.tonic, this.origin.mode, true);
+    // Clear active flags then set only write home active
+    keys.forEach((k) => {
+      k.active = this._keyId(k.tonic, k.mode) === this._keyId(this.origin.tonic, this.origin.mode);
     });
 
     const list = Array.from(keys.values());
-    // Stable order: active first, then by fifths distance from active
     list.sort((a, b) => {
       if (a.active) return -1;
       if (b.active) return 1;
@@ -179,24 +183,26 @@
       return da - db || a.tonic - b.tonic;
     });
 
-    const nOther = Math.max(1, list.length - 1);
-    this.disks = list.map((k, i) => {
+    const others = list.filter((k) => !k.active);
+    this.disks = list.map((k) => {
       const isActive = !!k.active;
       let cx = 0;
       let cy = 0;
       let dR = R;
       if (!isActive) {
+        const idx = others.indexOf(k);
         const steps =
-          M && M.fifthsDistance ? M.fifthsDistance(this.origin.tonic, k.tonic) : i;
-        // Spread secondary disks around the active one
-        const slot = i; // 1..n
+          M && M.fifthsDistance ? M.fifthsDistance(this.origin.tonic, k.tonic) : idx + 1;
+        // Always offset — never sit under the active disk
         const ang =
           -Math.PI / 2 +
-          (steps !== 0 ? (steps / 6) * Math.PI : (slot / nOther) * Math.PI * 2);
-        const dist = R * (1.55 + (slot > 2 ? 0.25 * (slot - 2) : 0));
+          (steps !== 0
+            ? (steps / 6) * Math.PI
+            : ((idx + 1) / Math.max(1, others.length)) * Math.PI * 1.6 - 0.4);
+        const dist = R * (1.85 + idx * 0.35);
         cx = Math.cos(ang) * dist;
-        cy = Math.sin(ang) * dist * 0.88;
-        dR = R * 0.78;
+        cy = Math.sin(ang) * dist * 0.9;
+        dR = R * 0.85;
       }
       return {
         tonic: k.tonic,
@@ -208,6 +214,13 @@
         label: M ? M.noteName(k.tonic) : '?',
       };
     });
+
+    // Auto frame when multiple disks
+    if (this.disks.length > 1 && this.cameraMode === 'home') {
+      this.camera.tz = Math.min(this.camera.tz || 1, 0.65);
+      this.camera.tx = 0;
+      this.camera.ty = 0;
+    }
     this._rebuildScaleSeats();
   };
 
@@ -918,11 +931,12 @@
     if (!this.disks || !this.disks.length) this._rebuildDisks(false);
 
     // ── Chase disks (circular harmonic scales) ──
-    // Draw inactive (previous key) first, then active write-home disk
+    // Draw inactive keys first (clearly visible), then active write-home disk
     const disksDraw = (this.disks || []).slice().sort((a, b) => (a.active ? 1 : 0) - (b.active ? 1 : 0));
     disksDraw.forEach((disk) => {
       const active = !!disk.active;
-      const alpha = active ? 1 : 0.38;
+      // Inactive disks must read as full second charts, not a faint ghost
+      const alpha = active ? 1 : 0.72;
       ctx.globalAlpha = alpha;
       const cx = disk.cx || 0;
       const cy = disk.cy || 0;
