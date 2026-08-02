@@ -359,7 +359,7 @@ H.resolveCompareCell = function (song) {
           H.setSyncStatus(
             'Blue compare → ' +
               (song.cells[id] && song.cells[id].name) +
-              ' · gold = what you edit · Alt-click again or Clear blue to hide'
+              ' · gold = what you edit · Alt-click that chip again to turn off'
           );
           return;
         }
@@ -374,10 +374,6 @@ H.resolveCompareCell = function (song) {
         if (delId) H.deleteVersion(delId);
       });
     });
-    const clearBlue = host.querySelector('#btn-clear-blue');
-    if (clearBlue) {
-      clearBlue.addEventListener('click', () => H.clearBlueCompare());
-    }
     const sel = host.querySelector('#cell-switch');
     if (sel) {
       sel.addEventListener('change', () => {
