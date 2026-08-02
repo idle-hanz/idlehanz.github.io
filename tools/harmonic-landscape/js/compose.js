@@ -964,6 +964,84 @@
   // ─── Modulation helpers ──────────────────────────────────
 
   /**
+   * Keys adjacent on the circle from a pivot key — Chase halo candidates.
+   * Dominant / subdominant / relative / parallel only (bounded choice).
+   */
+  function adjacentKeys(tonic, modeKey, count = 4) {
+    const music = M();
+    const t = music.pc(tonic);
+    const mode = modeKey || 'minor';
+    const isMinor = (music.MODES[mode] || music.MODES.minor).romanBase === 'minor';
+    const out = [];
+    const seen = new Set();
+    const add = (pc, m, relation, character) => {
+      const tt = ((pc % 12) + 12) % 12;
+      const mm = m || mode;
+      const id = tt + ':' + mm;
+      if (tt === t && mm === mode) return;
+      if (seen.has(id)) return;
+      seen.add(id);
+      out.push({
+        tonic: tt,
+        mode: mm,
+        relation: relation,
+        character: character || '',
+        name:
+          music.noteName(tt) +
+          ' ' +
+          ((music.MODES[mm] || music.MODES.minor).name || mm),
+      });
+    };
+    add(t + 7, mode, 'Dominant key', 'Strong pull away');
+    add(t + 5, mode, 'Subdominant key', 'Softer side-step');
+    if (isMinor) {
+      add(t + 3, 'major', 'Relative major', 'Brighter sibling');
+      add(t, 'major', 'Parallel major', 'Same root, major colour');
+    } else {
+      add(t + 9, 'minor', 'Relative minor', 'Darker sibling');
+      add(t, 'minor', 'Parallel minor', 'Same root, minor colour');
+    }
+    return out.slice(0, count);
+  }
+
+  /**
+   * Short “plant home” packages in a destination key (establish, not just colour).
+   * Used on Chase ghost wheels around the pivot.
+   */
+  function establishHomeOptions(toTonic, toMode) {
+    const music = M();
+    const t = music.pc(toTonic);
+    const mode = toMode || 'minor';
+    const isMinor = (music.MODES[mode] || music.MODES.minor).romanBase === 'minor';
+    const tonicChord = music.makeChord(t, isMinor ? 'min' : 'maj', {
+      region: 'diatonic',
+      roman: isMinor ? 'i' : 'I',
+      tag: 'establish',
+    });
+    const dominant = music.makeChord((t + 7) % 12, 'dom7', {
+      region: 'diatonic',
+      roman: 'V7',
+      tag: 'establish',
+    });
+    return [
+      {
+        id: 'tonic',
+        label: tonicChord.name,
+        job: 'land tonic',
+        character: 'Direct home in new key',
+        route: [tonicChord],
+      },
+      {
+        id: 'cadence',
+        label: dominant.name + ' → ' + tonicChord.name,
+        job: 'V7 → home',
+        character: 'Clear cadence — establishes the key',
+        route: [dominant, tonicChord],
+      },
+    ];
+  }
+
+  /**
    * Common modulation targets from current writing key.
    * Chords stay absolute; this only suggests where gravity can move.
    */
@@ -1259,6 +1337,8 @@
     tasteKey,
     countExoticStreak,
     modulationTargets,
+    adjacentKeys,
+    establishHomeOptions,
     pivotChords,
     waysIntoKey,
     closeAlternates,

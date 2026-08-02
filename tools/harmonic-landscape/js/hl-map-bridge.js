@@ -299,6 +299,57 @@ H.chordFromChaseSeat = function (seat, key) {
   }
 
   /**
+   * Commit “establish home” on a Chase ghost adjacent-key wheel.
+   * Writes V7→I or tonic into the path and switches write home to that key.
+   */
+  H.establishKeyFromGhost = function (opt) {
+    if (!opt || !opt.ghostDisk) return;
+    const g = opt.ghostDisk;
+    const route = (opt.route || []).map((c) => {
+      const x = H.M().cloneChord
+        ? H.M().cloneChord(c)
+        : { ...c, notes: (c.notes || []).slice() };
+      x.duration = H.stepDuration();
+      x.tag = x.tag || 'establish';
+      H.stampKey(x, { tonic: g.tonic, mode: g.mode });
+      return x;
+    });
+    if (!route.length) return;
+
+    // Switch gravity to the new key (path pivot+later retag); may flip Function→Chase
+    H.setWritingHome(g.tonic, g.mode, {
+      transpose: false,
+      retagFromSelected: true,
+      skipEdit: true,
+    });
+
+    // Write establish package at selection
+    H.commitHorizon(
+      {
+        chord: route[0],
+        route: route.length > 1 ? route : undefined,
+        kind: 'modulate',
+        label: opt.label || route.map((c) => c.name).join(' → '),
+        job: opt.job || 'establish home',
+      },
+      { mode: 'replace' }
+    );
+
+    const isMin =
+      g.mode === 'minor' ||
+      ((H.M().MODES[g.mode] || {}).romanBase === 'minor');
+    H.setSyncStatus(
+      'Established ' +
+        H.M().noteName(g.tonic) +
+        (isMin ? 'm' : '') +
+        ' · ' +
+        (opt.job || opt.label || '') +
+        (g.relation ? ' · ' + g.relation : '') +
+        ' · ghost wheel is now a traveled disk'
+    );
+  };
+
+  /**
    * Click a Chase seat: write that scale chord into the path.
    * Seat on inactive disk → write onto that disk and switch write home (no full-path retag).
    */

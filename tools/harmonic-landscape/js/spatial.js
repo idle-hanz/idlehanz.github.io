@@ -27,9 +27,13 @@
     this.w = 0;
     this.h = 0;
     this.origin = { tonic: 11, mode: 'minor' };
-    /** Chase disks: active write-home + optional previous key */
+    /** Chase disks: active write-home + keys traveled in the path */
     this.disks = [];
-    this.keyLedger = []; // modulation history — always draw a disk per key
+    this.keyLedger = []; // optional history (not all drawn — path owns travel)
+    /** Ghost adjacent-key wheels around the pivot (Chase only) */
+    this.ghostDisks = [];
+    /** Establish-home pads on ghost disks */
+    this.ghostOptions = [];
     this.path = [];
     this.nodes = [];
     this.altPath = [];
@@ -61,6 +65,8 @@
     this.onSwapChord = null;
     this.onPullChord = null; // (pathIndex, chord, meta) only when aimed at a target
     this.onSelectAltNode = null; // click blue compare node
+    this.onSelectGhostOption = null; // establish home on adjacent key
+    this.onHoverGhostOption = null;
     this.onAimChange = null; // (pathIndex, target|{null}, meta) for live audition
     this.onInsertBetween = null; // (afterIndex) => void
     this.onTrajectory = null; // (caption) => void
@@ -169,8 +175,8 @@
   };
 
   /**
-   * One Chase disk per remembered key + keys used in the path.
-   * Active write-home at origin; other keys clearly offset so both patterns stay visible.
+   * Solid Chase disks = keys you traveled (path ownership) + write home.
+   * Adjacent unexplored keys are ghost disks from _rebuildGhostHalo (not here).
    */
   SpatialMap.prototype._rebuildDisks = function () {
     const M = global.HLMusic;
@@ -191,10 +197,7 @@
       this.rememberKey(t, m);
     };
 
-    // Ledger first (modulation history)
-    (this.keyLedger || []).forEach((k) => addKey(k.tonic, k.mode, false));
-
-    // Path ownership
+    // Path ownership = wheels you traveled through
     (this.path || []).forEach((ch) => {
       if (!ch) return;
       const t = ch.localTonic != null ? ch.localTonic : null;
@@ -202,7 +205,7 @@
       if (t != null) addKey(t, m || this.origin.mode, false);
     });
 
-    // Current write home (active)
+    // Current write home (active) — always present
     addKey(this.origin.tonic, this.origin.mode, true);
     // Clear active flags then set only write home active
     keys.forEach((k) => {
@@ -261,6 +264,90 @@
       this.camera.ty = 0;
     }
     this._rebuildScaleSeats();
+    this._rebuildGhostHalo();
+  };
+
+  /**
+   * Chase halo: adjacent keys around the pivot (selected path step).
+   * Ghost wheels offer “establish home” pads; they clear when pivot moves
+   * unless that key becomes a solid traveled disk.
+   */
+  SpatialMap.prototype._rebuildGhostHalo = function () {
+    this.ghostDisks = [];
+    this.ghostOptions = [];
+    if (this.mapView !== 'chase') return;
+    if (!this.path || !this.path.length) return;
+    const M = global.HLMusic;
+    const C = global.HLCompose || M;
+    if (!M || !C || !C.adjacentKeys || !C.establishHomeOptions) return;
+
+    const idx =
+      this.current >= 0 && this.current < this.path.length
+        ? this.current
+        : this.path.length - 1;
+    const pivotCh = this.path[idx];
+    if (!pivotCh) return;
+
+    const pT =
+      pivotCh.localTonic != null ? pivotCh.localTonic : this.origin.tonic;
+    const pM = pivotCh.localMode || this.origin.mode;
+    const pivotDisk = this._diskForChord(pivotCh) || this._activeDisk();
+    const basex = pivotDisk.cx || 0;
+    const basey = pivotDisk.cy || 0;
+    const baseR = pivotDisk.R || 120;
+
+    const solidIds = new Set(
+      (this.disks || []).map((d) => this._keyId(d.tonic, d.mode))
+    );
+    const adj = C.adjacentKeys(pT, pM, 4).filter(
+      (k) => !solidIds.has(this._keyId(k.tonic, k.mode))
+    );
+    if (!adj.length) return;
+
+    const gR = baseR * 0.72;
+    const dist = baseR * 1.65;
+    // Fan ghosts around pivot disk, slightly outward on fifths circle
+    adj.forEach((k, i) => {
+      let steps = M.fifthsDistance ? M.fifthsDistance(pT, k.tonic) : i + 1;
+      if (steps === 0) steps = k.mode !== pM ? 0.5 : i + 1;
+      const ang =
+        -Math.PI / 2 +
+        (steps !== 0
+          ? (steps / 6) * Math.PI
+          : ((i + 0.5) / adj.length) * Math.PI * 1.5 - 0.4);
+      const gcx = basex + Math.cos(ang) * dist;
+      const gcy = basey + Math.sin(ang) * dist * 0.9;
+      const ghost = {
+        tonic: k.tonic,
+        mode: k.mode,
+        cx: gcx,
+        cy: gcy,
+        R: gR,
+        active: false,
+        ghost: true,
+        relation: k.relation || '',
+        character: k.character || '',
+        label: M.noteName(k.tonic),
+        pivotIndex: idx,
+      };
+      this.ghostDisks.push(ghost);
+
+      const opts = C.establishHomeOptions(k.tonic, k.mode);
+      // Stack establish pads at ghost centre (I above, V7→I below)
+      opts.forEach((opt, j) => {
+        this.ghostOptions.push({
+          id: opt.id,
+          label: opt.label,
+          job: opt.job,
+          character: opt.character,
+          route: opt.route,
+          ghostDisk: ghost,
+          x: gcx,
+          y: gcy + (j === 0 ? -16 : 16),
+          r: 15,
+        });
+      });
+    });
   };
 
   SpatialMap.prototype._activeDisk = function () {
@@ -991,6 +1078,7 @@
     this._layoutAltPath();
     this._computeDivergent();
     this._rebuildScaleSeats();
+    this._rebuildGhostHalo();
     // View switch / explicit keep: don't yank the wheel to Home lock
     if (this._mode !== 'node' && !this._keepCameraOnce) this._applyCameraForMode();
   };
@@ -1624,6 +1712,23 @@
       }
     }
 
+    // Ghost establish-home pads (Chase pivot halo)
+    if (this.mapView === 'chase' && this.ghostOptions && this.ghostOptions.length) {
+      for (let i = 0; i < this.ghostOptions.length; i++) {
+        const g = this.ghostOptions[i];
+        const d = Math.hypot(w.x - g.x, w.y - g.y);
+        if (d <= (g.r || 14) + 6) add({ type: 'ghostOption', item: g }, d, 0.3);
+      }
+    }
+    // Ghost disk face (weaker than pads)
+    if (this.mapView === 'chase' && this.ghostDisks && this.ghostDisks.length) {
+      for (let i = 0; i < this.ghostDisks.length; i++) {
+        const g = this.ghostDisks[i];
+        const d = Math.hypot(w.x - (g.cx || 0), w.y - (g.cy || 0));
+        if (d <= (g.R || 60) * 0.55) add({ type: 'ghostDisk', item: g }, d, 4);
+      }
+    }
+
     // Compare-path alt nodes
     if (this.showAlt && this.altNodes && this.altNodes.length) {
       for (let i = 0; i < this.altNodes.length; i++) {
@@ -1687,6 +1792,19 @@
       // Click centre of a previous-key disk → re-activate that write home
       if (this.onSelectDiskHome) this.onSelectDiskHome(hit.item);
       else if (this.onSelectHome && hit.item && hit.item.active) this.onSelectHome();
+      return;
+    }
+    if (hit && hit.type === 'ghostOption') {
+      if (this.onSelectGhostOption) this.onSelectGhostOption(hit.item);
+      return;
+    }
+    if (hit && hit.type === 'ghostDisk') {
+      // Soft select first establish option (tonic) if present
+      const opts = (this.ghostOptions || []).filter(
+        (o) => o.ghostDisk === hit.item || (o.ghostDisk && hit.item && o.ghostDisk.tonic === hit.item.tonic && o.ghostDisk.mode === hit.item.mode)
+      );
+      const pick = opts.find((o) => o.id === 'tonic') || opts[0];
+      if (pick && this.onSelectGhostOption) this.onSelectGhostOption(pick);
       return;
     }
     if (hit && hit.type === 'edge' && this.onInsertBetween) {
@@ -1814,6 +1932,13 @@
     }
     if (hit && hit.type === 'home' && (!prev || prev.type !== 'home')) {
       if (this.onHoverHome) this.onHoverHome();
+      this.canvas.style.cursor = 'pointer';
+    }
+    if (hit && hit.type === 'ghostOption' && (!prev || prev.item !== hit.item)) {
+      if (this.onHoverGhostOption) this.onHoverGhostOption(hit.item);
+      this.canvas.style.cursor = 'pointer';
+    }
+    if (hit && hit.type === 'ghostDisk') {
       this.canvas.style.cursor = 'pointer';
     }
   };
@@ -2079,15 +2204,98 @@
       if (!active) {
         ctx.fillStyle = 'rgba(160,180,210,0.55)';
         ctx.font = `${8 / this.camera.zoom}px Crimson Text, Georgia, serif`;
-        ctx.fillText('earlier key', cx, cy + dR * 0.95);
+        ctx.fillText('traveled', cx, cy + dR * 0.95);
       } else {
         ctx.fillStyle = 'rgba(180,168,150,0.4)';
         ctx.font = `${8 / this.camera.zoom}px Crimson Text, Georgia, serif`;
-        ctx.fillText('fifths ↓ homeward', cx, cy + dR * 1.18);
+        ctx.fillText('write home', cx, cy + dR * 1.18);
       }
 
       ctx.globalAlpha = 1;
     });
+
+    // ── Ghost adjacent-key halo (Chase only) ──
+    if (this.mapView === 'chase' && this.ghostDisks && this.ghostDisks.length) {
+      const z = this.camera.zoom || 1;
+      this.ghostDisks.forEach((g) => {
+        const gcx = g.cx || 0;
+        const gcy = g.cy || 0;
+        const gR = g.R || 80;
+        const hot =
+          this.hover &&
+          ((this.hover.type === 'ghostDisk' && this.hover.item === g) ||
+            (this.hover.type === 'ghostOption' &&
+              this.hover.item &&
+              this.hover.item.ghostDisk === g));
+        ctx.globalAlpha = hot ? 0.85 : 0.55;
+        ctx.beginPath();
+        ctx.ellipse(gcx, gcy, gR * 1.05, gR * 1.05 * 0.88, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = hot ? 'rgba(167,139,250,0.75)' : 'rgba(167,139,250,0.35)';
+        ctx.lineWidth = (hot ? 2.2 : 1.4) / z;
+        ctx.setLineDash([5 / z, 5 / z]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.ellipse(gcx, gcy, gR * 0.72, gR * 0.72 * 0.88, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(167,139,250,0.2)';
+        ctx.lineWidth = 1 / z;
+        ctx.stroke();
+        // Soft face
+        const gg = ctx.createRadialGradient(gcx, gcy, gR * 0.1, gcx, gcy, gR);
+        gg.addColorStop(0, 'rgba(40, 32, 55, 0.35)');
+        gg.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = gg;
+        ctx.beginPath();
+        ctx.ellipse(gcx, gcy, gR, gR * 0.88, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Key label
+        const isMin =
+          g.mode === 'minor' ||
+          (M && M.MODES && M.MODES[g.mode] && M.MODES[g.mode].romanBase === 'minor');
+        const nm = M ? M.noteName(g.tonic) + (isMin ? 'm' : '') : g.label || '?';
+        ctx.fillStyle = hot ? '#e9d5ff' : 'rgba(196,180,230,0.85)';
+        ctx.font = `bold ${11 / z}px DM Sans, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(nm, gcx, gcy - gR * 0.95);
+        ctx.fillStyle = 'rgba(167,139,250,0.7)';
+        ctx.font = `${8 / z}px DM Sans, sans-serif`;
+        ctx.fillText(g.relation || 'nearby key', gcx, gcy - gR * 0.95 + 12 / z);
+      });
+      // Establish-home pads
+      (this.ghostOptions || []).forEach((opt) => {
+        const isH =
+          this.hover &&
+          this.hover.type === 'ghostOption' &&
+          this.hover.item === opt;
+        ctx.globalAlpha = isH ? 0.95 : 0.8;
+        ctx.beginPath();
+        ctx.arc(opt.x, opt.y, (opt.r || 14) * (isH ? 1.15 : 1), 0, Math.PI * 2);
+        ctx.fillStyle = isH ? 'rgba(167,139,250,0.75)' : 'rgba(20,16,28,0.88)';
+        ctx.fill();
+        ctx.strokeStyle = isH ? '#e9d5ff' : 'rgba(167,139,250,0.7)';
+        ctx.lineWidth = (isH ? 2.4 : 1.6) / z;
+        ctx.stroke();
+        ctx.fillStyle = isH ? '#1a1020' : '#e9d5ff';
+        ctx.font = `bold ${9 / z}px DM Sans, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // Short label: roman-ish job or name
+        const short =
+          opt.id === 'tonic'
+            ? opt.label || 'I'
+            : opt.id === 'cadence'
+              ? 'V7→I'
+              : (opt.label || '?').slice(0, 8);
+        ctx.fillText(short, opt.x, opt.y - (opt.job ? 3 / z : 0));
+        if (opt.job && isH) {
+          ctx.fillStyle = 'rgba(233,213,255,0.9)';
+          ctx.font = `${7.5 / z}px DM Sans, sans-serif`;
+          ctx.fillText(opt.job, opt.x, opt.y + 10 / z);
+        }
+      });
+      ctx.globalAlpha = 1;
+    }
 
     // Function neighbourhood chart (same write-home key — not a second disk)
     if (this.mapView === 'function') {
@@ -2683,11 +2891,20 @@
                         (this.hover.item.activeDisk
                           ? ' · drag a path chord onto a seat to move it'
                           : ' on other disk · switches write home')
-                      : this.mapView === 'function'
-                        ? 'Function · same-key atlas · blue V7 · purple borrow · Land/mod → Chase'
-                        : this.nodes && this.nodes.length
-                          ? 'Click scale seats · Land here = new disk · drag onto I/IV/V… · hollow = suggestions'
-                          : 'Click HOME or a roman seat (IV, V, vi…) to start';
+                      : this.hover && this.hover.type === 'ghostOption'
+                        ? 'Establish home in ' +
+                          ((this.hover.item &&
+                            this.hover.item.ghostDisk &&
+                            this.hover.item.label) ||
+                            'nearby key') +
+                          ' · click to land'
+                        : this.hover && this.hover.type === 'ghostDisk'
+                          ? 'Nearby key · click a pad (I or V7→I) to establish home'
+                          : this.mapView === 'function'
+                            ? 'Function · same-key atlas · blue V7 · purple borrow · Land/mod → Chase'
+                            : this.nodes && this.nodes.length
+                              ? 'Chase · seats = in-key · purple ghosts = adjacent keys · establish home to travel'
+                              : 'Click HOME or a roman seat (IV, V, vi…) to start';
     ctx.fillText(tip, 10, h - 12);
 
     // Map reading legend (top-left)
@@ -2696,7 +2913,7 @@
     ctx.fillText(
       this.mapView === 'function'
         ? 'Function · gold diatonic · blue V7→target · purple borrow · same write-home key'
-        : 'Chase disk = key · Land here = new disk · click dim disk centre to return · seats on any disk',
+        : 'Chase · solid = traveled keys · purple ghosts = nearby keys from pivot · I / V7→I plant home',
       10,
       14
     );

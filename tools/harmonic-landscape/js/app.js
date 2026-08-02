@@ -42,6 +42,30 @@
           ' · older disk reactivated · path steps keep their disks · Land here retags from selection'
       );
     };
+    // Ghost adjacent-key wheel: establish home (V7→I or tonic)
+    H.map.onSelectGhostOption = (opt) => H.establishKeyFromGhost(opt);
+    H.map.onHoverGhostOption = (opt) => {
+      if (!opt) return;
+      H.A().ensure();
+      const route = opt.route || [];
+      if (route[0]) {
+        H.A().playChord({ chord: route[0], soft: true, duration: 0.4 });
+      }
+      H.setSyncStatus(
+        (opt.ghostDisk
+          ? H.M().noteName(opt.ghostDisk.tonic) +
+            ((opt.ghostDisk.mode || '').indexOf('min') === 0 ||
+            (H.M().MODES[opt.ghostDisk.mode] || {}).romanBase === 'minor'
+              ? 'm'
+              : '') +
+            ' · '
+          : '') +
+          (opt.label || '') +
+          ' · ' +
+          (opt.character || opt.job || 'establish home') +
+          ' · click to land'
+      );
+    };
     H.map.onRequestAlts = (pathIndex, chord) => H.buildAimTargets(pathIndex, chord);
     H.map.onSwapChord = (pathIndex, newChord) => {
       H.applyChordAtIndex(pathIndex, newChord, { pullNeighbors: false });
