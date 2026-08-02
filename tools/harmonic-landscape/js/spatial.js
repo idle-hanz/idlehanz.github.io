@@ -343,9 +343,8 @@
         M &&
         M.chaseChordPos
       ) {
-        // Place V7s INSIDE the home ring, next to their target.
-        // Purple borrow gates only run outward (home ring → outer orbit), so
-        // an inner belt never sits on those rays.
+        // Place V7s on a mid belt beside their TARGET, angularly offset so they
+        // do NOT sit on radial borrow-gate lines (home → outer purple orbit).
         const target = byId[n.resolvesToId];
         const probe =
           target && target.chord
@@ -356,10 +355,10 @@
               };
         const base = M.chaseChordPos(probe, t, mode, { cx: cx, cy: cy, R: R });
         const tAng = Math.atan2(base.y - cy, base.x - cx);
-        // Inner of diatonic seats (~0.66R after 0.9 scale) — clear of gate corridor
-        const rad = R * 0.48;
-        // Slight clockwise of target: short resolve arrow out to gold seat
-        const ang = tAng + 0.42;
+        // Mid radius between home ring (~0.9R) and borrow orbit (~1.38R)
+        const rad = R * 1.08;
+        // Clockwise of target so resolve arrow is short & clear of purple radials
+        const ang = tAng + 0.52;
         x = cx + Math.cos(ang) * rad;
         y = cy + Math.sin(ang) * rad * 0.88;
       } else if (M && M.chaseChordPos) {
@@ -464,16 +463,17 @@
 
       const lit = !hoverId || edgeTouchesHover(e);
       const dim = hoverId && !edgeTouchesHover(e);
-      // Gate lines: gentle outward curve (V7s live inside home ring, not on these rays)
+      // Gate lines curve outward so they don't look collinear with mid-belt V7s
       const isGate = e.kind === 'gate';
       ctx.beginPath();
       if (isGate) {
         const mx = (a.x + b.x) / 2;
         const my = (a.y + b.y) / 2;
+        // Perpendicular bulge away from origin so path skirts the dominant belt
         const ox = mx - (this._activeDisk().cx || 0);
         const oy = my - (this._activeDisk().cy || 0);
         const olen = Math.hypot(ox, oy) || 1;
-        const bulge = 18;
+        const bulge = 28;
         const cpx = mx + (ox / olen) * bulge;
         const cpy = my + (oy / olen) * bulge;
         ctx.moveTo(a.x, a.y);
