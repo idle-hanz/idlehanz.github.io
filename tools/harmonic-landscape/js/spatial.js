@@ -708,8 +708,9 @@
   /**
    * Chase circular-harmonic-scale position on the disk that owns this chord.
    * lane 1 = compare path (slight radial nudge).
+   * stackPath: which sequence to count prior visits on (default gold path).
    */
-  SpatialMap.prototype._chordPos = function (ch, index, lane) {
+  SpatialMap.prototype._chordPos = function (ch, index, lane, stackPath) {
     const M = global.HLMusic;
     if (!M || !M.chaseChordPos) {
       const R = Math.min(this.w || 500, this.h || 360) * 0.34;
@@ -717,7 +718,12 @@
       return { x: Math.cos(ang) * R * 0.7, y: Math.sin(ang) * R * 0.6, onScale: true };
     }
     const disk = this._diskForChord(ch);
-    const pos = M.chaseChordPos(ch, disk.tonic != null ? disk.tonic : this.origin.tonic, disk.mode || this.origin.mode, disk);
+    const pos = M.chaseChordPos(
+      ch,
+      disk.tonic != null ? disk.tonic : this.origin.tonic,
+      disk.mode || this.origin.mode,
+      disk
+    );
     if (lane === 1) {
       // Compare path slightly outward on same seat
       const ang = Math.atan2(pos.y - disk.cy, pos.x - disk.cx);
@@ -725,14 +731,16 @@
       pos.y += Math.sin(ang) * 10;
     }
     // Stack visits to same seat along a short tangent so repeats don't fully overlap
-    if (index > 0 && this.path) {
+    const peers = stackPath || this.path;
+    if (index > 0 && peers) {
       let stack = 0;
       for (let j = 0; j < index; j++) {
-        const prev = this.path[j];
+        const prev = peers[j];
         if (prev && prev.root === ch.root) stack += 1;
       }
       if (stack > 0) {
-        const ang = Math.atan2(pos.y - (disk.cy || 0), pos.x - (disk.cx || 0)) + Math.PI / 2;
+        const ang =
+          Math.atan2(pos.y - (disk.cy || 0), pos.x - (disk.cx || 0)) + Math.PI / 2;
         pos.x += Math.cos(ang) * stack * 7;
         pos.y += Math.sin(ang) * stack * 6;
       }
@@ -752,6 +760,33 @@
           let d = Math.hypot(dx, dy) || 0.01;
           if (d < minDist) {
             const push = ((minDist - d) / 2) * 0.7;
+            dx /= d;
+            dy /= d;
+            a.x -= dx * push;
+            a.y -= dy * push;
+            b.x += dx * push;
+            b.y += dy * push;
+          }
+        }
+      }
+    }
+    return nodes;
+  };
+
+  /** Mild de-overlap that never flings nodes far from their seats. */
+  SpatialMap.prototype._softSeparate = function (nodes, minDist, maxPush) {
+    minDist = minDist || 22;
+    maxPush = maxPush != null ? maxPush : 7;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a = nodes[i];
+          const b = nodes[j];
+          let dx = b.x - a.x;
+          let dy = b.y - a.y;
+          let d = Math.hypot(dx, dy) || 0.01;
+          if (d < minDist) {
+            const push = Math.min(maxPush, ((minDist - d) / 2) * 0.55);
             dx /= d;
             dy /= d;
             a.x -= dx * push;
@@ -789,8 +824,9 @@
         seat: pos.seat,
       };
     });
-    // In Function view keep nodes on chart seats (no free separation)
-    if (!useFn) this._separateNodes(this.nodes, 34);
+    // Function: stay on chart seats. Chase: soft de-overlap only (hard separate
+    // pushed path nodes off scale seats and made blue compare look orphaned).
+    if (!useFn) this._softSeparate(this.nodes, 30, 8);
     this._layoutAltPath();
     this._computeDivergent();
     this._rebuildScaleSeats();
@@ -842,6 +878,12 @@
     };
   };
 
+  /**
+   * Blue compare path — both views:
+   * 1) same root as gold step → sit beside gold (parallel maj/min)
+   * 2) Function: chart seats; Chase: that step's disk seat
+   * Never hard-separate into distant orphans.
+   */
   SpatialMap.prototype._layoutAltPath = function () {
     const M = global.HLMusic;
     if (!M) {
@@ -853,49 +895,78 @@
     const act = this._activeDisk();
     this.altNodes = (this.altPath || []).map((ch, i) => {
       let pos = null;
-      if (useFn && ch) {
-        // Prefer beside the gold step at the same index (parallel C vs Cm etc.)
-        const gold = this.nodes && this.nodes[i];
-        if (gold && gold.chord && gold.chord.root === ch.root) {
-          const cx = (act && act.cx) || 0;
-          const cy = (act && act.cy) || 0;
-          const ang = Math.atan2(gold.y - cy, gold.x - cx);
-          // Slightly outward so blue sits next to gold, not on a distant Chase seat
+      const gold = this.nodes && this.nodes[i];
+
+      // 1) Same root as gold step (Chase + Function)
+      //    same quality → under gold (ghost, not drawn); quality flip → beside
+      if (ch && gold && gold.chord && gold.chord.root === ch.root) {
+        const sameQ = gold.chord.quality === ch.quality;
+        if (sameQ) {
           pos = {
-            x: gold.x + Math.cos(ang) * 20,
-            y: gold.y + Math.sin(ang) * 17,
+            x: gold.x,
+            y: gold.y,
+            onScale: true,
+            shell: false,
+          };
+        } else {
+          const disk =
+            (gold.chord && this._diskForChord(gold.chord)) || act || { cx: 0, cy: 0 };
+          const cx = disk.cx || 0;
+          const cy = disk.cy || 0;
+          const ang = Math.atan2(gold.y - cy, gold.x - cx);
+          const out = useFn ? 20 : 15;
+          pos = {
+            x: gold.x + Math.cos(ang) * out,
+            y: gold.y + Math.sin(ang) * out * 0.88,
             onScale: true,
             shell: false,
           };
         }
-        if (!pos) {
-          // Same Function seat rules as gold path (never other-disk Chase coords)
-          const seat = this._functionSeatForChord(ch, i, this.altPath);
-          if (seat) {
-            const cx = (act && act.cx) || 0;
-            const cy = (act && act.cy) || 0;
-            const ang = Math.atan2(seat.y - cy, seat.x - cx);
-            pos = {
-              x: seat.x + Math.cos(ang) * 14,
-              y: seat.y + Math.sin(ang) * 12,
-              onScale: true,
-              shell: false,
-            };
-          }
-        }
-        if (!pos && M.chaseChordPos) {
-          // Last resort: angle on ACTIVE write-home disk only (ignore alt localTonic)
-          const base = M.chaseChordPos(ch, this.origin.tonic, this.origin.mode, act);
-          const scale = 0.95;
+      }
+
+      // 2) Function chart seat
+      if (!pos && useFn && ch) {
+        const seat = this._functionSeatForChord(ch, i, this.altPath);
+        if (seat) {
+          const cx = (act && act.cx) || 0;
+          const cy = (act && act.cy) || 0;
+          const ang = Math.atan2(seat.y - cy, seat.x - cx);
           pos = {
-            x: (act.cx || 0) + (base.x - (act.cx || 0)) * scale,
-            y: (act.cy || 0) + (base.y - (act.cy || 0)) * scale,
-            onScale: !!base.onScale,
-            shell: !!base.shell,
+            x: seat.x + Math.cos(ang) * 14,
+            y: seat.y + Math.sin(ang) * 12,
+            onScale: true,
+            shell: false,
           };
         }
       }
-      if (!pos) pos = this._chordPos(ch, i, 1);
+
+      // 3) Chase seat on the disk that owns the step (prefer gold's disk for compare)
+      if (!pos && ch) {
+        const probe = {
+          root: ch.root,
+          quality: ch.quality,
+          notes: ch.notes,
+          region: ch.region,
+          localTonic:
+            ch.localTonic != null
+              ? ch.localTonic
+              : gold && gold.chord && gold.chord.localTonic != null
+                ? gold.chord.localTonic
+                : this.origin.tonic,
+          localMode:
+            ch.localMode ||
+            (gold && gold.chord && gold.chord.localMode) ||
+            this.origin.mode,
+        };
+        // Function fallback: stay on active write-home disk only
+        if (useFn) {
+          probe.localTonic = this.origin.tonic;
+          probe.localMode = this.origin.mode;
+        }
+        pos = this._chordPos(probe, i, 1, this.altPath);
+      }
+
+      if (!pos) pos = { x: 0, y: 0, onScale: false, shell: false };
       const r = 13 + Math.min(9, (ch.duration || 4) * 1.05);
       return {
         chord: ch,
@@ -907,8 +978,8 @@
         shell: pos.shell,
       };
     });
-    // Chase only — Function keeps blue next to chart seats
-    if (!useFn) this._separateNodes(this.altNodes, 30);
+    // Soft only — hard _separateNodes flung blue nodes into empty corners
+    this._softSeparate(this.altNodes, 20, 6);
   };
 
   SpatialMap.prototype._computeDivergent = function () {
@@ -1006,8 +1077,7 @@
 
   /**
    * Drag targets sit on real seats the path will use after drop.
-   * Chase: Chase layout. Function: exact Function-chart node positions
-   * (never Chase seats beside chart chords — that looked like double nodes).
+   * Function: chart node coords. Chase: active scaleSeats (same as drawn rings).
    */
   SpatialMap.prototype._layoutAlts = function (pathIndex, alts) {
     const list = alts || [];
@@ -1021,6 +1091,9 @@
       if (a._fnX != null && a._fnY != null) {
         x = a._fnX;
         y = a._fnY;
+      } else if (a._seatX != null && a._seatY != null) {
+        x = a._seatX;
+        y = a._seatY;
       } else if (useFn && a.chord) {
         const exact = this.functionNodes.find(
           (n) =>
@@ -1036,23 +1109,42 @@
           x = fn.x;
           y = fn.y;
         }
+      } else if (!useFn && a.chord && this.scaleSeats && this.scaleSeats.length) {
+        // Snap to drawn Chase seats (active disk preferred)
+        const root = a.chord.root;
+        const exact = this.scaleSeats.find(
+          (s) =>
+            s.activeDisk &&
+            s.root === root &&
+            s.chord &&
+            s.chord.quality === a.chord.quality
+        );
+        const soft = exact
+          ? null
+          : this.scaleSeats.find((s) => s.activeDisk && s.root === root) ||
+            this.scaleSeats.find((s) => s.root === root);
+        if (exact || soft) {
+          const s = exact || soft;
+          x = s.x;
+          y = s.y;
+        }
       }
       if (x == null || y == null) {
         const natural = this._chordPos(a.chord, pathIndex, 0);
         x = natural.x;
         y = natural.y;
-        // Gentle de-stack only in Chase (Function seats are intentional collocation)
-        if (!useFn) {
-          used.forEach((u) => {
-            const d = Math.hypot(x - u.x, y - u.y);
-            if (d < 26) {
-              const ang = Math.atan2(y, x) + 0.4 * (i + 1);
-              x += Math.cos(ang) * 12;
-              y += Math.sin(ang) * 10;
-            }
-          });
-        }
       }
+      // Gentle de-stack when two pads share a seat (shell vs diatonic same root)
+      used.forEach((u) => {
+        const d = Math.hypot(x - u.x, y - u.y);
+        if (d < 18) {
+          const disk = this._activeDisk();
+          const ang =
+            Math.atan2(y - (disk.cy || 0), x - (disk.cx || 0)) + 0.55 * (i + 1);
+          x += Math.cos(ang) * 10;
+          y += Math.sin(ang) * 8;
+        }
+      });
       const tier = a.tier || 'ok';
       const t = {
         chord: a.chord,
@@ -1063,7 +1155,17 @@
         tier: tier,
         x: x,
         y: y,
-        r: useFn ? (tier === 'good' ? 18 : tier === 'ok' ? 15 : 12) : tier === 'good' ? 24 : tier === 'ok' ? 20 : 16,
+        r: useFn
+          ? tier === 'good'
+            ? 18
+            : tier === 'ok'
+              ? 15
+              : 12
+          : tier === 'good'
+            ? 24
+            : tier === 'ok'
+              ? 20
+              : 16,
         naturalX: x,
         naturalY: y,
       };
@@ -1632,8 +1734,12 @@
       ctx.setLineDash([]);
 
       // Harmonic-scale seats (Chase) — dim/skip on active disk in Function view
+      // While dragging, skip seat discs (aim pads own those spots — no double paint)
       const seats =
-        M && M.circularHarmonicScale && !(this.mapView === 'function' && active)
+        M &&
+        M.circularHarmonicScale &&
+        !(this.mapView === 'function' && active) &&
+        !(this._mode === 'node' && active)
           ? M.circularHarmonicScale(disk.tonic, disk.mode)
           : [];
       seats.forEach((s) => {
@@ -1866,12 +1972,32 @@
 
     // Alt path
     if (this.showAlt) {
+      const altVis = (n, i) => {
+        if (!n) return false;
+        const g = this.nodes[i];
+        if (
+          g &&
+          g.chord &&
+          n.chord &&
+          g.chord.root === n.chord.root &&
+          g.chord.quality === n.chord.quality
+        ) {
+          return false; // identical to gold — no blue ghost
+        }
+        return true;
+      };
       for (let i = 0; i < this.altNodes.length - 1; i++) {
         const a = this.altNodes[i];
         const b = this.altNodes[i + 1];
+        // Only draw blue edge when at least one end is a real compare diff
+        if (!altVis(a, i) && !altVis(b, i + 1)) continue;
+        const ax = altVis(a, i) ? a.x : this.nodes[i] ? this.nodes[i].x : a.x;
+        const ay = altVis(a, i) ? a.y : this.nodes[i] ? this.nodes[i].y : a.y;
+        const bx = altVis(b, i + 1) ? b.x : this.nodes[i + 1] ? this.nodes[i + 1].x : b.x;
+        const by = altVis(b, i + 1) ? b.y : this.nodes[i + 1] ? this.nodes[i + 1].y : b.y;
         ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
         ctx.strokeStyle = 'rgba(126,184,218,0.5)';
         ctx.lineWidth = 3.5 / this.camera.zoom;
         ctx.setLineDash([6 / this.camera.zoom, 4 / this.camera.zoom]);

@@ -148,22 +148,46 @@ H.chordFromChaseSeat = function (seat, key) {
     }
 
     // Chase view: full circular harmonic scale of THIS chord's disk
+    // Stamp seat coords from drawn scaleSeats so aim pads = rings (no double offset)
+    const stampSeat = (ch, seat) => {
+      if (!H.map || !H.map.scaleSeats) return {};
+      const hit =
+        H.map.scaleSeats.find(
+          (s) =>
+            s.activeDisk &&
+            s.root === ch.root &&
+            s.chord &&
+            s.chord.quality === ch.quality
+        ) ||
+        H.map.scaleSeats.find((s) => s.activeDisk && s.root === ch.root) ||
+        H.map.scaleSeats.find((s) => s.root === ch.root);
+      if (hit) return { _seatX: hit.x, _seatY: hit.y };
+      if (seat && H.map._activeDisk) {
+        const disk = H.map._activeDisk();
+        const rad = seat.role === 'tonic' ? disk.R * 0.42 : disk.R * 0.72;
+        return {
+          _seatX: (disk.cx || 0) + Math.cos(seat.angle) * rad,
+          _seatY: (disk.cy || 0) + Math.sin(seat.angle) * rad * 0.88,
+        };
+      }
+      return {};
+    };
+
     if (H.M().circularHarmonicScale) {
       H.M()
         .circularHarmonicScale(diskKey.tonic, diskKey.mode)
         .forEach((seat) => {
           const ch = H.chordFromChaseSeat(seat, diskKey);
-          add(ch, ch.name, seat.roman);
+          add(ch, ch.name, seat.roman, stampSeat(ch, seat));
         });
     }
 
-    // Tension / colour shell (sits outside the ring via Chase layout)
+    // Tension / colour shell — fewer pads, scored like Function (weak ones dim)
     [
       { d: 1, q: 'dom7', role: '♭II7', region: 'tritone' },
       { d: 8, q: 'maj', role: '♭VI', region: 'interchange' },
       { d: 10, q: 'maj', role: '♭VII', region: 'interchange' },
       { d: 6, q: 'dom7', role: '♭V7', region: 'tritone' },
-      { d: 3, q: 'maj', role: 'III', region: 'chromatic' },
     ].forEach((s) => {
       add(
         H.M().makeChord((diskKey.tonic + s.d) % 12, s.q, { region: s.region, tag: 'shell' }),
@@ -172,11 +196,18 @@ H.chordFromChaseSeat = function (seat, key) {
       );
     });
 
-    // Quality family on same root (inversions less important on big chart)
-    if (H.C().closeAlternates) {
+    // Same-root quality family only (no inversion spam — map keeps root position)
+    if (H.C().closeAlternates && chord) {
       H.C()
-        .closeAlternates(chord, diskKey.tonic, diskKey.mode, 4)
-        .forEach((a) => add(a.chord, a.label, a.role || 'alt'));
+        .closeAlternates(chord, diskKey.tonic, diskKey.mode, 6)
+        .filter(
+          (a) =>
+            a.chord &&
+            a.chord.root === chord.root &&
+            a.chord.quality !== chord.quality
+        )
+        .slice(0, 3)
+        .forEach((a) => add(a.chord, a.label, a.role || 'alt', stampSeat(a.chord)));
     }
 
     list.sort((a, b) => (b.score || 0) - (a.score || 0));
