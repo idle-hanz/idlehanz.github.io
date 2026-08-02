@@ -41,7 +41,8 @@
     this.showHorizon = true;
     this.showAlt = true;
     this.camera = { x: 0, y: 0, zoom: 1, tx: 0, ty: 0, tz: 1 };
-    this._rebuildDisks(true);
+    this.disks = [];
+    this._rebuildDisks();
     this.hover = null;
     this.snapAlt = null;
     this.pulseT = 0;
@@ -119,50 +120,94 @@
     const changed =
       prev && (prev.tonic !== next.tonic || prev.mode !== next.mode);
     this.origin = next;
-    this._rebuildDisks(!!changed && prev);
+    // Rebuild multi-disk set from path keys + new write home
+    this._rebuildDisks();
     if (this.path && this.path.length) {
       this._layoutPath();
       this._emitTrajectory();
     }
   };
 
+  SpatialMap.prototype._keyId = function (tonic, mode) {
+    return ((tonic % 12) + 12) % 12 + ':' + (mode || 'minor');
+  };
+
   /**
-   * Active disk at origin; previous write-home becomes a dim second disk
-   * offset by circle-of-fifths distance (intersecting disks).
+   * One Chase disk per key used in the path + current write home.
+   * Active write-home at origin; other keys orbit by fifths distance so you can
+   * keep the old-key pattern, walk a new disk, then return.
    */
-  SpatialMap.prototype._rebuildDisks = function (keepPrev) {
+  SpatialMap.prototype._rebuildDisks = function () {
     const M = global.HLMusic;
-    const R = Math.min(this.w || 500, this.h || 360) * 0.46;
-    const active = {
+    const R = Math.min(this.w || 500, this.h || 360) * 0.42;
+    const keys = new Map();
+
+    // Always include current write home (active)
+    const activeId = this._keyId(this.origin.tonic, this.origin.mode);
+    keys.set(activeId, {
       tonic: this.origin.tonic,
       mode: this.origin.mode,
-      cx: 0,
-      cy: 0,
-      R: R,
       active: true,
-      label: M ? M.noteName(this.origin.tonic) : '?',
-    };
-    const prevDisks = this.disks || [];
-    const oldActive = prevDisks.find((d) => d.active);
-    this.disks = [active];
-    if (
-      keepPrev &&
-      oldActive &&
-      (oldActive.tonic !== active.tonic || oldActive.mode !== active.mode)
-    ) {
-      const steps = M && M.fifthsDistance ? M.fifthsDistance(active.tonic, oldActive.tonic) : 1;
-      const ang = -Math.PI / 2 + (steps / 12) * Math.PI * 2;
-      const dist = R * 1.45;
-      this.disks.push({
-        tonic: oldActive.tonic,
-        mode: oldActive.mode,
-        cx: Math.cos(ang) * dist,
-        cy: Math.sin(ang) * dist * 0.85,
-        R: R * 0.72,
-        active: false,
-        label: M ? M.noteName(oldActive.tonic) : '?',
-      });
-    }
+    });
+
+    // Keys already used by chords (preserve multi-key journey)
+    (this.path || []).forEach((ch) => {
+      if (!ch) return;
+      const t = ch.localTonic != null ? ch.localTonic : this.origin.tonic;
+      const m = ch.localMode || this.origin.mode;
+      const id = this._keyId(t, m);
+      if (!keys.has(id)) {
+        keys.set(id, { tonic: t, mode: m, active: false });
+      }
+    });
+
+    // Keep any previous disks that still matter (write-home history)
+    (this.disks || []).forEach((d) => {
+      const id = this._keyId(d.tonic, d.mode);
+      if (!keys.has(id)) {
+        keys.set(id, { tonic: d.tonic, mode: d.mode, active: false });
+      }
+    });
+
+    const list = Array.from(keys.values());
+    // Stable order: active first, then by fifths distance from active
+    list.sort((a, b) => {
+      if (a.active) return -1;
+      if (b.active) return 1;
+      const da = M && M.fifthsDistance ? Math.abs(M.fifthsDistance(this.origin.tonic, a.tonic)) : 0;
+      const db = M && M.fifthsDistance ? Math.abs(M.fifthsDistance(this.origin.tonic, b.tonic)) : 0;
+      return da - db || a.tonic - b.tonic;
+    });
+
+    const nOther = Math.max(1, list.length - 1);
+    this.disks = list.map((k, i) => {
+      const isActive = !!k.active;
+      let cx = 0;
+      let cy = 0;
+      let dR = R;
+      if (!isActive) {
+        const steps =
+          M && M.fifthsDistance ? M.fifthsDistance(this.origin.tonic, k.tonic) : i;
+        // Spread secondary disks around the active one
+        const slot = i; // 1..n
+        const ang =
+          -Math.PI / 2 +
+          (steps !== 0 ? (steps / 6) * Math.PI : (slot / nOther) * Math.PI * 2);
+        const dist = R * (1.55 + (slot > 2 ? 0.25 * (slot - 2) : 0));
+        cx = Math.cos(ang) * dist;
+        cy = Math.sin(ang) * dist * 0.88;
+        dR = R * 0.78;
+      }
+      return {
+        tonic: k.tonic,
+        mode: k.mode,
+        cx,
+        cy,
+        R: dR,
+        active: isActive,
+        label: M ? M.noteName(k.tonic) : '?',
+      };
+    });
     this._rebuildScaleSeats();
   };
 
@@ -171,9 +216,10 @@
       (this.disks && this.disks.find((d) => d.active)) || {
         cx: 0,
         cy: 0,
-        R: Math.min(this.w || 500, this.h || 360) * 0.46,
+        R: Math.min(this.w || 500, this.h || 360) * 0.42,
         tonic: this.origin.tonic,
         mode: this.origin.mode,
+        active: true,
       }
     );
   };
@@ -182,7 +228,11 @@
   SpatialMap.prototype._diskForChord = function (ch) {
     const t = ch.localTonic != null ? ch.localTonic : this.origin.tonic;
     const m = ch.localMode || this.origin.mode;
-    const found = (this.disks || []).find((d) => d.tonic === t && d.mode === m);
+    let found = (this.disks || []).find((d) => d.tonic === t && d.mode === m);
+    if (!found) {
+      // Ensure disk exists for this chord's key
+      found = (this.disks || []).find((d) => d.tonic === t);
+    }
     return found || this._activeDisk();
   };
 
@@ -198,6 +248,8 @@
     if (this._mode === 'node') return;
     this.path = (chords || []).map((c) => ({ ...c }));
     this.current = currentIndex != null ? currentIndex : this.path.length - 1;
+    // Disks follow keys present in the path so multi-key journeys stay visible
+    this._rebuildDisks();
     this._layoutPath();
     this._emitTrajectory();
   };
@@ -952,24 +1004,18 @@
             ? '#fff4d6'
             : 'rgba(230,220,200,0.9)'
           : 'rgba(160,170,190,0.55)';
-        ctx.font = `bold ${9 / this.camera.zoom}px DM Sans, sans-serif`;
+        ctx.font = `bold ${12 / this.camera.zoom}px DM Sans, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(s.roman, sx, sy);
-        if (active && (seatHover || aimHere)) {
+        ctx.fillText(s.roman, sx, sy - (active ? 2 / this.camera.zoom : 0));
+        if (active) {
           const nm = M.noteName(s.root);
-          ctx.fillStyle = 'rgba(200,184,160,0.85)';
-          ctx.font = `${8 / this.camera.zoom}px DM Sans, sans-serif`;
-          ctx.fillText(nm, sx, sy + 14 / this.camera.zoom);
+          ctx.fillStyle =
+            seatHover || aimHere ? 'rgba(255,244,214,0.95)' : 'rgba(200,184,160,0.75)';
+          ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
+          ctx.fillText(nm, sx, sy + 12 / this.camera.zoom);
         }
       });
-
-      // Clockwise = fifths-down homeward hint
-      if (active) {
-        ctx.fillStyle = 'rgba(180,168,150,0.4)';
-        ctx.font = `${8 / this.camera.zoom}px Crimson Text, Georgia, serif`;
-        ctx.fillText('fifths ↓ homeward →', cx, cy + dR * 1.22);
-      }
 
       // Disk centre label
       const isMin =
@@ -977,18 +1023,36 @@
         (M && M.MODES && M.MODES[disk.mode] && M.MODES[disk.mode].romanBase === 'minor');
       const homeName = M ? M.noteName(disk.tonic) + (isMin ? 'm' : '') : disk.label || '';
       ctx.beginPath();
-      ctx.arc(cx, cy, active ? 16 : 11, 0, Math.PI * 2);
-      ctx.fillStyle = active ? '#e8c98a' : 'rgba(126,184,218,0.45)';
+      ctx.arc(cx, cy, active ? 17 : 13, 0, Math.PI * 2);
+      ctx.fillStyle = active ? '#e8c98a' : 'rgba(126,184,218,0.5)';
       ctx.fill();
-      ctx.fillStyle = active ? '#1a1410' : 'rgba(10,10,16,0.85)';
-      ctx.font = `bold ${active ? 11 : 9 / this.camera.zoom}px DM Sans, sans-serif`;
-      ctx.fillText(homeName, cx, cy - 1);
-      ctx.font = `${7 / this.camera.zoom}px DM Sans, sans-serif`;
-      ctx.fillStyle = active ? 'rgba(26,20,16,0.6)' : 'rgba(10,10,16,0.55)';
-      ctx.fillText(active ? 'HOME' : 'prev', cx, cy + 10 / this.camera.zoom);
+      ctx.strokeStyle = active ? 'rgba(255,244,214,0.7)' : 'rgba(180,200,230,0.4)';
+      ctx.lineWidth = 1.5 / this.camera.zoom;
+      ctx.stroke();
+      ctx.fillStyle = active ? '#1a1410' : 'rgba(10,10,16,0.9)';
+      ctx.font = `bold ${active ? 12 : 10}px DM Sans, sans-serif`;
+      // font size with zoom
+      ctx.font = `bold ${(active ? 12 : 10) / this.camera.zoom}px DM Sans, sans-serif`;
+      ctx.fillText(homeName, cx, cy - 1 / this.camera.zoom);
+      ctx.font = `${7.5 / this.camera.zoom}px DM Sans, sans-serif`;
+      ctx.fillStyle = active ? 'rgba(26,20,16,0.65)' : 'rgba(200,220,255,0.7)';
+      ctx.fillText(active ? 'WRITE' : 'KEY', cx, cy + 11 / this.camera.zoom);
+
+      if (!active) {
+        ctx.fillStyle = 'rgba(160,180,210,0.55)';
+        ctx.font = `${8 / this.camera.zoom}px Crimson Text, Georgia, serif`;
+        ctx.fillText('earlier key', cx, cy + dR * 0.95);
+      } else {
+        ctx.fillStyle = 'rgba(180,168,150,0.4)';
+        ctx.font = `${8 / this.camera.zoom}px Crimson Text, Georgia, serif`;
+        ctx.fillText('fifths ↓ homeward', cx, cy + dR * 1.18);
+      }
 
       ctx.globalAlpha = 1;
     });
+
+    // Bridge: path edges that cross disks get a soft glow (modulation leap)
+    // (drawn later with path edges; tag nodes with disk id for style)
 
     // Active home hover / empty coaching on active disk centre
     const homeHover = this.hover && this.hover.type === 'home';
@@ -1192,16 +1256,24 @@
         else if (i === playing - 1) alpha = 0.95;
         else if (i >= playing) alpha = 0.4;
       }
+      // Cross-disk edge = modulation bridge
+      const aKey = (a.chord.localTonic != null ? a.chord.localTonic : this.origin.tonic) + ':' + (a.chord.localMode || this.origin.mode);
+      const bKey = (b.chord.localTonic != null ? b.chord.localTonic : this.origin.tonic) + ':' + (b.chord.localMode || this.origin.mode);
+      const crossKey = aKey !== bKey;
       ctx.beginPath();
       const mx = (ax + bx) / 2 + (by - ay) * 0.08;
       const my = (ay + by) / 2 - (bx - ax) * 0.08;
       ctx.moveTo(ax, ay);
       ctx.quadraticCurveTo(mx, my, bx, by);
-      ctx.strokeStyle = st.color;
+      ctx.strokeStyle = crossKey ? 'rgba(167,139,250,0.9)' : st.color;
       ctx.globalAlpha = alpha;
-      ctx.lineWidth = (st.w * (i === playing - 1 ? 1.35 : 1)) / this.camera.zoom;
+      ctx.lineWidth = (st.w * (i === playing - 1 ? 1.35 : 1) * (crossKey ? 1.4 : 1)) / this.camera.zoom;
+      if (crossKey) {
+        ctx.setLineDash([6 / this.camera.zoom, 4 / this.camera.zoom]);
+      }
       ctx.lineCap = 'round';
       ctx.stroke();
+      ctx.setLineDash([]);
       ctx.globalAlpha = 1;
       // Playhead bead on the edge into current step
       if (playing >= 1 && i === playing - 1) {
@@ -1247,26 +1319,25 @@
       ctx.lineWidth = 1 / z;
       ctx.stroke();
 
-      // Aim targets = Chase seats (already on the ring) + sparse tension drops
-      // Dim path a bit; highlight drop targets clearly
+      // Aim targets on Chase seats — large drop pads
       this.alts.forEach((a) => {
         const isSnap = this.snapAlt === a;
         ctx.beginPath();
-        ctx.arc(a.x, a.y, isSnap ? 22 : 17, 0, Math.PI * 2);
-        ctx.fillStyle = isSnap ? 'rgba(125,186,146,0.65)' : 'rgba(20,16,12,0.75)';
+        ctx.arc(a.x, a.y, isSnap ? 28 : 24, 0, Math.PI * 2);
+        ctx.fillStyle = isSnap ? 'rgba(125,186,146,0.7)' : 'rgba(20,16,12,0.78)';
         ctx.fill();
-        ctx.strokeStyle = isSnap ? '#9ddea8' : 'rgba(232,201,138,0.85)';
-        ctx.lineWidth = (isSnap ? 3 : 2) / z;
+        ctx.strokeStyle = isSnap ? '#9ddea8' : 'rgba(232,201,138,0.9)';
+        ctx.lineWidth = (isSnap ? 3.5 : 2.2) / z;
         ctx.stroke();
         ctx.fillStyle = isSnap ? '#0a0a0a' : '#fff4d6';
-        ctx.font = `bold ${11 / z}px DM Sans, sans-serif`;
+        ctx.font = `bold ${13 / z}px DM Sans, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(a.role || a.label, a.x, a.y - (a.role ? 4 / z : 0));
+        ctx.fillText(a.role || a.label, a.x, a.y - (a.role ? 5 / z : 0));
         if (a.role) {
-          ctx.fillStyle = isSnap ? 'rgba(10,10,10,0.75)' : 'rgba(232,201,138,0.9)';
-          ctx.font = `${9 / z}px DM Sans, sans-serif`;
-          ctx.fillText(a.label, a.x, a.y + 10 / z);
+          ctx.fillStyle = isSnap ? 'rgba(10,10,10,0.75)' : 'rgba(232,201,138,0.95)';
+          ctx.font = `${10 / z}px DM Sans, sans-serif`;
+          ctx.fillText(a.label, a.x, a.y + 12 / z);
         }
       });
 

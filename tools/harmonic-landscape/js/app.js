@@ -468,8 +468,9 @@
   }
 
   /**
-   * Writing home = compass centre + From here gravity.
-   * By default does NOT move absolute chord roots (modulation-friendly).
+   * Writing home = active Chase disk + From here gravity.
+   * Does NOT retag existing chords (they keep localTonic so old-key patterns stay on their disk).
+   * New chords written after this use the new home.
    */
   function setWritingHome(tonic, mode, opts) {
     opts = opts || {};
@@ -484,23 +485,32 @@
       state.chords = state.chords.map((ch) => transposeChord(ch, delta, nextT, nextM));
     }
 
+    // Optional: mark from selected step onward as belonging to the new key (modulation from pivot)
+    if (opts.retagFromSelected && !opts.transpose && state.chords.length) {
+      const from =
+        state.selected >= 0 ? state.selected : state.chords.length - 1;
+      for (let i = Math.max(0, from); i < state.chords.length; i++) {
+        state.chords[i].localTonic = nextT;
+        state.chords[i].localMode = nextM;
+      }
+    }
+
+    // Ensure every chord has a local key (legacy) — only fill missing, never overwrite
+    state.chords.forEach((ch) => {
+      if (ch.localTonic == null) ch.localTonic = prevT;
+      if (!ch.localMode) ch.localMode = prevM;
+    });
+
     state.tonic = nextT;
     state.mode = nextM;
     if ($('#tonic')) $('#tonic').value = String(state.tonic);
     if ($('#mode')) $('#mode').value = state.mode;
     if (map) map.setOrigin(state.tonic, state.mode);
 
-    // Tag local key on chords when only the compass moves (modulation)
-    if (!opts.transpose && state.chords.length) {
-      state.chords.forEach((ch) => {
-        ch.localTonic = nextT;
-        ch.localMode = nextM;
-      });
-    }
-
     if (opts.skipEdit) {
       if (map) {
         map.setOrigin(state.tonic, state.mode);
+        map.setPath(state.chords, state.selected);
         map.setHorizon(buildHorizon({ forMap: true, limit: 14 }));
       }
       renderTitle();
@@ -599,14 +609,12 @@
       mode = q === 'dom7' ? state.mode : 'major';
       if (q.indexOf('maj') === 0 || q === 'add9') mode = 'major';
     }
-    setWritingHome(ch.root, mode, { transpose: false });
-    // map.setOrigin keeps previous key as a second Chase disk
+    // Pivot chord + later steps sit on the new disk; earlier steps stay on old key disk
+    setWritingHome(ch.root, mode, { transpose: false, retagFromSelected: true });
     setSyncStatus(
-      'Modulate · new Chase disk ' +
+      'Modulate · new disk ' +
         keyLabel() +
-        ' (from ' +
-        ch.name +
-        ') · old key stays as dim disk · chords absolute'
+        ' · steps before stay on previous key · walk the new ring, Land here again to return'
     );
   }
 
@@ -1893,7 +1901,13 @@
    * Shift+insert: steal from neighbors.
    */
   function fitHorizonIntoSequence(sel, rawPieces, mode) {
-    const pieces = rawPieces.map((p) => M().cloneChord(p));
+    const pieces = rawPieces.map((p) => {
+      const c = M().cloneChord(p);
+      // Own the current write-home disk unless already tagged
+      if (c.localTonic == null) c.localTonic = state.tonic;
+      if (!c.localMode) c.localMode = state.mode;
+      return c;
+    });
     const totalBefore = beatSum(state.chords);
     const n = pieces.length;
     if (!n) return null;
@@ -2039,16 +2053,35 @@
         ' ' +
         (item.modulateTo.mode || 'minor');
       const ok = confirm(
-        'Modulate writing home to ' +
+        'Open a new Chase disk in ' +
           dest +
-          '?\n\nOK = change home key · Cancel = write chords only, keep current home'
+          '?\n\nOK = new write home (old key pattern stays on its disk)\nCancel = write chords only, keep current home'
       );
       if (ok) {
-        state.tonic = item.modulateTo.tonic;
-        state.mode = item.modulateTo.mode;
-        if ($('#tonic')) $('#tonic').value = String(state.tonic);
-        if ($('#mode')) $('#mode').value = state.mode;
-        if (map) map.setOrigin(state.tonic, state.mode);
+        // Don't retag whole path — only gravity + new chords; package just written uses new key below
+        setWritingHome(item.modulateTo.tonic, item.modulateTo.mode || state.mode, {
+          transpose: false,
+          skipEdit: true,
+        });
+        // Tag the package we just wrote onto the new disk
+        const start = fit.writeAt;
+        const end = start + (fit.pieces ? fit.pieces.length : 0);
+        for (let i = start; i < end; i++) {
+          if (state.chords[i]) {
+            state.chords[i].localTonic = state.tonic;
+            state.chords[i].localMode = state.mode;
+          }
+        }
+      }
+    }
+
+    // New path steps inherit current write home (multi-disk ownership)
+    if (fit.pieces && fit.pieces.length) {
+      for (let i = fit.writeAt; i < fit.writeAt + fit.pieces.length; i++) {
+        if (state.chords[i] && state.chords[i].localTonic == null) {
+          state.chords[i].localTonic = state.tonic;
+          state.chords[i].localMode = state.mode;
+        }
       }
     }
 
