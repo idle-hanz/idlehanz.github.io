@@ -43,6 +43,8 @@
 
   let map = null;
   let dragSlotIndex = null;
+  /** rAF id for time-strip playhead while sequence is playing */
+  let playheadRaf = 0;
   const $ = (s) => document.querySelector(s);
   const MAX_UNDO = 40;
 
@@ -2681,7 +2683,59 @@
   }
 
   // ─── Playback / export ───────────────────────────────────
+  function stopPlayheadLoop() {
+    if (playheadRaf) {
+      cancelAnimationFrame(playheadRaf);
+      playheadRaf = 0;
+    }
+    // Clear progress fills
+    document.querySelectorAll('.ts-step .ts-playhead').forEach((el) => {
+      el.style.width = '0%';
+    });
+  }
+
+  /** Drive time-strip fill from AudioContext clock (BPM-accurate). */
+  function startPlayheadLoop(fromIndex) {
+    stopPlayheadLoop();
+    fromIndex = fromIndex || 0;
+    const tick = () => {
+      if (!A().isPlaying()) {
+        stopPlayheadLoop();
+        return;
+      }
+      const ph = A().getPlayhead && A().getPlayhead();
+      if (ph) {
+        const absIdx = fromIndex + ph.stepIndex;
+        document.querySelectorAll('.ts-step').forEach((el) => {
+          const i = parseInt(el.dataset.i, 10);
+          const fill = el.querySelector('.ts-playhead');
+          if (!fill) return;
+          if (i === absIdx) {
+            fill.style.width = Math.round(ph.stepProgress * 1000) / 10 + '%';
+          } else if (i < absIdx) {
+            fill.style.width = '100%';
+          } else {
+            fill.style.width = '0%';
+          }
+        });
+      }
+      playheadRaf = requestAnimationFrame(tick);
+    };
+    playheadRaf = requestAnimationFrame(tick);
+  }
+
+  /** Preview / one-shot duration in seconds for a chord at current BPM. */
+  function chordAudioSeconds(ch, opts) {
+    opts = opts || {};
+    const beats = ch && ch.duration != null ? ch.duration : stepDuration();
+    const sec = A().beatsToSeconds(beats, state.bpm);
+    // Soft previews stay short; full hits use almost the whole step
+    if (opts.soft) return Math.min(0.55, Math.max(0.2, sec * 0.45));
+    return Math.max(0.15, sec * 0.97);
+  }
+
   function stopPlaybackUI() {
+    stopPlayheadLoop();
     if (A().stopPlayback) A().stopPlayback();
     if (map) map.setPlaying(-1);
     updatePlayBtn();
@@ -2692,6 +2746,7 @@
   /**
    * Play sequence. opts: { once, fromIndex, chords, label, onEnd }
    * fromIndex — start at selected (or given) step of state.chords
+   * Durations are in beats; audio engine locks them to state.bpm.
    */
   function playSeq(opts) {
     opts = opts || {};
@@ -2701,17 +2756,25 @@
         stopPlaybackUI();
         return;
       }
+      stopPlayheadLoop();
       A().stopPlayback();
       if (map) map.setPlaying(-1);
     }
     const from = Math.max(0, opts.fromIndex != null ? opts.fromIndex : 0);
     const source = opts.chords || state.chords;
     if (!source.length) return;
-    const slice = source.slice(from).map((c) => M().cloneChord(c));
+    // Clone with explicit beat durations so nothing is lost
+    const slice = source.slice(from).map((c) => {
+      const x = M().cloneChord(c);
+      x.duration = c.duration != null ? c.duration : 4;
+      return x;
+    });
     if (!slice.length) return;
     const once = opts.once != null ? opts.once : !state.loop;
     const loop = opts.loop != null ? opts.loop : once ? false : state.loop;
-    A().playSequence(slice, state.bpm, {
+    const bpm = Math.max(40, Math.min(200, state.bpm || 96));
+
+    A().playSequence(slice, bpm, {
       loop,
       pulse: state.pulse,
       onStep: (i) => {
@@ -2719,12 +2782,24 @@
         if (map) map.setPlaying(opts.chords ? -1 : idx);
         if (!opts.chords) {
           state.selected = Math.min(idx, state.chords.length - 1);
+          // Light UI refresh — playhead rAF owns progress fills
           renderSlots();
-          renderTimeStrip();
+          // Mark playing class without full strip rebuild when possible
+          const host = $('#time-strip');
+          if (host && host.dataset.resizing !== '1') {
+            host.querySelectorAll('.ts-step').forEach((el) => {
+              const ei = parseInt(el.dataset.i, 10);
+              el.classList.toggle('selected', ei === state.selected);
+              el.classList.toggle('playing', ei === idx);
+            });
+          } else {
+            renderTimeStrip();
+          }
           updateMapStatus();
         }
       },
       onEnd: () => {
+        stopPlayheadLoop();
         if (map) map.setPlaying(-1);
         renderTimeStrip();
         renderSlots();
@@ -2732,9 +2807,28 @@
         if (opts.onEnd) opts.onEnd();
       },
     });
+    if (!opts.chords) startPlayheadLoop(from);
     updatePlayBtn();
+    const totalBeats = slice.reduce((s, c) => s + (c.duration || 4), 0);
+    const totalSec = A().beatsToSeconds(totalBeats, bpm);
     if (opts.label) setSyncStatus(opts.label);
-    else if (from > 0) setSyncStatus('Playing from step ' + (from + 1));
+    else if (from > 0) {
+      setSyncStatus(
+        'Playing from step ' +
+          (from + 1) +
+          ' · ' +
+          bpm +
+          ' BPM · ' +
+          totalBeats +
+          ' beats (~' +
+          totalSec.toFixed(1) +
+          's)'
+      );
+    } else {
+      setSyncStatus(
+        'Playing · ' + bpm + ' BPM · ' + totalBeats + ' beats (~' + totalSec.toFixed(1) + 's)'
+      );
+    }
   }
 
   function playFromSelection() {
@@ -2929,6 +3023,7 @@
       host.innerHTML = '<span class="ts-empty">Time strip — path steps appear here</span>';
       return;
     }
+    const totalBeats = state.chords.reduce((s, c) => s + (c.duration || 4), 0) || 1;
     state.chords.forEach((ch, i) => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -2937,11 +3032,25 @@
         'ts-step' +
         (i === state.selected ? ' selected' : '') +
         (map && map.playing === i ? ' playing' : '');
-      btn.style.flex = (ch.duration || 4) + ' 1 0';
-      const beats = ch.duration || 4;
+      // Width proportional to beats (timeline = tempo map)
+      const beats = ch.duration != null ? ch.duration : 4;
+      btn.style.flex = beats + ' 1 0';
+      btn.style.minWidth = Math.max(2.2, beats * 0.55) + 'rem';
+      const sec = A().beatsToSeconds ? A().beatsToSeconds(beats, state.bpm) : beats;
       btn.title =
-        i + 1 + '. ' + ch.name + ' · ' + beats + ' beats — drag right edge to resize';
+        i +
+        1 +
+        '. ' +
+        ch.name +
+        ' · ' +
+        beats +
+        ' beats @ ' +
+        state.bpm +
+        ' BPM ≈ ' +
+        (typeof sec === 'number' ? sec.toFixed(2) + 's' : '') +
+        ' — drag right edge to resize';
       btn.innerHTML =
+        `<span class="ts-playhead" aria-hidden="true"></span>` +
         `<span class="ts-n">${i + 1}</span>` +
         `<span class="ts-name">${ch.name}</span>` +
         `<span class="ts-dur">${beats}b</span>`;
@@ -2967,7 +3076,11 @@
         }
         state.selected = i;
         A().ensure();
-        A().playChord({ chord: ch });
+        // Preview at real beat length for current BPM (not a fixed 1.35s)
+        A().playChord({
+          chord: ch,
+          duration: chordAudioSeconds(ch, { soft: false }),
+        });
         refreshUI();
       });
       // Double-click: split this step (timing stays same total)
@@ -3594,6 +3707,9 @@
     }
     $('#bpm').addEventListener('change', (e) => {
       state.bpm = Math.max(40, Math.min(200, parseInt(e.target.value, 10) || 96));
+      // Strip tooltips show seconds @ BPM — refresh labels
+      renderTimeStrip();
+      setSyncStatus('Tempo · ' + state.bpm + ' BPM · 1 beat = ' + (60 / state.bpm).toFixed(3) + 's');
     });
     $('#loop').addEventListener('change', (e) => {
       state.loop = e.target.checked;

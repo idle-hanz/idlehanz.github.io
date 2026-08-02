@@ -465,6 +465,7 @@
     .ts-empty { font-size: 0.75rem; color: var(--muted); font-family: var(--serif); font-style: italic; padding: 0.4rem 0; }
     .ts-step {
       position: relative;
+      /* flex-grow set in JS from beat duration so width = timeline */
       flex: 1 1 0;
       min-width: 2.2rem;
       border: 1px solid var(--line);
@@ -481,6 +482,23 @@
       gap: 0.02rem;
       overflow: visible;
     }
+    /* BPM playhead fill — driven by AudioContext clock during Play */
+    .ts-playhead {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 0%;
+      background: linear-gradient(90deg, rgba(167,139,250,0.22), rgba(167,139,250,0.38));
+      pointer-events: none;
+      z-index: 0;
+      border-radius: 6px;
+      transition: width 0.04s linear;
+    }
+    .ts-step > .ts-n,
+    .ts-step > .ts-name,
+    .ts-step > .ts-dur { position: relative; z-index: 1; }
+    .ts-step > .ts-handle { z-index: 3; }
     .ts-step:hover { border-color: var(--gold); }
     .ts-step.selected { border-color: var(--gold); background: rgba(196,165,116,0.12); }
     .ts-step.playing { border-color: #c4b5fd; box-shadow: 0 0 0 1px rgba(167,139,250,0.4); }
