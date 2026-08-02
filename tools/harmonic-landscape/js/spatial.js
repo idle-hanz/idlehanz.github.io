@@ -28,11 +28,12 @@
     this.origin = { tonic: 11, mode: 'minor' };
     /** Chase disks: active write-home + optional previous key */
     this.disks = [];
+    this.keyLedger = []; // modulation history — always draw a disk per key
     this.path = [];
     this.nodes = [];
     this.altPath = [];
     this.altNodes = [];
-    this.divergent = []; // indices where alt differs from primary
+    this.divergent = [];
     this.horizon = [];
     this.alts = [];
     this.current = -1;
@@ -41,8 +42,6 @@
     this.showHorizon = true;
     this.showAlt = true;
     this.camera = { x: 0, y: 0, zoom: 1, tx: 0, ty: 0, tz: 1 };
-    this.disks = [];
-    this._rebuildDisks();
     this.hover = null;
     this.snapAlt = null;
     this.pulseT = 0;
@@ -110,6 +109,20 @@
     }
   };
 
+  SpatialMap.prototype._keyId = function (tonic, mode) {
+    return ((tonic % 12) + 12) % 12 + ':' + (mode || 'minor');
+  };
+
+  SpatialMap.prototype.rememberKey = function (tonic, mode) {
+    const t = ((Number(tonic) % 12) + 12) % 12;
+    const m = mode || 'minor';
+    if (!this.keyLedger) this.keyLedger = [];
+    const id = this._keyId(t, m);
+    if (!this.keyLedger.some((k) => this._keyId(k.tonic, k.mode) === id)) {
+      this.keyLedger.push({ tonic: t, mode: m });
+    }
+  };
+
   SpatialMap.prototype.setOrigin = function (tonic, mode) {
     const M = global.HLMusic;
     const next = {
@@ -127,10 +140,6 @@
       this._layoutPath();
       this._emitTrajectory();
     }
-  };
-
-  SpatialMap.prototype._keyId = function (tonic, mode) {
-    return ((tonic % 12) + 12) % 12 + ':' + (mode || 'minor');
   };
 
   /**
