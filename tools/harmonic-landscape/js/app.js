@@ -160,13 +160,25 @@
     map.onSwapChord = (pathIndex, newChord) => {
       applyChordAtIndex(pathIndex, newChord, { pullNeighbors: false });
     };
-    // Only called when user released on a locked aim target
+    // Only called when user released on a locked aim target (Chase seat or tension)
     map.onPullChord = (pathIndex, chord, meta) => {
       applyChordAtIndex(pathIndex, chord, {
         pullNeighbors: !!(meta && meta.pullNeighbors),
         pullStrength: 0.5,
       });
-      setSyncStatus('Set to ' + (chord.name || '') + (meta && meta.role ? ' · ' + meta.role : ''));
+      setSyncStatus(
+        'Moved to ' +
+          (chord.name || '') +
+          (meta && meta.role ? ' · ' + meta.role : '') +
+          ' on Chase chart'
+      );
+    };
+    // Click empty scale seat → add that chord
+    map.onSelectSeat = (seatInfo) => selectChaseSeat(seatInfo);
+    map.onHoverSeat = (seatInfo) => {
+      if (!seatInfo || !seatInfo.chord) return;
+      A().ensure();
+      A().playChord({ chord: seatInfo.chord, soft: true, duration: 0.35 });
     };
     let aimTimer = null;
     map.onAimChange = (pathIndex, target, meta) => {
@@ -643,49 +655,82 @@
     if (!opts || !opts.silent) playSeq({ once: true });
   }
 
+  /** Chord for a Chase scale seat (default quality on that seat). */
+  function chordFromChaseSeat(seat) {
+    if (!seat) return null;
+    let q = (seat.qualities && seat.qualities[0]) || 'maj';
+    if (seat.role === 'dom') q = 'dom7';
+    if (seat.role === 'leading' || seat.role === 'supertonic') {
+      q = seat.qualities[0] || (state.mode === 'major' ? 'dim' : 'halfdim');
+    }
+    return M().makeChord(seat.root, q, {
+      duration: stepDuration(),
+      region: 'diatonic',
+      roman: seat.roman || '',
+      tag: 'chase',
+    });
+  }
+
   /**
-   * Build labelled aim targets for drag (where to aim + what it means).
+   * Drag targets = Chase scale seats only (clean, 6–7 targets on the ring).
+   * Plus at most 2 tension shell options (♭II7, ♭VI colour) so drag stays uncluttered.
    */
   function buildAimTargets(pathIndex, chord) {
-    const t = state.tonic;
     const list = [];
     const seen = new Set();
     const add = (ch, label, role) => {
       if (!ch) return;
       const k = ch.root + ':' + ch.quality;
       if (seen.has(k)) return;
-      if (ch.root === chord.root && ch.quality === chord.quality) return;
+      if (chord && ch.root === chord.root && ch.quality === chord.quality) return;
       seen.add(k);
-      ch = { ...ch, duration: chord.duration || 4 };
+      ch = { ...ch, duration: (chord && chord.duration) || stepDuration() };
       list.push({ chord: ch, label: label || ch.name, role: role || '' });
     };
 
-    // Close alternates (inversions / family)
-    if (C().closeAlternates) {
-      C().closeAlternates(chord, state.tonic, state.mode, 6).forEach((a) => {
-        add(a.chord, a.label, a.role || 'near');
-      });
+    // Primary: circular harmonic scale seats
+    if (M().circularHarmonicScale) {
+      M()
+        .circularHarmonicScale(state.tonic, state.mode)
+        .forEach((seat) => {
+          const ch = chordFromChaseSeat(seat);
+          add(ch, ch.name, seat.roman);
+        });
     }
 
-    // Diatonic set
-    if (M().diatonicChords) {
-      M().diatonicChords(t, state.mode, true).forEach((c) => add(c, c.name, 'diatonic'));
-    }
+    // Two tension shells only (not a full palette dump)
+    add(
+      M().makeChord((state.tonic + 1) % 12, 'dom7', { region: 'tritone', tag: 'noir' }),
+      null,
+      '♭II7'
+    );
+    add(
+      M().makeChord((state.tonic + 8) % 12, 'maj', { region: 'interchange', tag: 'colour' }),
+      null,
+      '♭VI'
+    );
 
-    // Dark colours
-    [
-      { d: 8, q: 'maj', role: '♭VI' },
-      { d: 10, q: 'maj', role: '♭VII' },
-      { d: 1, q: 'dom7', role: 'noir ♭II7' },
-      { d: 7, q: 'dom7', role: 'V7' },
-      { d: 5, q: 'min', role: 'iv' },
-      { d: 3, q: 'maj', role: 'III' },
-    ].forEach((s) => {
-      add(M().makeChord((t + s.d) % 12, s.q, { region: 'interchange' }), null, s.role);
+    return list; // ~9 max — all live on Chase geometry when laid out
+  }
+
+  /** Click a Chase seat: write that scale chord into the path. */
+  function selectChaseSeat(seatInfo) {
+    if (!seatInfo) return;
+    const ch =
+      seatInfo.chord ||
+      chordFromChaseSeat(seatInfo.seat || seatInfo);
+    if (!ch) return;
+    ch.duration = stepDuration();
+    ch.localTonic = state.tonic;
+    ch.localMode = state.mode;
+    A().ensure();
+    A().playChord({ chord: ch, soft: true, duration: 0.4 });
+    commitHorizon({
+      chord: ch,
+      kind: 'direction',
+      label: ch.name,
+      job: (seatInfo.roman || seatInfo.role || 'scale') + ' seat',
     });
-
-    // Cap so the map stays readable
-    return list.slice(0, 12);
   }
 
   /**

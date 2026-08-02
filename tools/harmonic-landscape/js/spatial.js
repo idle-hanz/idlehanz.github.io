@@ -50,13 +50,16 @@
     this.onHoverHorizon = null;
     this.onSelectHome = null; // click gold home disc → start/land on tonic
     this.onHoverHome = null;
+    this.onSelectSeat = null; // click Chase scale seat → add chord
+    this.onHoverSeat = null;
     this.onRequestAlts = null;
     this.onSwapChord = null;
     this.onPullChord = null; // (pathIndex, chord, meta) only when aimed at a target
     this.onAimChange = null; // (pathIndex, target|{null}, meta) for live audition
     this.onInsertBetween = null; // (afterIndex) => void
     this.onTrajectory = null; // (caption) => void
-    this.snapRadius = 42; // magnet must enter this to lock a target
+    this.snapRadius = 48; // magnet lock onto Chase seats
+    this.scaleSeats = []; // clickable seats on active disk
     this._mode = null;
     this._dragNode = null;
     this._dragOrigin = null; // original node world pos (chord stays here)
@@ -160,6 +163,7 @@
         label: M ? M.noteName(oldActive.tonic) : '?',
       });
     }
+    this._rebuildScaleSeats();
   };
 
   SpatialMap.prototype._activeDisk = function () {
@@ -364,6 +368,7 @@
     this._separateNodes(this.nodes, 34);
     this._layoutAltPath();
     this._computeDivergent();
+    this._rebuildScaleSeats();
     if (this._mode !== 'node') this._applyCameraForMode();
   };
 
@@ -475,41 +480,72 @@
   };
 
   /**
-   * Aim targets sit in a readable ring around the chord you grabbed.
-   * Natural harmonic direction is preserved as angle; radius is fixed so
-   * every option is nearby and scannable (not a free-space teleport).
+   * Drag targets sit on real Chase chart seats (not a clutter fan around the grab).
+   * You drag a path chord onto I / IV / V / etc.
    */
   SpatialMap.prototype._layoutAlts = function (pathIndex, alts) {
-    const origin = this.nodes[pathIndex] || { x: 0, y: 0 };
     const list = alts || [];
-    const n = list.length || 1;
-    // Two rings if many targets so nothing piles up
-    const rInner = 58;
-    const rOuter = 96;
+    const used = [];
     this.alts = list.map((a, i) => {
       const natural = this._chordPos(a.chord, pathIndex, 0);
-      // Prefer true harmonic bearing from home/origin; fall back to even fan
-      let ang = Math.atan2(natural.y - origin.y, natural.x - origin.x);
-      if (!isFinite(ang) || (Math.abs(natural.x - origin.x) < 1 && Math.abs(natural.y - origin.y) < 1)) {
-        ang = -Math.PI / 2 + (i / n) * Math.PI * 2;
-      }
-      // Spread collisions by index on a second ring
-      const ring = i % 2 === 0 ? rInner : rOuter;
-      // Slight index jitter so same-bearing targets don't stack
-      const jitter = ((i * 0.37) % 0.55) - 0.27;
-      ang += jitter;
-      const x = origin.x + Math.cos(ang) * ring;
-      const y = origin.y + Math.sin(ang) * ring * 0.85;
-      return {
+      let x = natural.x;
+      let y = natural.y;
+      // Gentle de-stack if two land on the same seat
+      used.forEach((u) => {
+        const d = Math.hypot(x - u.x, y - u.y);
+        if (d < 26) {
+          const ang = Math.atan2(y, x) + 0.4 * (i + 1);
+          x += Math.cos(ang) * 12;
+          y += Math.sin(ang) * 10;
+        }
+      });
+      const t = {
         chord: a.chord,
         label: a.label || a.chord.name,
         role: a.role || '',
         x,
         y,
-        r: 16,
+        r: 18,
         naturalX: natural.x,
         naturalY: natural.y,
       };
+      used.push(t);
+      return t;
+    });
+  };
+
+  /** Build clickable Chase seats for the active disk (and dim seats on prev disk). */
+  SpatialMap.prototype._rebuildScaleSeats = function () {
+    const M = global.HLMusic;
+    this.scaleSeats = [];
+    if (!M || !M.circularHarmonicScale || !M.makeChord) return;
+    (this.disks || []).forEach((disk) => {
+      const seats = M.circularHarmonicScale(disk.tonic, disk.mode);
+      seats.forEach((s) => {
+        let q = (s.qualities && s.qualities[0]) || 'maj';
+        if (s.role === 'dom') q = 'dom7';
+        const ch = M.makeChord(s.root, q, {
+          region: 'diatonic',
+          roman: s.roman,
+          tag: 'chase-seat',
+        });
+        const radius = s.role === 'tonic' ? disk.R * 0.42 : disk.R * 0.72;
+        const x = disk.cx + Math.cos(s.angle) * radius;
+        const y = disk.cy + Math.sin(s.angle) * radius * 0.88;
+        this.scaleSeats.push({
+          x,
+          y,
+          r: disk.active ? 16 : 10,
+          root: s.root,
+          roman: s.roman,
+          role: s.role,
+          qualities: s.qualities,
+          chord: ch,
+          activeDisk: !!disk.active,
+          seat: s,
+          disk,
+        });
+      });
     });
   };
 
@@ -541,12 +577,32 @@
 
   SpatialMap.prototype._hit = function (sx, sy) {
     const w = this.screenToWorld(sx, sy);
+    // While dragging a path chord, only aim targets matter
     if (this._mode === 'node' && this.alts.length) {
       for (let i = this.alts.length - 1; i >= 0; i--) {
         const a = this.alts[i];
         const dx = w.x - a.x;
         const dy = w.y - a.y;
-        if (dx * dx + dy * dy <= 18 * 18) return { type: 'alt', item: a };
+        if (dx * dx + dy * dy <= 22 * 22) return { type: 'alt', item: a };
+      }
+      return null;
+    }
+    // Path nodes first (your sequence)
+    for (let i = this.nodes.length - 1; i >= 0; i--) {
+      const n = this.nodes[i];
+      const dx = w.x - n.x;
+      const dy = w.y - n.y;
+      if (dx * dx + dy * dy <= (n.r + 6) * (n.r + 6)) return { type: 'path', item: n };
+    }
+    // Chase scale seats (click to add) — active disk preferred
+    if (this._mode !== 'node' && this.scaleSeats && this.scaleSeats.length) {
+      for (let i = this.scaleSeats.length - 1; i >= 0; i--) {
+        const s = this.scaleSeats[i];
+        if (!s.activeDisk) continue;
+        const dx = w.x - s.x;
+        const dy = w.y - s.y;
+        const rr = (s.r || 16) + 6;
+        if (dx * dx + dy * dy <= rr * rr) return { type: 'seat', item: s };
       }
     }
     if (this.showHorizon && this._mode !== 'node') {
@@ -558,12 +614,13 @@
         if (dx * dx + dy * dy <= rr * rr) return { type: 'horizon', item: h };
       }
     }
-    // Centre disc IS home (start / land on tonic) — generous hit
+    // Centre disc IS home
     if (this._mode !== 'node') {
-      const dHome = w.x * w.x + w.y * w.y;
-      if (dHome <= 28 * 28) return { type: 'home' };
+      const act = this._activeDisk();
+      const dx = w.x - (act.cx || 0);
+      const dy = w.y - (act.cy || 0);
+      if (dx * dx + dy * dy <= 28 * 28) return { type: 'home' };
     }
-    // Blue compare nodes (for tooltips)
     if (this.showAlt && this._mode !== 'node' && this.altNodes && this.altNodes.length) {
       for (let i = this.altNodes.length - 1; i >= 0; i--) {
         const n = this.altNodes[i];
@@ -571,12 +628,6 @@
         const dy = w.y - n.y;
         if (dx * dx + dy * dy <= (n.r + 5) * (n.r + 5)) return { type: 'altNode', item: n };
       }
-    }
-    for (let i = this.nodes.length - 1; i >= 0; i--) {
-      const n = this.nodes[i];
-      const dx = w.x - n.x;
-      const dy = w.y - n.y;
-      if (dx * dx + dy * dy <= (n.r + 6) * (n.r + 6)) return { type: 'path', item: n };
     }
     const edge = this._hitEdge(sx, sy);
     if (edge) return edge;
@@ -603,6 +654,10 @@
       this._layoutAlts(hit.item.i, alts);
       this.canvas.setPointerCapture(e.pointerId);
       this.canvas.style.cursor = 'grabbing';
+      return;
+    }
+    if (hit && hit.type === 'seat') {
+      if (this.onSelectSeat) this.onSelectSeat(hit.item);
       return;
     }
     if (hit && hit.type === 'horizon') {
@@ -687,6 +742,10 @@
     else this.canvas.style.cursor = hit ? 'pointer' : 'grab';
     if (hit && hit.type === 'horizon' && (!prev || prev.item !== hit.item)) {
       if (this.onHoverHorizon) this.onHoverHorizon(hit.item);
+    }
+    if (hit && hit.type === 'seat' && (!prev || prev.item !== hit.item)) {
+      if (this.onHoverSeat) this.onHoverSeat(hit.item);
+      this.canvas.style.cursor = 'pointer';
     }
     if (hit && hit.type === 'home' && (!prev || prev.type !== 'home')) {
       if (this.onHoverHome) this.onHoverHome();
@@ -841,28 +900,68 @@
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Harmonic-scale seats (roman numerals)
+      // Harmonic-scale seats — large enough to click / drop onto
       const seats =
         M && M.circularHarmonicScale
           ? M.circularHarmonicScale(disk.tonic, disk.mode)
           : [];
       seats.forEach((s) => {
-        const sx = cx + Math.cos(s.angle) * dR * 0.72;
-        const sy = cy + Math.sin(s.angle) * dR * 0.72 * 0.88;
+        const rad = s.role === 'tonic' ? dR * 0.42 : dR * 0.72;
+        const sx = cx + Math.cos(s.angle) * rad;
+        const sy = cy + Math.sin(s.angle) * rad * 0.88;
+        const seatHover =
+          this.hover &&
+          this.hover.type === 'seat' &&
+          this.hover.item &&
+          this.hover.item.root === s.root &&
+          this.hover.item.activeDisk === active;
+        const aimHere =
+          this._mode === 'node' &&
+          this.snapAlt &&
+          this.snapAlt.chord &&
+          this.snapAlt.chord.root === s.root;
+        const seatR = (active ? 14 : 8) / this.camera.zoom;
         ctx.beginPath();
-        ctx.arc(sx, sy, (active ? 5 : 3.5) / this.camera.zoom, 0, Math.PI * 2);
-        ctx.fillStyle =
-          s.role === 'tonic'
-            ? 'rgba(232,201,138,0.55)'
-            : s.role === 'dom'
-              ? 'rgba(232,93,76,0.4)'
-              : 'rgba(180,168,150,0.25)';
-        ctx.fill();
-        ctx.fillStyle = active ? 'rgba(200,184,160,0.75)' : 'rgba(160,170,190,0.5)';
-        ctx.font = `${8 / this.camera.zoom}px DM Sans, sans-serif`;
+        ctx.arc(sx, sy, seatR * (seatHover || aimHere ? 1.25 : 1), 0, Math.PI * 2);
+        if (aimHere) {
+          ctx.fillStyle = 'rgba(125,186,146,0.55)';
+          ctx.fill();
+          ctx.strokeStyle = '#9ddea8';
+          ctx.lineWidth = 2.5 / this.camera.zoom;
+          ctx.stroke();
+        } else if (seatHover && active) {
+          ctx.fillStyle = 'rgba(232,201,138,0.45)';
+          ctx.fill();
+          ctx.strokeStyle = '#e8c98a';
+          ctx.lineWidth = 2 / this.camera.zoom;
+          ctx.stroke();
+        } else {
+          ctx.fillStyle =
+            s.role === 'tonic'
+              ? 'rgba(232,201,138,0.35)'
+              : s.role === 'dom'
+                ? 'rgba(232,93,76,0.28)'
+                : 'rgba(180,168,150,0.12)';
+          ctx.fill();
+          ctx.strokeStyle = active ? 'rgba(232,201,138,0.45)' : 'rgba(126,184,218,0.3)';
+          ctx.lineWidth = 1.2 / this.camera.zoom;
+          ctx.stroke();
+        }
+        ctx.fillStyle = active
+          ? seatHover || aimHere
+            ? '#fff4d6'
+            : 'rgba(230,220,200,0.9)'
+          : 'rgba(160,170,190,0.55)';
+        ctx.font = `bold ${9 / this.camera.zoom}px DM Sans, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(s.roman, sx, sy - 12 / this.camera.zoom);
+        ctx.fillText(s.roman, sx, sy);
+        if (active && (seatHover || aimHere)) {
+          const nm = M.noteName(s.root);
+          ctx.fillStyle = 'rgba(200,184,160,0.85)';
+          ctx.font = `${8 / this.camera.zoom}px DM Sans, sans-serif`;
+          ctx.fillText(nm, sx, sy + 14 / this.camera.zoom);
+        }
       });
 
       // Clockwise = fifths-down homeward hint
@@ -910,7 +1009,8 @@
       ctx.fillText('Click HOME to start on tonic · ring = Chase harmonic scale', act.cx || 0, (act.cy || 0) + (act.R || 100) * 0.95);
     }
 
-    // Options: hollow rings around the *selected* path node (constellation)
+    // Options: hollow rings near selection (lighter when not dragging)
+    // Hidden while dragging — drag uses Chase seats as drop targets instead
     if (this.showHorizon && this._mode !== 'node' && this.horizon.length) {
       const ax =
         (this.horizon[0] && this.horizon[0]._anchor && this.horizon[0]._anchor.x) ||
@@ -1147,34 +1247,26 @@
       ctx.lineWidth = 1 / z;
       ctx.stroke();
 
-      // Aim targets — always visible while aiming
+      // Aim targets = Chase seats (already on the ring) + sparse tension drops
+      // Dim path a bit; highlight drop targets clearly
       this.alts.forEach((a) => {
         const isSnap = this.snapAlt === a;
-        if (isSnap) {
-          ctx.beginPath();
-          ctx.arc(a.x, a.y, this.snapRadius, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(125,186,146,0.12)';
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(125,186,146,0.45)';
-          ctx.lineWidth = 1.5 / z;
-          ctx.stroke();
-        }
         ctx.beginPath();
-        ctx.arc(a.x, a.y, isSnap ? 18 : 14, 0, Math.PI * 2);
-        ctx.fillStyle = isSnap ? 'rgba(125,186,146,0.7)' : 'rgba(20,16,12,0.82)';
+        ctx.arc(a.x, a.y, isSnap ? 22 : 17, 0, Math.PI * 2);
+        ctx.fillStyle = isSnap ? 'rgba(125,186,146,0.65)' : 'rgba(20,16,12,0.75)';
         ctx.fill();
-        ctx.strokeStyle = isSnap ? '#9ddea8' : 'rgba(232,201,138,0.75)';
-        ctx.lineWidth = (isSnap ? 3 : 1.6) / z;
+        ctx.strokeStyle = isSnap ? '#9ddea8' : 'rgba(232,201,138,0.85)';
+        ctx.lineWidth = (isSnap ? 3 : 2) / z;
         ctx.stroke();
-        ctx.fillStyle = isSnap ? '#0a0a0a' : 'rgba(255,244,214,0.95)';
-        ctx.font = `bold ${10 / z}px DM Sans, sans-serif`;
+        ctx.fillStyle = isSnap ? '#0a0a0a' : '#fff4d6';
+        ctx.font = `bold ${11 / z}px DM Sans, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(a.label, a.x, a.y - (a.role ? 3 / z : 0));
+        ctx.fillText(a.role || a.label, a.x, a.y - (a.role ? 4 / z : 0));
         if (a.role) {
-          ctx.fillStyle = isSnap ? 'rgba(10,10,10,0.75)' : 'rgba(180,168,150,0.9)';
-          ctx.font = `${8 / z}px DM Sans, sans-serif`;
-          ctx.fillText(a.role, a.x, a.y + 11 / z);
+          ctx.fillStyle = isSnap ? 'rgba(10,10,10,0.75)' : 'rgba(232,201,138,0.9)';
+          ctx.font = `${9 / z}px DM Sans, sans-serif`;
+          ctx.fillText(a.label, a.x, a.y + 10 / z);
         }
       });
 
@@ -1374,9 +1466,13 @@
               ? 'Click edge to insert (steals time from neighbors)'
               : this.hover && this.hover.type === 'altNode'
                 ? 'Blue compare path — names show where versions differ'
-                : this.nodes && this.nodes.length
-                  ? 'Path walks the Chase scale · shell = chromatic/tension · 2nd disk = previous key'
-                  : 'Click HOME to start · ring seats = I–V harmonic scale (Chase)';
+                : this.hover && this.hover.type === 'seat'
+                  ? 'Click seat to add ' +
+                    (this.hover.item.roman || '') +
+                    ' · drag a path chord onto a seat to move it'
+                  : this.nodes && this.nodes.length
+                    ? 'Click scale seats to add · drag path chord onto I/IV/V… to move · hollow = suggestions'
+                    : 'Click HOME or a roman seat (IV, V, vi…) to start';
     ctx.fillText(tip, 10, h - 12);
 
     // Map reading legend (top-left)
