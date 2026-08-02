@@ -1342,21 +1342,34 @@
     refreshAltPath();
   }
 
-  /** Resolve which cell is the blue comparison path. */
+  /**
+   * Blue compare is EXPLICIT only (Alt-click a version chip, or after forking).
+   * Never auto-pick v1 / siblings — that left blue lines on screen while editing
+   * v1 and felt like a bug.
+   */
   function resolveCompareCell(song) {
-    if (!song || !state.cellId) return null;
-    if (state.compareCellId && song.cells[state.compareCellId] && state.compareCellId !== state.cellId) {
-      return song.cells[state.compareCellId];
+    if (!song || !state.cellId || !state.compareCellId) return null;
+    if (state.compareCellId === state.cellId) return null;
+    const cell = song.cells[state.compareCellId];
+    if (!cell) {
+      state.compareCellId = null;
+      return null;
     }
-    const sibs = S().siblingsOfCell(song, state.cellId);
-    return (
-      sibs.find((c) => c.id !== state.cellId && (c.versionIndex === 1 || /v1\b/i.test(c.name || ''))) ||
-      sibs.find((c) => c.id !== state.cellId) ||
-      null
-    );
+    return cell;
   }
 
-  /** Draw comparison version in blue. */
+  function clearBlueCompare(opts) {
+    opts = opts || {};
+    state.compareCellId = null;
+    if (map) map.setAltPath([]);
+    if (!opts.silent) {
+      renderVersionBar();
+      renderSlots();
+      setSyncStatus('Blue compare off · Alt-click a version chip to compare again');
+    }
+  }
+
+  /** Draw comparison version in blue (only if user chose a compare target). */
   function refreshAltPath() {
     if (!map || !S()) {
       if (map) map.setAltPath([]);
@@ -1367,12 +1380,21 @@
       map.setAltPath([]);
       return;
     }
+    // Stale pointer: comparing the cell you're already editing
+    if (state.compareCellId && state.compareCellId === state.cellId) {
+      state.compareCellId = null;
+    }
     const other = resolveCompareCell(song);
     if (!other || !other.chords || !other.chords.length) {
       map.setAltPath([]);
       return;
     }
-    if (!state.compareCellId) state.compareCellId = other.id;
+    // Honour "Blue path" checkbox
+    const tog = $('#tog-alt');
+    if (tog && !tog.checked) {
+      map.setAltPath([]);
+      return;
+    }
     const alt = other.chords.map((sc) => sessionChordToLandscape(sc));
     map.setAltPath(alt);
   }
@@ -1508,8 +1530,16 @@
     let html = '';
 
     // Always show version actions
+    const compareName =
+      state.compareCellId && song.cells[state.compareCellId]
+        ? song.cells[state.compareCellId].name || 'compare'
+        : null;
     html +=
-      '<div class="version-bar-label">Versions · click = edit · Alt-click = blue compare · × = delete</div>';
+      '<div class="version-bar-label">Versions · click = edit · Alt-click = blue compare' +
+      (compareName
+        ? ' · <span style="color:#7eb8da">blue = ' + escapeHtml(compareName) + '</span>'
+        : ' · no blue overlay') +
+      '</div>';
     if (hasFamily || cur) {
       const famName =
         cur && cur.familyId && song.families[cur.familyId]
@@ -1522,15 +1552,14 @@
         '">';
       chips.forEach((c) => {
         const active = c.id === state.cellId;
-        const isCompare =
-          state.compareCellId === c.id ||
-          (!state.compareCellId && !active && c.versionIndex === 1);
+        // Only mark blue when user explicitly set compare (never auto-v1)
+        const isCompare = !active && state.compareCellId === c.id;
         const vi = c.versionIndex != null ? c.versionIndex : '?';
         const label = c.name || 'v' + vi;
         html +=
           '<button type="button" class="ver-chip' +
           (active ? ' active' : '') +
-          (isCompare && !active ? ' compare' : '') +
+          (isCompare ? ' compare' : '') +
           '" data-cell="' +
           escapeAttr(c.id) +
           '" title="' +
@@ -1538,7 +1567,11 @@
             label +
               ' · ' +
               cellPreviewLabel(c) +
-              (active ? ' (editing)' : ' — click edit · Alt-click blue · × delete')
+              (active
+                ? ' (editing)'
+                : isCompare
+                  ? ' — blue compare (Alt-click again to clear)'
+                  : ' — click edit · Alt-click = blue compare · × delete')
           ) +
           '">' +
           '<span class="ver-n">v' +
@@ -1554,7 +1587,7 @@
           ) +
           '<span class="ver-preview">' +
           escapeHtml(cellPreviewLabel(c)) +
-          (isCompare && !active ? ' · blue' : '') +
+          (isCompare ? ' · blue' : '') +
           '</span>' +
           '<span class="ver-x" data-del="' +
           escapeAttr(c.id) +
@@ -1573,6 +1606,9 @@
       '<button type="button" class="btn ghost" id="btn-var-parallel" title="Fork parallel maj/min">+ Parallel</button>' +
       '<button type="button" class="btn ghost" id="btn-var-darken" title="Fork darker">+ Darken</button>' +
       '<button type="button" class="btn ghost" id="btn-ab-ver" title="Play this then blue compare">A/B listen</button>' +
+      (state.compareCellId
+        ? '<button type="button" class="btn ghost" id="btn-clear-blue" title="Hide blue compare path">Clear blue</button>'
+        : '') +
       (cur
         ? '<button type="button" class="btn ghost btn-danger" id="btn-var-del" title="Delete the version you are editing">Delete current</button>'
         : '') +
@@ -1647,14 +1683,29 @@
         if (!id) return;
         if (e.altKey || e.metaKey) {
           if (id === state.cellId) {
-            setSyncStatus('Compare target must be another version');
+            setSyncStatus('Blue compare must be a different version (not the one you are editing)');
+            return;
+          }
+          // Alt-click same chip again → clear
+          if (state.compareCellId === id) {
+            clearBlueCompare();
             return;
           }
           state.compareCellId = id;
+          // Ensure blue path toggle is on so the overlay appears
+          const tog = $('#tog-alt');
+          if (tog && !tog.checked) {
+            tog.checked = true;
+            if (map) map.setShowAlt(true);
+          }
           refreshAltPath();
           renderVersionBar();
           renderSlots();
-          setSyncStatus('Blue compare → ' + (song.cells[id] && song.cells[id].name));
+          setSyncStatus(
+            'Blue compare → ' +
+              (song.cells[id] && song.cells[id].name) +
+              ' · gold = what you edit · Alt-click again or Clear blue to hide'
+          );
           return;
         }
         if (id !== state.cellId) switchToCell(id);
@@ -1668,6 +1719,10 @@
         if (delId) deleteVersion(delId);
       });
     });
+    const clearBlue = host.querySelector('#btn-clear-blue');
+    if (clearBlue) {
+      clearBlue.addEventListener('click', () => clearBlueCompare());
+    }
     const sel = host.querySelector('#cell-switch');
     if (sel) {
       sel.addEventListener('change', () => {
@@ -1966,8 +2021,9 @@
       name: varName,
     });
     if (!newId) return;
-    // Keep previous as blue compare when forking
-    state.compareCellId = state.cellId;
+    // Parent stays as explicit blue compare so you see what you forked from
+    const parentId = state.cellId;
+    state.compareCellId = parentId;
     S().saveSong(song, 'landscape');
 
     // Switch to the new version for editing
@@ -1981,6 +2037,12 @@
       bpm: song.bpm,
     });
     state.nameLocked = true;
+    // Ensure blue overlay visible after fork
+    const tog = $('#tog-alt');
+    if (tog) {
+      tog.checked = true;
+      if (map) map.setShowAlt(true);
+    }
     refreshAll();
     const detail =
       kind === 'copy'
@@ -1988,7 +2050,13 @@
         : kind === 'parallel'
           ? ' · parallel maj↔min (' + changed + ' flipped)'
           : ' · ' + variationKindLabel(kind);
-    setSyncStatus('Created “' + cell.name + '”' + detail + ' · gold=this · blue=compare');
+    setSyncStatus(
+      'Created “' +
+        cell.name +
+        '”' +
+        detail +
+        ' · gold=new · blue=parent · Clear blue when you only want one path'
+    );
     playSeq({ once: true, force: true });
   }
 
@@ -3803,7 +3871,22 @@
     if ($('#tog-alt')) {
       $('#tog-alt').addEventListener('change', (e) => {
         map.setShowAlt(e.target.checked);
+        // Hide overlay immediately when unchecked; restore only if a compare target exists
+        if (!e.target.checked) {
+          if (map) map.setAltPath([]);
+        } else {
+          refreshAltPath();
+        }
       });
+      // Start with blue overlay off until user Alt-clicks a version (or forks)
+      // If session already has an explicit compareCellId, honour checkbox state.
+      if (!state.compareCellId) {
+        map.setShowAlt(false);
+        $('#tog-alt').checked = false;
+        map.setAltPath([]);
+      } else {
+        map.setShowAlt($('#tog-alt').checked);
+      }
     }
 
     function syncCamButtons() {
