@@ -10,6 +10,8 @@
 
   let ctx = null;
   let master = null;
+  let chordBus = null;
+  let pulseBus = null;
   let reverbSend = null;
   let activeNodes = [];
   let playTimer = null;
@@ -19,28 +21,56 @@
   let loopMode = false;
   /** { bpm, steps:[{i,start,end,beats,sec}], t0, len } */
   let transport = null;
+  let noiseBuffer = null;
 
   function ensure() {
     if (!ctx) {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+      // Soft limiter so open voicings + pulse don't clip
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -12;
+      comp.knee.value = 18;
+      comp.ratio.value = 3.5;
+      comp.attack.value = 0.005;
+      comp.release.value = 0.12;
+      comp.connect(ctx.destination);
+
       master = ctx.createGain();
-      master.gain.value = 0.55;
-      master.connect(ctx.destination);
+      master.gain.value = 0.72;
+      master.connect(comp);
+
+      chordBus = ctx.createGain();
+      chordBus.gain.value = 0.85;
+      chordBus.connect(master);
+
+      // Separate louder path so metronome cuts through chords
+      pulseBus = ctx.createGain();
+      pulseBus.gain.value = 1.35;
+      pulseBus.connect(master);
 
       reverbSend = ctx.createGain();
-      reverbSend.gain.value = 0.22;
+      reverbSend.gain.value = 0.18;
       const delay = ctx.createDelay(1.0);
-      delay.delayTime.value = 0.18;
+      delay.delayTime.value = 0.22;
       const fb = ctx.createGain();
-      fb.gain.value = 0.28;
+      fb.gain.value = 0.32;
       const lp = ctx.createBiquadFilter();
       lp.type = 'lowpass';
-      lp.frequency.value = 2200;
+      lp.frequency.value = 2800;
       reverbSend.connect(delay);
       delay.connect(lp);
       lp.connect(fb);
       fb.connect(delay);
       lp.connect(master);
+
+      // Shared click noise buffer
+      const n = Math.floor(ctx.sampleRate * 0.04);
+      noiseBuffer = ctx.createBuffer(1, n, ctx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < n; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.006));
+      }
     }
     if (ctx.state === 'suspended') ctx.resume();
     return ctx;
@@ -94,37 +124,67 @@
     list.length = 0;
   }
 
-  function playPulse(isDownbeat) {
+  /**
+   * Metronome click — noise tick + bright square, scheduled on the audio clock
+   * (not setTimeout) so it stays on the beat and loud enough to hear.
+   */
+  function schedulePulseAt(when, isDownbeat) {
     const c = ensure();
-    const now = c.currentTime;
+    if (!pulseBus || when < c.currentTime - 0.02) return;
+
+    // Noise burst (woodblock-ish)
+    if (noiseBuffer) {
+      const src = c.createBufferSource();
+      src.buffer = noiseBuffer;
+      const bp = c.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = isDownbeat ? 1600 : 2800;
+      bp.Q.value = 2.4;
+      const hp = c.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 600;
+      const g = c.createGain();
+      const peak = isDownbeat ? 0.55 : 0.32;
+      g.gain.setValueAtTime(0.0001, when);
+      g.gain.linearRampToValueAtTime(peak, when + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + (isDownbeat ? 0.07 : 0.045));
+      src.connect(hp);
+      hp.connect(bp);
+      bp.connect(g);
+      g.connect(pulseBus);
+      src.start(when);
+      src.stop(when + 0.08);
+    }
+
+    // Bright pitched tick on top
     const osc = c.createOscillator();
-    const g = c.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = isDownbeat ? 880 : 660;
-    const peak = isDownbeat ? 0.07 : 0.035;
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.linearRampToValueAtTime(peak, now + 0.005);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
-    osc.connect(g);
-    g.connect(master);
-    osc.start(now);
-    osc.stop(now + 0.08);
+    const og = c.createGain();
+    osc.type = 'square';
+    osc.frequency.value = isDownbeat ? 1046 : 1568; // C6 / G6-ish
+    const opeak = isDownbeat ? 0.14 : 0.08;
+    og.gain.setValueAtTime(0.0001, when);
+    og.gain.linearRampToValueAtTime(opeak, when + 0.0015);
+    og.gain.exponentialRampToValueAtTime(0.0001, when + 0.035);
+    const hp2 = c.createBiquadFilter();
+    hp2.type = 'highpass';
+    hp2.frequency.value = 800;
+    osc.connect(hp2);
+    hp2.connect(og);
+    og.connect(pulseBus);
+    osc.start(when);
+    osc.stop(when + 0.05);
+  }
+
+  function playPulse(isDownbeat) {
+    schedulePulseAt(ensure().currentTime, !!isDownbeat);
   }
 
   /** Whole-beat metronome clicks for a step, locked to audio start time. */
   function schedulePulses(beats, bpm, startWhen) {
-    const c = ensure();
     const beatSec = 60 / (bpm || 120);
     const n = Math.max(0, Math.floor(Number(beats) + 1e-9));
     for (let b = 0; b < n; b++) {
-      const tAudio = startWhen + b * beatSec;
-      const delayMs = Math.max(0, (tAudio - c.currentTime) * 1000);
-      const down = b % 4 === 0;
-      pulseTimers.push(
-        setTimeout(() => {
-          if (playing) playPulse(down);
-        }, delayMs)
-      );
+      schedulePulseAt(startWhen + b * beatSec, b % 4 === 0);
     }
   }
 
@@ -138,7 +198,7 @@
   }
 
   /**
-   * Play a chord.
+   * Play a chord with open voicing, stereo spread, staggered bloom.
    * opts.when — AudioContext time (default now)
    * opts.duration — sustain seconds
    * opts.layer — if true, do not stop existing voices first
@@ -152,51 +212,98 @@
       midi = M.voiceLead(opts.chord, opts.prevMidi || null, 3);
     }
     if (!midi || !midi.length) return null;
+    midi = midi.slice().sort((a, b) => a - b);
 
-    if (!opts.layer) stopAll(opts.soft ? 0.03 : 0.05);
+    if (!opts.layer) stopAll(opts.soft ? 0.04 : 0.06);
 
     const now = opts.when != null ? opts.when : c.currentTime;
     const soft = !!opts.soft;
     const dur = opts.duration != null ? opts.duration : soft ? 0.55 : 1.35;
-    const peak = soft ? 0.09 : 0.16;
-    const attack = soft ? 0.04 : 0.02;
-    const release = soft ? 0.35 : 0.4;
+    const voicing = midi;
+    const n = voicing.length;
+    const dest = chordBus || master;
 
-    const voicing = midi.slice();
-    const bassNote = Math.min.apply(null, voicing);
     voicing.forEach((m, i) => {
-      ['triangle', 'sine'].forEach((type) => {
+      const isBass = i === 0;
+      const isTop = i === n - 1;
+      // Stagger so the chord blooms open instead of a single hit
+      const stagger = soft ? i * 0.014 : i * 0.02;
+      const t0 = now + stagger;
+      const noteDur = Math.max(0.12, dur - stagger * 0.5);
+
+      const filter = c.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = isBass
+        ? soft
+          ? 750
+          : 950
+        : isTop
+          ? soft
+            ? 4500
+            : 5800
+          : soft
+            ? 2600
+            : 3400;
+      filter.Q.value = 0.45;
+
+      const gain = c.createGain();
+      const peak =
+        (soft ? 0.1 : 0.13) * (isBass ? 1.2 : isTop ? 0.88 : 0.96) * (1 - i * 0.03);
+      const attack = soft ? 0.055 : isBass ? 0.028 : 0.02 + i * 0.005;
+      const release = soft ? 0.38 : 0.42;
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.linearRampToValueAtTime(peak, t0 + attack);
+      const sustainEnd = Math.max(t0 + attack + 0.04, t0 + noteDur - release);
+      gain.gain.setValueAtTime(peak * 0.8, sustainEnd);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + noteDur);
+
+      const panVal =
+        n <= 1 ? 0 : isBass ? 0 : ((i - (n - 1) / 2) / Math.max(1, n - 1)) * 0.7;
+      let outNode = gain;
+      if (c.createStereoPanner) {
+        const panner = c.createStereoPanner();
+        panner.pan.value = panVal;
+        gain.connect(panner);
+        outNode = panner;
+      }
+      outNode.connect(dest);
+      if (!isBass) outNode.connect(reverbSend);
+
+      const layers = isBass
+        ? [
+            { type: 'sine', detune: 0, mul: 0.9 },
+            { type: 'triangle', detune: -5, mul: 0.5 },
+          ]
+        : isTop
+          ? [
+              { type: 'sine', detune: 0, mul: 0.65 },
+              { type: 'triangle', detune: 9, mul: 0.4 },
+              { type: 'sine', detune: -7, mul: 0.22 },
+            ]
+          : [
+              { type: 'triangle', detune: 0, mul: 0.65 },
+              { type: 'sine', detune: 6, mul: 0.42 },
+            ];
+
+      layers.forEach((L) => {
         const osc = c.createOscillator();
-        const gain = c.createGain();
-        const filter = c.createBiquadFilter();
-        filter.type = 'lowpass';
-        const isBass = m === bassNote;
-        filter.frequency.value = soft ? (isBass ? 900 : 2200) : isBass ? 1400 : 4200;
-        filter.Q.value = 0.55;
-
-        osc.type = type;
+        const og = c.createGain();
+        osc.type = L.type;
         osc.frequency.value = midiToFreq(m);
-
-        const level =
-          peak *
-          (type === 'sine' ? (isBass ? 0.7 : 0.4) : isBass ? 0.75 : 0.95) *
-          (1 - i * 0.03) *
-          (isBass ? 1.05 : 1.1);
-        gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.linearRampToValueAtTime(level, now + attack);
-        const sustainEnd = Math.max(now + attack + 0.02, now + dur - release);
-        gain.gain.setValueAtTime(level * 0.85, sustainEnd);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-
-        osc.connect(filter);
-        filter.connect(gain);
-        gain.connect(master);
-        gain.connect(reverbSend);
-
-        osc.start(now);
-        osc.stop(now + dur + 0.05);
+        try {
+          osc.detune.value = L.detune;
+        } catch (_) {
+          /* ignore */
+        }
+        og.gain.value = L.mul;
+        osc.connect(og);
+        og.connect(filter);
+        osc.start(t0);
+        osc.stop(t0 + noteDur + 0.06);
         activeNodes.push({ osc: osc, gain: gain });
       });
+
+      filter.connect(gain);
     });
 
     return voicing;

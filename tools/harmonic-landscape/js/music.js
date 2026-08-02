@@ -480,8 +480,7 @@
   }
 
   /**
-   * Open voicing with bass in low-mid register and upper structure lifted.
-   * Avoids muddy closed clusters; top voices sit in a clearer register.
+   * Open / spread voicing: bass low, gap to uppers, notes not piled in one octave.
    * Returns MIDI note numbers (low → high).
    */
   function voiceLead(chord, prevMidi, baseOctave = 3) {
@@ -491,57 +490,53 @@
     const bassPc =
       chord.bassPc != null ? ((chord.bassPc % 12) + 12) % 12 : chord.root;
     const uppers = pcs.filter((p) => p !== bassPc);
-    // If bass is not a chord tone, still keep full upper set
     const upperPcs = uppers.length ? uppers : pcs.slice();
 
     const candidates = [];
 
-    // Several open layouts: closed-then-lift, drop-2 style, wide spread
     for (let bassOct = 2; bassOct <= 3; bassOct++) {
       let bassMidi = bassOct * 12 + bassPc;
-      while (bassMidi < 38) bassMidi += 12;
-      while (bassMidi > 52) bassMidi -= 12;
+      while (bassMidi < 36) bassMidi += 12;
+      while (bassMidi > 50) bassMidi -= 12;
 
-      candidates.push(openStack(bassMidi, upperPcs, 'lift-top'));
       candidates.push(openStack(bassMidi, upperPcs, 'spread'));
+      candidates.push(openStack(bassMidi, upperPcs, 'wide'));
       candidates.push(openStack(bassMidi, upperPcs, 'drop2'));
-      // One octave higher upper structure
-      const high = openStack(bassMidi, upperPcs, 'lift-top').map((m, i) =>
-        i === 0 ? m : m + 12
-      );
-      candidates.push(normalizeVoicing(high));
+      candidates.push(openStack(bassMidi, upperPcs, 'lift-top'));
     }
 
-    // Extra mid-bass open candidate
+    // Guitar-ish mid bass
     {
-      let b = 45 + bassPc;
-      while (b > 52) b -= 12;
-      while (b < 40) b += 12;
+      let b = 40 + ((bassPc + 12 - 4) % 12);
+      while (b < 38) b += 12;
+      while (b > 48) b -= 12;
+      candidates.push(openStack(b, upperPcs, 'wide'));
       candidates.push(openStack(b, upperPcs, 'spread'));
     }
 
-    let pool = candidates.filter((c) => c && c.length);
+    let pool = candidates.filter((c) => c && c.length >= 2);
     if (!pool.length) {
-      return [48 + bassPc, 60 + upperPcs[0], 67 + (upperPcs[1] || upperPcs[0])];
+      return spreadForce([36 + bassPc, 48 + bassPc, 55 + (upperPcs[0] || bassPc), 64 + (upperPcs[1] || upperPcs[0] || bassPc)]);
     }
 
+    // Always apply final open pass so nothing plays as a closed cluster
+    pool = pool.map((c) => spreadForce(c));
+
     if (!prevMidi || !prevMidi.length) {
-      // Prefer open, top around C5–A5, bass not muddy
       let best = pool[0];
       let bestScore = -Infinity;
       for (const cand of pool) {
         const sorted = cand.slice().sort((a, b) => a - b);
-        const top = sorted[sorted.length - 1];
-        const bass = sorted[0];
-        const span = top - bass;
-        let score = 0;
-        if (span >= 14 && span <= 28) score += 3;
-        if (top >= 64 && top <= 79) score += 3;
-        if (bass >= 40 && bass <= 52) score += 2;
-        if (span < 10) score -= 4;
-        score -= Math.abs(top - 72) * 0.05;
-        if (score > bestScore) {
-          bestScore = score;
+        bestScore = Math.max(bestScore, scoreOpenVoicing(sorted));
+        if (scoreOpenVoicing(sorted) >= bestScore) best = sorted;
+      }
+      // re-pick cleanly
+      bestScore = -Infinity;
+      for (const cand of pool) {
+        const sorted = cand.slice().sort((a, b) => a - b);
+        const sc = scoreOpenVoicing(sorted);
+        if (sc > bestScore) {
+          bestScore = sc;
           best = sorted;
         }
       }
@@ -552,7 +547,8 @@
     let bestCost = Infinity;
     for (const cand of pool) {
       const sorted = cand.slice().sort((a, b) => a - b);
-      const cost = voicingCost(prevMidi, sorted);
+      // Prefer smooth motion but still reward open spacing
+      const cost = voicingCost(prevMidi, sorted) - scoreOpenVoicing(sorted) * 0.35;
       if (cost < bestCost) {
         bestCost = cost;
         best = sorted;
@@ -561,52 +557,154 @@
     return best;
   }
 
+  function scoreOpenVoicing(sorted) {
+    if (!sorted || sorted.length < 2) return 0;
+    const bass = sorted[0];
+    const top = sorted[sorted.length - 1];
+    const span = top - bass;
+    let score = 0;
+    // Want ~1.5–2.5 octaves of spread
+    if (span >= 16 && span <= 32) score += 5;
+    else if (span >= 12) score += 2;
+    else score -= 6;
+    // Gap under first upper (not muddy with bass)
+    if (sorted.length > 1) {
+      const gap = sorted[1] - bass;
+      if (gap >= 10 && gap <= 19) score += 4;
+      else if (gap >= 7) score += 1;
+      else score -= 5;
+    }
+    // Even-ish spacing between uppers
+    for (let i = 2; i < sorted.length; i++) {
+      const d = sorted[i] - sorted[i - 1];
+      if (d >= 3 && d <= 9) score += 1.2;
+      if (d < 3) score -= 2;
+    }
+    if (top >= 67 && top <= 81) score += 3;
+    if (bass >= 36 && bass <= 50) score += 2;
+    if (bass < 34) score -= 2;
+    if (top > 86) score -= 3;
+    return score;
+  }
+
+  /**
+   * Force open layout: low bass, gap, spread uppers (no closed triads in one octave).
+   */
+  function spreadForce(midi) {
+    let s = normalizeVoicing(midi);
+    if (s.length < 2) return s;
+    // Bass in comfortable low range
+    while (s[0] < 36) s[0] += 12;
+    while (s[0] > 50) s[0] -= 12;
+    const bass = s[0];
+    // Rebuild uppers above bass with air between them
+    const pcs = s.slice(1).map((m) => ((m % 12) + 12) % 12);
+    const unique = [];
+    pcs.forEach((p) => {
+      if (unique.indexOf(p) < 0) unique.push(p);
+    });
+    // Sort by interval above bass (circular)
+    unique.sort((a, b) => {
+      const da = (a - (bass % 12) + 12) % 12 || 12;
+      const db = (b - (bass % 12) + 12) % 12 || 12;
+      return da - db;
+    });
+
+    const out = [bass];
+    let last = bass + 9; // start looking ~major 6th / minor 7th above bass
+    unique.forEach((pc, i) => {
+      let m = Math.floor(last / 12) * 12 + pc;
+      while (m <= last) m += 12;
+      // First upper: at least a 7th above bass when possible
+      if (i === 0) {
+        while (m - bass < 7) m += 12;
+        // Prefer 10–16 above bass for openness
+        if (m - bass < 10 && m + 12 < 84) m += 12;
+      } else {
+        // Keep thirds/fourths from collapsing — prefer ≥3, open to ≥5 if cramped
+        while (m - last < 3) m += 12;
+        if (m - last < 4 && m + 12 <= 84) m += 12;
+      }
+      out.push(m);
+      last = m;
+    });
+
+    // If only 2–3 notes, push top up for air
+    if (out.length >= 2 && out[out.length - 1] - out[0] < 16) {
+      out[out.length - 1] += 12;
+    }
+    // 4-note: drop-2 colour — second from top down an octave if still open enough
+    if (out.length >= 4) {
+      const trial = out.slice();
+      trial[trial.length - 2] -= 12;
+      trial.sort((a, b) => a - b);
+      if (trial[1] - trial[0] >= 7 && trial[trial.length - 1] - trial[0] >= 14) {
+        return normalizeVoicing(trial);
+      }
+    }
+    // Cap top
+    while (Math.max.apply(null, out) > 86) {
+      for (let i = 1; i < out.length; i++) {
+        if (out[i] > 62) out[i] -= 12;
+      }
+      out.sort((a, b) => a - b);
+    }
+    for (let i = 1; i < out.length; i++) {
+      while (out[i] <= out[0]) out[i] += 12;
+    }
+    return normalizeVoicing(out);
+  }
+
   /** Build open upper structure above a fixed bass MIDI note. */
   function openStack(bassMidi, upperPcs, style) {
     if (!upperPcs.length) return [bassMidi];
-    // Order uppers as ascending pitch-classes from above bass
     const ordered = upperPcs.slice().sort((a, b) => a - b);
-    // Rotate so first upper sits a bit above bass
     let notes = [bassMidi];
     let last = bassMidi;
 
     if (style === 'drop2' && ordered.length >= 3) {
-      // Build closed high then drop second from top by octave
       const high = [];
-      let cur = 60;
+      let cur = 62;
       ordered.forEach((pc) => {
         let m = Math.floor(cur / 12) * 12 + pc;
-        while (m < 55) m += 12;
+        while (m < 57) m += 12;
         while (high.length && m <= high[high.length - 1]) m += 12;
         high.push(m);
         cur = m;
       });
-      // sort high, drop 2nd from top
       high.sort((a, b) => a - b);
       if (high.length >= 2) high[high.length - 2] -= 12;
       high.sort((a, b) => a - b);
-      // ensure all above bass
       const fixed = high.map((m) => {
         let x = m;
-        while (x <= bassMidi) x += 12;
+        while (x <= bassMidi + 6) x += 12;
         return x;
       });
-      return normalizeVoicing([bassMidi].concat(fixed));
+      return spreadForce([bassMidi].concat(fixed));
     }
+
+    // wide: big gaps; spread: moderate open; lift-top: closed then lift
+    const minGap =
+      style === 'wide' ? 5 : style === 'spread' ? 4 : 3;
+    const firstMin =
+      style === 'wide' ? 12 : style === 'spread' ? 10 : 7;
 
     ordered.forEach((pc, i) => {
       let m = Math.floor(last / 12) * 12 + pc;
       while (m <= last) m += 12;
-      // Prefer not stacking every third tight — leave room
-      if (style === 'spread' && i > 0 && m - last < 4) m += 12;
+      if (i === 0) {
+        while (m - bassMidi < firstMin) m += 12;
+      } else {
+        while (m - last < minGap) m += 12;
+      }
       notes.push(m);
       last = m;
     });
 
-    if (style === 'lift-top' || style === 'spread') {
+    if (style === 'lift-top' || style === 'spread' || style === 'wide') {
       notes = liftUpperStructure(notes);
     }
-    return normalizeVoicing(notes);
+    return spreadForce(notes);
   }
 
   /** Raise top voices so the chord isn't a low mud cluster. */
@@ -614,30 +712,26 @@
     const s = midi.slice().sort((a, b) => a - b);
     if (s.length < 2) return s;
     const bass = s[0];
-    // Lift everything except bass until top clears a clear register
     let top = s[s.length - 1];
     let guard = 0;
-    while (top < 67 && guard < 4) {
+    while (top < 69 && guard < 4) {
       for (let i = 1; i < s.length; i++) s[i] += 12;
       top = s[s.length - 1];
       guard++;
     }
-    // Ensure minimum span ~ octave+ for colour
-    while (top - bass < 14 && guard < 6) {
+    while (top - bass < 16 && guard < 6) {
       s[s.length - 1] += 12;
       if (s.length > 3) s[s.length - 2] += 12;
       top = s[s.length - 1];
       guard++;
     }
-    // Cap screamingly high tops
-    while (Math.max(...s) > 84) {
+    while (Math.max.apply(null, s) > 86) {
       for (let i = 1; i < s.length; i++) {
-        if (s[i] > 60) s[i] -= 12;
+        if (s[i] > 62) s[i] -= 12;
       }
     }
-    // Keep bass under uppers
     for (let i = 1; i < s.length; i++) {
-      while (s[i] <= bass) s[i] += 12;
+      while (s[i] <= bass + 6) s[i] += 12;
     }
     return s.sort((a, b) => a - b);
   }
@@ -664,11 +758,13 @@
     }
     // Prefer open-ish span (not muddy clusters)
     const span = Math.max(...B) - Math.min(...B);
-    if (span < 12) cost += (12 - span) * 0.8;
-    if (span > 30) cost += (span - 30) * 0.15;
+    if (span < 16) cost += (16 - span) * 1.1;
+    if (span > 34) cost += (span - 34) * 0.12;
     // Prefer top voice not buried
     const top = Math.max(...B);
-    if (top < 64) cost += (64 - top) * 0.35;
+    if (top < 67) cost += (67 - top) * 0.4;
+    // Prefer gap under first upper
+    if (B.length > 1 && B[1] - B[0] < 8) cost += (8 - (B[1] - B[0])) * 0.9;
     return cost;
   }
 
