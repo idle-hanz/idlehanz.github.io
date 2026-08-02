@@ -599,6 +599,34 @@
   };
 
   /**
+   * Enter aim/drag mode on an existing path step (e.g. after edge insert).
+   * Pointer capture is the caller's job if continuing a gesture.
+   */
+  SpatialMap.prototype.beginAimAtIndex = function (index) {
+    if (index == null || index < 0 || !this.nodes || !this.nodes[index]) return false;
+    // Ensure layout is current (insert just refreshed path)
+    if (!this.nodes[index]) return false;
+    const item = this.nodes[index];
+    this._mode = 'node';
+    this.camera.tx = this.camera.x;
+    this.camera.ty = this.camera.y;
+    this.camera.tz = this.camera.zoom;
+    this._dragNode = item;
+    this._dragOrigin = { x: item.x, y: item.y };
+    this._dragPos = { x: item.x, y: item.y };
+    this._snapSticky = null;
+    this._moved = false;
+    this.snapAlt = null;
+    this._aimPreview = null;
+    this.current = index;
+    let alts = [];
+    if (this.onRequestAlts) alts = this.onRequestAlts(index, item.chord) || [];
+    this._layoutAlts(index, alts);
+    this.canvas.style.cursor = 'grabbing';
+    return true;
+  };
+
+  /**
    * Options sit on the same Chase seats the path will use after click.
    * (Old soft-pull toward selection made suggestions look local but the
    * written chord jumped to its true seat — far from the hollow ring.)
@@ -1488,7 +1516,15 @@
       return;
     }
     if (hit && hit.type === 'edge' && this.onInsertBetween) {
-      this.onInsertBetween(hit.afterIndex);
+      // Insert a bridge node, then enter aim so the same gesture can drag it
+      // onto a sensible seat (or release to keep the default bridge).
+      const newIndex = this.onInsertBetween(hit.afterIndex);
+      if (newIndex != null && this.beginAimAtIndex) {
+        if (this.beginAimAtIndex(newIndex)) {
+          this.canvas.setPointerCapture(e.pointerId);
+          this.canvas.style.cursor = 'grabbing';
+        }
+      }
       return;
     }
     if (hit && hit.type === 'altNode') {
@@ -2450,7 +2486,9 @@
       this._mode === 'node'
         ? this.snapAlt
           ? 'Release to set · audition: prev → ' + this.snapAlt.label + ' → next'
-          : 'Move crosshair onto a labelled target to audition · release off-target = cancel'
+          : 'Drag onto a seat to change · release here keeps this bridge chord'
+        : this.hover && this.hover.type === 'edge'
+          ? 'Click edge → insert a step between · then drag it onto a chord seat'
         : this.hover && this.hover.type === 'home'
           ? 'HOME = write-key tonic (Chase disk centre) — click to start/land'
           : this.hover && this.hover.type === 'diskHome'

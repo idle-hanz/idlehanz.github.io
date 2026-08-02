@@ -172,7 +172,7 @@
       }, 280);
     };
     H.map.onInsertBetween = (afterIndex) => {
-      H.insertBetweenWithTiming(afterIndex);
+      return H.insertBetweenWithTiming(afterIndex);
     };
     H.map.onTrajectory = (info) => {
       const el = H.$('#traj-caption');

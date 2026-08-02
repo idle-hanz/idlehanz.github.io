@@ -341,51 +341,74 @@ H.chordFromChaseSeat = function (seat, key) {
   }
 
   /**
-   * Pick a bridge chord between a → b that lands on a sensible Chase seat.
-   * Prefer a diatonic scale seat of a's key near the circular midpoint;
-   * never use arithmetic mean of pitch classes (B→C is not F#).
+   * Pick a bridge chord between a → b.
+   * Scores diatonic (and light colour) candidates as a→?→b joins — root position,
+   * no auto-inversion (map seats are functional picks the user can then drag).
    */
   H.bridgeChordBetween = function (a, b, duration) {
     const bridgeKey = H.keyOf(a);
     const music = H.M();
     const mid = H.circularBlendRoot(a.root, b.root, 0.5);
-    let root = mid;
-    let quality = bridgeKey.mode === 'major' ? 'maj' : 'min';
-    let roman = '→';
+    const cands = [];
+    const seen = new Set();
+    const pushCand = (root, quality, roman, region) => {
+      const k = root + ':' + quality;
+      if (seen.has(k)) return;
+      if (a && root === a.root && quality === a.quality) return;
+      if (b && root === b.root && quality === b.quality) return;
+      seen.add(k);
+      let ch = music.makeChord(root, quality, {
+        duration: duration,
+        region: region || 'diatonic',
+        tag: 'insert',
+        roman: roman || '',
+      });
+      // Always root position for edge inserts
+      if (H.C().withBass) ch = H.C().withBass(ch, ch.root);
+      else ch.bassPc = ch.root;
+      H.stampKey(ch, bridgeKey);
+      const score = H.scoreAimContext
+        ? H.scoreAimContext(a, ch, b, { mode: 'middle' })
+        : 0.5 - H.pcDist(root, mid) * 0.05;
+      // Prefer seats near circular mid between a and b
+      const midBias = 0.08 * (3 - Math.min(3, H.pcDist(root, mid)));
+      cands.push({ ch: ch, score: score + midBias });
+    };
 
     if (music.circularHarmonicScale) {
-      const seats = music.circularHarmonicScale(bridgeKey.tonic, bridgeKey.mode);
-      let best = null;
-      let bestScore = Infinity;
-      seats.forEach((s) => {
-        if (s.root === a.root || s.root === b.root) return;
-        // Prefer seats close to the circular mid-root
-        const score = H.pcDist(s.root, mid);
-        if (score < bestScore) {
-          bestScore = score;
-          best = s;
-        }
+      music.circularHarmonicScale(bridgeKey.tonic, bridgeKey.mode).forEach((s) => {
+        let q = (s.qualities && s.qualities[0]) || 'maj';
+        if (s.role === 'dom') q = 'dom7';
+        pushCand(s.root, q, s.roman || '', 'diatonic');
       });
-      if (best) {
-        root = best.root;
-        roman = best.roman || '→';
-        if (best.role === 'dom') quality = 'dom7';
-        else if (best.qualities && best.qualities[0]) quality = best.qualities[0];
-      }
+    }
+    // A couple of common bridges if scale is thin
+    [
+      { d: 5, q: 'maj', roman: 'IV', region: 'diatonic' },
+      { d: 7, q: 'dom7', roman: 'V7', region: 'diatonic' },
+      { d: 2, q: bridgeKey.mode === 'major' ? 'min' : 'dim', roman: 'ii', region: 'diatonic' },
+    ].forEach((s) => {
+      pushCand((bridgeKey.tonic + s.d) % 12, s.q, s.roman, s.region);
+    });
+
+    cands.sort((x, y) => y.score - x.score);
+    if (cands.length) {
+      const best = cands[0].ch;
+      best.duration = duration;
+      best.tag = 'insert';
+      return best;
     }
 
+    // Fallback: mid root diatonic triad
+    let root = mid;
+    let quality = bridgeKey.mode === 'major' ? 'maj' : 'min';
     let ch = music.makeChord(root, quality, {
-      duration,
+      duration: duration,
       region: 'diatonic',
       tag: 'insert',
-      roman,
+      roman: '→',
     });
-    if (H.C().bestInversion) {
-      ch = H.C().bestInversion(a, ch);
-      ch.duration = duration;
-      ch.tag = 'insert';
-      ch.roman = roman;
-    }
+    if (H.C().withBass) ch = H.C().withBass(ch, ch.root);
     return H.stampKey(ch, bridgeKey);
   }
 
@@ -447,20 +470,21 @@ H.chordFromChaseSeat = function (seat, key) {
 
   /**
    * Insert between two chords without lengthening the cell.
-   * Map edge click → this.
+   * Map edge click → this. Returns the new path index, or null on failure.
+   * Caller may enter aim-mode on that index so the user can drag to a seat.
    */
   H.insertBetweenWithTiming = function (afterIndex) {
     const a = H.state.chords[afterIndex];
     const b = H.state.chords[afterIndex + 1];
     if (!a || !b) {
       H.setSyncStatus('Edge insert needs two steps — click the line between them');
-      return;
+      return null;
     }
 
     const plan = H.planEdgeInsertBeats(a.duration || 4, b.duration || 4);
     if (!plan) {
       H.setSyncStatus('Neighbors too short to insert (need ≥ 2 beats combined)');
-      return;
+      return null;
     }
 
     H.pushUndo();
@@ -475,17 +499,19 @@ H.chordFromChaseSeat = function (seat, key) {
     H.A().playChord({ chord: ch });
     const total = H.state.chords.reduce((s, c) => s + (c.duration || 0), 0);
     H.setSyncStatus(
-      'Insert on edge · ' +
+      'New step · ' +
         ch.name +
-        ' · ' +
-        plan.insertDur +
-        'b from neighbors · total ' +
-        total +
-        'b · between ' +
+        ' between ' +
         a.name +
         ' → ' +
-        b.name
+        b.name +
+        ' · ' +
+        plan.insertDur +
+        'b · drag it onto a seat to change · total ' +
+        total +
+        'b'
     );
+    return afterIndex + 1;
   }
 
   /**
