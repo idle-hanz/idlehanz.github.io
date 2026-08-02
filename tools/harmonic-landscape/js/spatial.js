@@ -889,6 +889,74 @@
     return nodes;
   };
 
+  /**
+   * Should this path chord sit on the write-home wheel?
+   * Yes if unsigned, same disk, OR diatonic in write home (even if wrongly
+   * stamped to another key — that caused Em→B minor disk and Chase≠Function).
+   */
+  SpatialMap.prototype._pathShouldUseActiveWheel = function (ch) {
+    if (!ch) return true;
+    const writeT = this.origin.tonic;
+    const writeM = this.origin.mode || 'minor';
+    if (ch.localTonic == null) return true;
+    if (
+      ch.localTonic === writeT &&
+      (ch.localMode || writeM) === writeM
+    ) {
+      return true;
+    }
+    const M = global.HLMusic;
+    if (M && M.seatForChord) {
+      const hit = M.seatForChord(ch, writeT, writeM);
+      // On-scale in write home (incl. quality variants on a scale root)
+      if (hit && hit.onScale) return true;
+    }
+    return false;
+  };
+
+  /**
+   * Exact Chase scale-seat position on the active write-home disk.
+   * Shared by Chase path + Function path so both views share the same wheel.
+   */
+  SpatialMap.prototype._activeSeatPos = function (ch, index, stackPath) {
+    const M = global.HLMusic;
+    if (!M || !M.seatForChord || !ch) return null;
+    const disk = this._activeDisk();
+    const cx = disk.cx || 0;
+    const cy = disk.cy || 0;
+    const R = disk.R || 120;
+    const t = this.origin.tonic;
+    const mode = this.origin.mode || 'minor';
+    const hit = M.seatForChord(ch, t, mode);
+    if (!hit || !hit.seat) return null;
+    let rad = R * 0.72;
+    if (hit.seat.role === 'tonic' && hit.onScale && !hit.shell) rad = R * 0.42;
+    else if (hit.shell === 'secondary') rad = R * 0.92;
+    else if (hit.shell === 'variant') rad = R * 0.82;
+    else if (hit.shell === true) rad = R * 1.12;
+    const ang = hit.seat.angle;
+    let x = cx + Math.cos(ang) * rad;
+    let y = cy + Math.sin(ang) * rad * 0.88;
+    // Stack revisits slightly so repeats don't fully cover
+    let stack = 0;
+    const peers = stackPath || this.path || [];
+    for (let j = 0; j < index; j++) {
+      const prev = peers[j];
+      if (prev && prev.root === ch.root && prev.quality === ch.quality) stack++;
+    }
+    if (stack > 0) {
+      x += Math.cos(ang + Math.PI / 2) * stack * 6;
+      y += Math.sin(ang + Math.PI / 2) * stack * 5;
+    }
+    return {
+      x: x,
+      y: y,
+      onScale: !!hit.onScale,
+      shell: hit.shell,
+      seat: hit.seat,
+    };
+  };
+
   SpatialMap.prototype._layoutPath = function () {
     const M = global.HLMusic;
     if (!M) return;
@@ -898,8 +966,14 @@
     this.nodes = this.path.map((ch, i) => {
       let pos = null;
       if (useFn && ch) {
+        // Function chart seats first (aligned to Chase scale ring)
         pos = this._functionSeatForChord(ch, i, this.path);
       }
+      // Chase + Function fallback: same write-home seat math
+      if (!pos && ch && this._pathShouldUseActiveWheel(ch)) {
+        pos = this._activeSeatPos(ch, i, this.path);
+      }
+      // True other-key ownership only (not diatonic in write home)
       if (!pos) pos = this._chordPos(ch, i, 0);
       const r = 16 + Math.min(11, (ch.duration || 4) * 1.15);
       return {
@@ -913,9 +987,7 @@
         seat: pos.seat,
       };
     });
-    // Function: stay on chart seats. Chase: soft de-overlap only (hard separate
-    // pushed path nodes off scale seats and made blue compare look orphaned).
-    if (!useFn) this._softSeparate(this.nodes, 30, 8);
+    // Never soft-separate path off seats — that made Chase ≠ Function
     this._layoutAltPath();
     this._computeDivergent();
     this._rebuildScaleSeats();
@@ -936,10 +1008,18 @@
     ) {
       return null;
     }
+    // Prefer diatonic seat over V7/borrow with same root (path Em → iii, not a shell)
     const exact = this.functionNodes.find(
       (n) =>
-        n.chord && n.chord.root === ch.root && n.chord.quality === ch.quality
-    );
+        n.chord &&
+        n.chord.root === ch.root &&
+        n.chord.quality === ch.quality &&
+        n.role === 'diatonic'
+    ) ||
+      this.functionNodes.find(
+        (n) =>
+          n.chord && n.chord.root === ch.root && n.chord.quality === ch.quality
+      );
     const soft = exact
       ? null
       : this.functionNodes.find(
@@ -1317,6 +1397,7 @@
           roman: s.roman,
           tag: 'chase-seat',
         });
+        // Same radii as path seats + Function diatonic ring
         const radius = s.role === 'tonic' ? disk.R * 0.42 : disk.R * 0.72;
         const x = disk.cx + Math.cos(s.angle) * radius;
         const y = disk.cy + Math.sin(s.angle) * radius * 0.88;
