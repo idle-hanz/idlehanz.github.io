@@ -644,6 +644,12 @@
     }
     .fo-ctl input { accent-color: #7eb8da; margin: 0; }
     .fo-ctl:hover { color: #fff4d6; }
+    .fo-hint {
+      font-size: 0.65rem;
+      color: rgba(180,168,150,0.55);
+      font-style: italic;
+      margin-left: 0.15rem;
+    }
     .slot.diff {
       border-color: rgba(126,184,218,0.55);
       box-shadow: inset 3px 0 0 rgba(126,184,218,0.7);
@@ -877,12 +883,12 @@
             <label class="ctl" style="margin-left:0.35rem;color:#c8b8a0" title="Show next-move dots around home (Chase view)"><input type="checkbox" id="tog-horizon" checked> Next-move dots</label>
             <label class="ctl" style="color:#c8b8a0" title="Show blue path only when a version is set as compare (Alt-click a chip)"><input type="checkbox" id="tog-alt"> Blue path</label>
           </div>
-          <!-- Function layers: 3 group toggles (only when Function is active) -->
+          <!-- Function layers: home ring always on; 2 toggles only -->
           <div id="function-opts" class="function-opts" hidden>
             <span class="function-opts-label">Show</span>
-            <label class="fo-ctl" title="Diatonic ring + light progressions + your path on the chart"><input type="checkbox" id="fo-home" checked> Home ring</label>
-            <label class="fo-ctl" title="Primary V7→I and secondary dominants V7/x → targets"><input type="checkbox" id="fo-dominants" checked> Dominants</label>
-            <label class="fo-ctl" title="Modal interchange orbit + I/IV/V gates (hover shows all moves)"><input type="checkbox" id="fo-borrow" checked> Borrow</label>
+            <label class="fo-ctl" title="Primary V7→I and secondary dominants (sit by their targets, not on borrow rays)"><input type="checkbox" id="fo-dominants" checked> Dominants</label>
+            <label class="fo-ctl" title="Modal interchange orbit + purple gate lines from I/IV/V"><input type="checkbox" id="fo-borrow" checked> Borrow</label>
+            <span class="fo-hint">Home ring always on</span>
           </div>
         </div>
         <canvas id="map" aria-label="Harmonic path and directions"></canvas>

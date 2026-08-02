@@ -65,7 +65,6 @@ H.refreshAll = function () {
   H.syncFunctionOptsUI = function () {
     const fo = H.state.functionOpts || {};
     const map = {
-      'fo-home': 'home',
       'fo-dominants': 'dominants',
       'fo-borrow': 'borrow',
     };
@@ -76,7 +75,7 @@ H.refreshAll = function () {
   };
 
   H.setFunctionOpt = function (key, value) {
-    if (!H.state.functionOpts) H.state.functionOpts = { home: true, dominants: true, borrow: true };
+    if (!H.state.functionOpts) H.state.functionOpts = { dominants: true, borrow: true };
     H.state.functionOpts[key] = !!value;
     if (H.map && H.map.mapView === 'function') H.refreshMap();
   };

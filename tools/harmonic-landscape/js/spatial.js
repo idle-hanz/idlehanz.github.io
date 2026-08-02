@@ -343,28 +343,26 @@
         M &&
         M.chaseChordPos
       ) {
-        // Sit just outside the TARGET seat so G7→C is a short arrow, not through G maj
+        // Place V7s on a mid belt beside their TARGET, angularly offset so they
+        // do NOT sit on radial borrow-gate lines (home → outer purple orbit).
         const target = byId[n.resolvesToId];
-        const tCh = (target && target.chord) || {
-          root: n.resolvesToId.split(':')[0] | 0,
-          quality: 'maj',
-        };
-        // Build a probe chord for target seat
         const probe =
           target && target.chord
             ? target.chord
-            : { root: parseInt(String(n.resolvesToId).split(':')[0], 10) || 0, quality: 'maj' };
+            : {
+                root: parseInt(String(n.resolvesToId).split(':')[0], 10) || 0,
+                quality: 'maj',
+              };
         const base = M.chaseChordPos(probe, t, mode, { cx: cx, cy: cy, R: R });
-        // Slightly outside the diatonic ring, same angle as target
-        const scale = 1.22;
-        x = cx + (base.x - cx) * scale;
-        y = cy + (base.y - cy) * scale;
-        // Tiny tangential nudge so label doesn't sit on the resolve arrow
-        const ang = Math.atan2(base.y - cy, base.x - cx) + 0.28;
-        x += Math.cos(ang) * R * 0.08;
-        y += Math.sin(ang) * R * 0.07;
+        const tAng = Math.atan2(base.y - cy, base.x - cx);
+        // Mid radius between home ring (~0.9R) and borrow orbit (~1.38R)
+        const rad = R * 1.08;
+        // Clockwise of target so resolve arrow is short & clear of purple radials
+        const ang = tAng + 0.52;
+        x = cx + Math.cos(ang) * rad;
+        y = cy + Math.sin(ang) * rad * 0.88;
       } else if (M && M.chaseChordPos) {
-        // Home ring (incl. I/IV/V gates): always same radius — Borrow never moves them
+        // Home ring always fixed (I/IV/V never jump when Borrow toggles)
         const base = M.chaseChordPos(ch, t, mode, { cx: cx, cy: cy, R: R });
         const scale = diatonicScale;
         x = cx + (base.x - cx) * scale;
@@ -465,9 +463,25 @@
 
       const lit = !hoverId || edgeTouchesHover(e);
       const dim = hoverId && !edgeTouchesHover(e);
+      // Gate lines curve outward so they don't look collinear with mid-belt V7s
+      const isGate = e.kind === 'gate';
       ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
+      if (isGate) {
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        // Perpendicular bulge away from origin so path skirts the dominant belt
+        const ox = mx - (this._activeDisk().cx || 0);
+        const oy = my - (this._activeDisk().cy || 0);
+        const olen = Math.hypot(ox, oy) || 1;
+        const bulge = 28;
+        const cpx = mx + (ox / olen) * bulge;
+        const cpy = my + (oy / olen) * bulge;
+        ctx.moveTo(a.x, a.y);
+        ctx.quadraticCurveTo(cpx, cpy, b.x, b.y);
+      } else {
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      }
       if (e.kind === 'resolve' || e.kind === 'chain') {
         ctx.strokeStyle = lit
           ? 'rgba(126,184,218,' + (dim ? '0.08' : hoverId ? '0.95' : e.kind === 'chain' ? '0.45' : '0.55') + ')'
@@ -497,7 +511,7 @@
       ctx.globalAlpha = 1;
       ctx.setLineDash([]);
       if (dim || e.kind === 'skeleton') return;
-      // arrow head toward target (not for undirected skeleton)
+      // arrow head toward target
       const ang = Math.atan2(b.y - a.y, b.x - a.x);
       const ax = b.x - Math.cos(ang) * (b.r + 4);
       const ay = b.y - Math.sin(ang) * (b.r + 4);

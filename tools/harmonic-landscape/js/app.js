@@ -309,9 +309,8 @@
     if (H.$('#view-function')) {
       H.$('#view-function').addEventListener('click', () => H.setMapView('function'));
     }
-    // Function layers: 3 toggles only
+    // Function layers: Dominants + Borrow (home ring always on)
     const foMap = {
-      'fo-home': 'home',
       'fo-dominants': 'dominants',
       'fo-borrow': 'borrow',
     };

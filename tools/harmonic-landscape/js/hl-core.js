@@ -21,13 +21,11 @@
       syncMsg: "", undoStack: [], redoStack: [], compareCellId: null, defaultDuration: 4,
       pendingTonic: null, pendingMode: null,
       /**
-       * Function-view layers (3 toggles only).
-       * home = diatonic ring + skeleton + path highlight
+       * Function-view layers (home ring always on).
        * dominants = V7→I + secondaries
-       * borrow = interchange orbit + gates (sparse paper set)
+       * borrow = interchange orbit + gates
        */
       functionOpts: {
-        home: true,
         dominants: true,
         borrow: true,
       },
