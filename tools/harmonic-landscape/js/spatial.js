@@ -1732,7 +1732,7 @@
             : this.hover && this.hover.type === 'horizon'
               ? 'Option on/near harmonic scale · green ghost = join · click to write'
               : this.hover && this.hover.type === 'edge'
-                ? 'Click edge to insert (steals time from neighbors)'
+                ? 'Click green + on the curve to insert a bridge chord (keeps total length)'
                 : this.hover && this.hover.type === 'altNode'
                   ? 'Blue compare path — names show where versions differ'
                   : this.hover && this.hover.type === 'seat'
