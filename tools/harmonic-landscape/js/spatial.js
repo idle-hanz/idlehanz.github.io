@@ -58,7 +58,7 @@
     this.onAimChange = null; // (pathIndex, target|{null}, meta) for live audition
     this.onInsertBetween = null; // (afterIndex) => void
     this.onTrajectory = null; // (caption) => void
-    this.snapRadius = 48; // magnet lock onto Chase seats
+    this.snapRadius = 56; // larger seats → easier drop
     this.scaleSeats = []; // clickable seats on active disk
     this._mode = null;
     this._dragNode = null;
@@ -101,9 +101,9 @@
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     // Keep disk radii in proportion to canvas
     if (this.disks && this.disks.length) {
-      const R = Math.min(this.w, this.h) * 0.34;
+      const R = Math.min(this.w, this.h) * 0.46;
       this.disks.forEach((d, i) => {
-        d.R = i === 0 || d.active ? R : R * 0.78;
+        d.R = i === 0 || d.active ? R : R * 0.72;
       });
       if (this.path && this.path.length) this._layoutPath();
     }
@@ -132,7 +132,7 @@
    */
   SpatialMap.prototype._rebuildDisks = function (keepPrev) {
     const M = global.HLMusic;
-    const R = Math.min(this.w || 500, this.h || 360) * 0.34;
+    const R = Math.min(this.w || 500, this.h || 360) * 0.46;
     const active = {
       tonic: this.origin.tonic,
       mode: this.origin.mode,
@@ -152,13 +152,13 @@
     ) {
       const steps = M && M.fifthsDistance ? M.fifthsDistance(active.tonic, oldActive.tonic) : 1;
       const ang = -Math.PI / 2 + (steps / 12) * Math.PI * 2;
-      const dist = R * 1.55;
+      const dist = R * 1.45;
       this.disks.push({
         tonic: oldActive.tonic,
         mode: oldActive.mode,
         cx: Math.cos(ang) * dist,
         cy: Math.sin(ang) * dist * 0.85,
-        R: R * 0.78,
+        R: R * 0.72,
         active: false,
         label: M ? M.noteName(oldActive.tonic) : '?',
       });
@@ -171,7 +171,7 @@
       (this.disks && this.disks.find((d) => d.active)) || {
         cx: 0,
         cy: 0,
-        R: Math.min(this.w || 500, this.h || 360) * 0.34,
+        R: Math.min(this.w || 500, this.h || 360) * 0.46,
         tonic: this.origin.tonic,
         mode: this.origin.mode,
       }
@@ -215,7 +215,7 @@
         ? this.nodes[this.current]
         : { x: disk.cx || 0, y: disk.cy || 0, r: 14 };
 
-    const orbitItems = (items || []).filter((it) => it.kind !== 'home').slice(0, 8);
+    const orbitItems = (items || []).filter((it) => it.kind !== 'home').slice(0, 14);
     const used = [];
 
     this.horizon = orbitItems.map((it, i) => {
@@ -505,7 +505,7 @@
         role: a.role || '',
         x,
         y,
-        r: 18,
+        r: 22,
         naturalX: natural.x,
         naturalY: natural.y,
       };
@@ -535,7 +535,7 @@
         this.scaleSeats.push({
           x,
           y,
-          r: disk.active ? 16 : 10,
+          r: disk.active ? 22 : 12,
           root: s.root,
           roman: s.roman,
           role: s.role,
@@ -583,7 +583,7 @@
         const a = this.alts[i];
         const dx = w.x - a.x;
         const dy = w.y - a.y;
-        if (dx * dx + dy * dy <= 22 * 22) return { type: 'alt', item: a };
+        if (dx * dx + dy * dy <= 28 * 28) return { type: 'alt', item: a };
       }
       return null;
     }
@@ -920,9 +920,9 @@
           this.snapAlt &&
           this.snapAlt.chord &&
           this.snapAlt.chord.root === s.root;
-        const seatR = (active ? 14 : 8) / this.camera.zoom;
+        const seatR = (active ? 20 : 11) / this.camera.zoom;
         ctx.beginPath();
-        ctx.arc(sx, sy, seatR * (seatHover || aimHere ? 1.25 : 1), 0, Math.PI * 2);
+        ctx.arc(sx, sy, seatR * (seatHover || aimHere ? 1.2 : 1), 0, Math.PI * 2);
         if (aimHere) {
           ctx.fillStyle = 'rgba(125,186,146,0.55)';
           ctx.fill();

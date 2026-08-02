@@ -443,12 +443,12 @@
     disk = disk || { cx: 0, cy: 0, R: 120 };
     const hit = seatForChord(chord, tonic, modeKey);
     const ang = hit.seat.angle;
-    let radius = disk.R * 0.72;
-    if (hit.seat.role === 'tonic' && hit.onScale && !hit.shell) radius = disk.R * 0.42;
-    else if (hit.shell === 'secondary') radius = disk.R * 0.9;
-    else if (hit.shell === 'variant') radius = disk.R * 0.8;
-    else if (hit.shell === true) radius = disk.R * 1.12;
-    const squash = 0.88;
+    let radius = disk.R * 0.74;
+    if (hit.seat.role === 'tonic' && hit.onScale && !hit.shell) radius = disk.R * 0.4;
+    else if (hit.shell === 'secondary') radius = disk.R * 0.92;
+    else if (hit.shell === 'variant') radius = disk.R * 0.82;
+    else if (hit.shell === true) radius = disk.R * 1.18;
+    const squash = 0.9;
     return {
       x: disk.cx + Math.cos(ang) * radius,
       y: disk.cy + Math.sin(ang) * radius * squash,

@@ -501,7 +501,7 @@
     if (opts.skipEdit) {
       if (map) {
         map.setOrigin(state.tonic, state.mode);
-        map.setHorizon(buildHorizon({ forMap: true, limit: 8 }));
+        map.setHorizon(buildHorizon({ forMap: true, limit: 14 }));
       }
       renderTitle();
       renderHorizonLists();
@@ -672,8 +672,8 @@
   }
 
   /**
-   * Drag targets = Chase scale seats only (clean, 6–7 targets on the ring).
-   * Plus at most 2 tension shell options (♭II7, ♭VI colour) so drag stays uncluttered.
+   * Drag targets on the (large) Chase chart: full scale seats + useful tension shells.
+   * Room comes from a bigger disk, not from starving the palette.
    */
   function buildAimTargets(pathIndex, chord) {
     const list = [];
@@ -688,7 +688,7 @@
       list.push({ chord: ch, label: label || ch.name, role: role || '' });
     };
 
-    // Primary: circular harmonic scale seats
+    // Full circular harmonic scale
     if (M().circularHarmonicScale) {
       M()
         .circularHarmonicScale(state.tonic, state.mode)
@@ -698,19 +698,29 @@
         });
     }
 
-    // Two tension shells only (not a full palette dump)
-    add(
-      M().makeChord((state.tonic + 1) % 12, 'dom7', { region: 'tritone', tag: 'noir' }),
-      null,
-      '♭II7'
-    );
-    add(
-      M().makeChord((state.tonic + 8) % 12, 'maj', { region: 'interchange', tag: 'colour' }),
-      null,
-      '♭VI'
-    );
+    // Tension / colour shell (sits outside the ring via Chase layout)
+    [
+      { d: 1, q: 'dom7', role: '♭II7', region: 'tritone' },
+      { d: 8, q: 'maj', role: '♭VI', region: 'interchange' },
+      { d: 10, q: 'maj', role: '♭VII', region: 'interchange' },
+      { d: 6, q: 'dom7', role: '♭V7', region: 'tritone' },
+      { d: 3, q: 'maj', role: 'III', region: 'chromatic' },
+    ].forEach((s) => {
+      add(
+        M().makeChord((state.tonic + s.d) % 12, s.q, { region: s.region, tag: 'shell' }),
+        null,
+        s.role
+      );
+    });
 
-    return list; // ~9 max — all live on Chase geometry when laid out
+    // Quality family on same root (inversions less important on big chart)
+    if (C().closeAlternates) {
+      C()
+        .closeAlternates(chord, state.tonic, state.mode, 4)
+        .forEach((a) => add(a.chord, a.label, a.role || 'alt'));
+    }
+
+    return list;
   }
 
   /** Click a Chase seat: write that scale chord into the path. */
@@ -2163,7 +2173,7 @@
   function buildHorizon(opts) {
     opts = opts || {};
     const forMap = !!opts.forMap;
-    const limit = opts.limit != null ? opts.limit : forMap ? 8 : 18;
+    const limit = opts.limit != null ? opts.limit : forMap ? 14 : 22;
     const music = M();
     const compose = C();
     const t = state.tonic;
@@ -2551,7 +2561,7 @@
     map.setOrigin(state.tonic, state.mode);
     map.setPath(state.chords, state.selected);
     // Canvas shows a short ranked constellation; From here list keeps the full catalog
-    map.setHorizon(buildHorizon({ forMap: true, limit: 8 }));
+    map.setHorizon(buildHorizon({ forMap: true, limit: 14 }));
     renderTimeStrip();
     refreshAltPath();
   }
