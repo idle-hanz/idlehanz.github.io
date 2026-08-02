@@ -1232,12 +1232,14 @@
       if (d <= 28) add({ type: 'home' }, d, 1);
     }
 
-    // Inactive disk centres
-    for (let i = 0; i < (this.disks || []).length; i++) {
-      const disk = this.disks[i];
-      if (disk.active) continue;
-      const d = Math.hypot(w.x - (disk.cx || 0), w.y - (disk.cy || 0));
-      if (d <= 22) add({ type: 'diskHome', item: disk }, d, 2);
+    // Inactive disk centres (Chase only — Function is same-key chart)
+    if (this.mapView !== 'function') {
+      for (let i = 0; i < (this.disks || []).length; i++) {
+        const disk = this.disks[i];
+        if (disk.active) continue;
+        const d = Math.hypot(w.x - (disk.cx || 0), w.y - (disk.cy || 0));
+        if (d <= 22) add({ type: 'diskHome', item: disk }, d, 2);
+      }
     }
 
     // Compare-path alt nodes
