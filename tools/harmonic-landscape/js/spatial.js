@@ -985,20 +985,11 @@
     if (!ch) return true;
     const writeT = this.origin.tonic;
     const writeM = this.origin.mode || 'minor';
+    // Explicit ownership wins — multi-key journey stays on each step's disk
     if (ch.localTonic == null) return true;
-    if (
-      ch.localTonic === writeT &&
-      (ch.localMode || writeM) === writeM
-    ) {
-      return true;
-    }
-    const M = global.HLMusic;
-    if (M && M.seatForChord) {
-      const hit = M.seatForChord(ch, writeT, writeM);
-      // On-scale in write home (incl. quality variants on a scale root)
-      if (hit && hit.onScale) return true;
-    }
-    return false;
+    return (
+      ch.localTonic === writeT && (ch.localMode || writeM) === writeM
+    );
   };
 
   /**

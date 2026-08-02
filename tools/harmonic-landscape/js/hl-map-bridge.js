@@ -301,10 +301,14 @@ H.chordFromChaseSeat = function (seat, key) {
   /**
    * Commit “establish home” on a Chase ghost adjacent-key wheel.
    * Writes V7→I or tonic into the path and switches write home to that key.
+   * Existing path steps keep their disks — only the new package lands on the new wheel.
    */
   H.establishKeyFromGhost = function (opt) {
     if (!opt || !opt.ghostDisk) return;
     const g = opt.ghostDisk;
+    // Freeze ownership on every existing step before gravity moves
+    if (H.ensurePathOwned) H.ensurePathOwned();
+
     const route = (opt.route || []).map((c) => {
       const x = H.M().cloneChord
         ? H.M().cloneChord(c)
@@ -316,14 +320,18 @@ H.chordFromChaseSeat = function (seat, key) {
     });
     if (!route.length) return;
 
-    // Switch gravity to the new key (path pivot+later retag); may flip Function→Chase
+    // Switch gravity only — do NOT retag the old journey onto the new key
     H.setWritingHome(g.tonic, g.mode, {
       transpose: false,
-      retagFromSelected: true,
+      retagFromSelected: false,
       skipEdit: true,
     });
 
-    // Write establish package at selection
+    // Append establish package after the pivot (insert) — never replace the journey
+    const pivotSel =
+      H.state.selected >= 0 && H.state.selected < H.state.chords.length
+        ? H.state.selected
+        : H.state.chords.length - 1;
     H.commitHorizon(
       {
         chord: route[0],
@@ -332,8 +340,18 @@ H.chordFromChaseSeat = function (seat, key) {
         label: opt.label || route.map((c) => c.name).join(' → '),
         job: opt.job || 'establish home',
       },
-      { mode: 'replace' }
+      { mode: 'insert' }
     );
+
+    // Only the new package sits on the new wheel (selection ends on last new chord)
+    if (route.length && H.state.selected >= 0) {
+      const end = H.state.selected;
+      const start = Math.max(pivotSel + 1, end - route.length + 1);
+      for (let i = start; i <= end; i++) {
+        if (H.state.chords[i]) H.stampKey(H.state.chords[i], { tonic: g.tonic, mode: g.mode });
+      }
+    }
+    if (H.map) H.map.setPath(H.state.chords, H.state.selected);
 
     const isMin =
       g.mode === 'minor' ||
@@ -345,7 +363,7 @@ H.chordFromChaseSeat = function (seat, key) {
         ' · ' +
         (opt.job || opt.label || '') +
         (g.relation ? ' · ' + g.relation : '') +
-        ' · ghost wheel is now a traveled disk'
+        ' · earlier steps stay on their wheels'
     );
   };
 
