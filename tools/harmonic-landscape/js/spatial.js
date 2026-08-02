@@ -758,39 +758,32 @@
     if (this._mode === 'node' && this.alts.length) {
       for (let i = this.alts.length - 1; i >= 0; i--) {
         const a = this.alts[i];
-        const dx = w.x - a.x;
-        const dy = w.y - a.y;
-        if (dx * dx + dy * dy <= 28 * 28) return { type: 'alt', item: a };
+        if (Math.hypot(w.x - a.x, w.y - a.y) <= 28) return { type: 'alt', item: a };
       }
       return null;
     }
 
     const cands = [];
-    const push = (type, item, d, bias) => {
-      if (d == null || d > 1e6) return;
-      cands.push({ type, item, d, score: d + (bias || 0), x: item && item.x, y: item && item.y });
+    const add = (hit, d, bias) => {
+      if (d == null || !(d <= 1e5)) return;
+      cands.push({ hit: hit, d: d, score: d + (bias || 0) });
     };
 
     // Path nodes — highest priority when under the cursor
     for (let i = 0; i < this.nodes.length; i++) {
       const n = this.nodes[i];
       const d = Math.hypot(w.x - n.x, w.y - n.y);
-      const rr = (n.r || 14) + 6;
-      if (d <= rr) push('path', n, d, -4); // slight prefer over everything
+      if (d <= (n.r || 14) + 6) add({ type: 'path', item: n }, d, -4);
     }
 
-    // Path edges (curve mid-span) — before seats so journey insert works
+    // Path edges (curve mid-span)
     const edge = this._hitEdge(sx, sy, { world: w });
     if (edge) {
-      cands.push({
-        type: 'edge',
-        item: edge,
-        afterIndex: edge.afterIndex,
-        x: edge.x,
-        y: edge.y,
-        d: edge.d,
-        score: edge.d + 1.5, // path node still wins when overlapping
-      });
+      add(
+        { type: 'edge', afterIndex: edge.afterIndex, x: edge.x, y: edge.y, d: edge.d },
+        edge.d,
+        1.5
+      );
     }
 
     // Horizon options (hollow rings)
@@ -799,8 +792,7 @@
         const h = this.horizon[i];
         if (h.kind === 'home') continue;
         const d = Math.hypot(w.x - h.x, w.y - h.y);
-        const rr = (h.r || 10) + 8;
-        if (d <= rr) push('horizon', h, d, 0.5);
+        if (d <= (h.r || 10) + 8) add({ type: 'horizon', item: h }, d, 0.5);
       }
     }
 
@@ -809,12 +801,8 @@
       for (let i = 0; i < this.scaleSeats.length; i++) {
         const s = this.scaleSeats[i];
         const d = Math.hypot(w.x - s.x, w.y - s.y);
-        const pad = s.activeDisk ? 5 : 3;
-        const rr = (s.r || 16) + pad;
-        if (d <= rr) {
-          // Prefer active disk seats on ties
-          push('seat', s, d, s.activeDisk ? 2 : 3.5);
-        }
+        const rr = (s.r || 16) + (s.activeDisk ? 5 : 3);
+        if (d <= rr) add({ type: 'seat', item: s }, d, s.activeDisk ? 2 : 3.5);
       }
     }
 
@@ -822,16 +810,7 @@
     const act = this._activeDisk();
     {
       const d = Math.hypot(w.x - (act.cx || 0), w.y - (act.cy || 0));
-      if (d <= 28) {
-        cands.push({
-          type: 'home',
-          item: null,
-          d,
-          score: d + 1,
-          x: act.cx,
-          y: act.cy,
-        });
-      }
+      if (d <= 28) add({ type: 'home' }, d, 1);
     }
 
     // Inactive disk centres
@@ -839,16 +818,7 @@
       const disk = this.disks[i];
       if (disk.active) continue;
       const d = Math.hypot(w.x - (disk.cx || 0), w.y - (disk.cy || 0));
-      if (d <= 22) {
-        cands.push({
-          type: 'diskHome',
-          item: disk,
-          d,
-          score: d + 2,
-          x: disk.cx,
-          y: disk.cy,
-        });
-      }
+      if (d <= 22) add({ type: 'diskHome', item: disk }, d, 2);
     }
 
     // Compare-path alt nodes
@@ -856,25 +826,13 @@
       for (let i = 0; i < this.altNodes.length; i++) {
         const n = this.altNodes[i];
         const d = Math.hypot(w.x - n.x, w.y - n.y);
-        if (d <= (n.r || 10) + 5) push('altNode', n, d, 4);
+        if (d <= (n.r || 10) + 5) add({ type: 'altNode', item: n }, d, 4);
       }
     }
 
     if (!cands.length) return null;
     cands.sort((a, b) => a.score - b.score || a.d - b.d);
-    const win = cands[0];
-    if (win.type === 'edge') {
-      return {
-        type: 'edge',
-        afterIndex: win.afterIndex != null ? win.afterIndex : win.item.afterIndex,
-        x: win.x,
-        y: win.y,
-        d: win.d,
-      };
-    }
-    if (win.type === 'home') return { type: 'home' };
-    if (win.type === 'diskHome') return { type: 'diskHome', item: win.item };
-    return { type: win.type, item: win.item };
+    return cands[0].hit;
   };
 
   SpatialMap.prototype._down = function (e) {

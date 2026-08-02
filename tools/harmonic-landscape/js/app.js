@@ -74,6 +74,16 @@
   // for NEW steps only. Edits must keep a step on its disk; Land here / modulate
   // switch gravity and retag from the pivot.
 
+  function pcNorm(n) {
+    return ((Number(n) % 12) + 12) % 12;
+  }
+
+  /** Shortest distance between two pitch classes (0–6). */
+  function pcDist(a, b) {
+    const d = Math.abs(pcNorm(a) - pcNorm(b));
+    return d > 6 ? 12 - d : d;
+  }
+
   function writeKey() {
     return { tonic: state.tonic, mode: state.mode };
   }
@@ -90,7 +100,7 @@
   function stampKey(ch, key) {
     if (!ch) return ch;
     const k = key || writeKey();
-    ch.localTonic = ((Number(k.tonic) % 12) + 12) % 12;
+    ch.localTonic = pcNorm(k.tonic);
     ch.localMode = k.mode || state.mode;
     if (map && map.rememberKey) map.rememberKey(ch.localTonic, ch.localMode);
     return ch;
@@ -109,7 +119,9 @@
 
   function keyLabelFor(key) {
     const k = key || writeKey();
-    return (M().noteName(k.tonic) || '?') + ' ' + (k.mode || 'minor');
+    const modeMeta = M().MODES && M().MODES[k.mode];
+    const modeName = (modeMeta && modeMeta.name) || k.mode || 'minor';
+    return (M().noteName(k.tonic) || '?') + ' ' + modeName;
   }
 
   /**
@@ -343,12 +355,10 @@
       if (bEl) bEl.value = state.bpm;
     }
     // Session load is committed home — drop any staged dropdown land
-    state.pendingTonic = null;
-    state.pendingMode = null;
     state.selected = Math.max(0, Math.min(state.chords.length - 1, meta.focusIndex || 0));
     map.setOrigin(state.tonic, state.mode);
     recognize({ preserveName: true });
-    updateLandButton();
+    clearPendingHome();
   }
 
   function ingestHandoffOrSession() {
@@ -528,29 +538,20 @@
 
   // ─── Sequence ops ────────────────────────────────────────
   function keyLabel() {
-    return M().noteName(state.tonic) + ' ' + (M().MODES[state.mode] || {}).name;
+    return keyLabelFor(writeKey());
   }
 
   /** Key currently shown in the Write home / Mode dropdowns (may be staged). */
   function dropdownKey() {
     const tEl = $('#tonic');
     const mEl = $('#mode');
-    const t =
-      tEl && tEl.value !== ''
-        ? parseInt(tEl.value, 10)
-        : state.pendingTonic != null
-          ? state.pendingTonic
-          : state.tonic;
-    const m =
-      mEl && mEl.value
-        ? mEl.value
-        : state.pendingMode != null
-          ? state.pendingMode
-          : state.mode;
-    return {
-      tonic: ((Number(t) % 12) + 12) % 12,
-      mode: m || state.mode,
-    };
+    let t = state.tonic;
+    if (tEl && tEl.value !== '') t = parseInt(tEl.value, 10);
+    else if (state.pendingTonic != null) t = state.pendingTonic;
+    let m = state.mode;
+    if (mEl && mEl.value) m = mEl.value;
+    else if (state.pendingMode != null) m = state.pendingMode;
+    return { tonic: pcNorm(t), mode: m || state.mode };
   }
 
   function hasPendingHome() {
@@ -594,8 +595,9 @@
 
     // Stamp ownership BEFORE switching gravity (so old path stays on old disk)
     state.chords.forEach((ch) => {
-      if (ch.localTonic == null) ch.localTonic = prevT;
-      if (!ch.localMode) ch.localMode = prevM;
+      if (!ch) return;
+      if (ch.localTonic == null) stampKey(ch, { tonic: prevT, mode: prevM });
+      else if (!ch.localMode) ch.localMode = prevM;
     });
 
     if (opts.transpose && delta && state.chords.length) {
@@ -610,24 +612,20 @@
           ? state.selected
           : state.chords.length - 1;
       for (let i = 0; i < state.chords.length; i++) {
-        if (i < from) {
-          // freeze on previous write home
-          state.chords[i].localTonic = prevT;
-          state.chords[i].localMode = prevM;
-        } else {
-          state.chords[i].localTonic = nextT;
-          state.chords[i].localMode = nextM;
-        }
+        const freeze = i < from;
+        stampKey(state.chords[i], {
+          tonic: freeze ? prevT : nextT,
+          mode: freeze ? prevM : nextM,
+        });
       }
     }
 
     state.tonic = nextT;
     state.mode = nextM;
-    state.pendingTonic = null;
-    state.pendingMode = null;
+    // Sync dropdowns before clearing pending so Land-here highlight is correct
     if ($('#tonic')) $('#tonic').value = String(state.tonic);
     if ($('#mode')) $('#mode').value = state.mode;
-    updateLandButton();
+    clearPendingHome();
 
     // Tell map about both keys before path layout
     if (map) {
@@ -659,12 +657,16 @@
   }
 
   function transposeChord(ch, delta, newTonic, newMode) {
-    // Preserve custom pitch sets by rotating notes
+    const ownT = ch.localTonic != null ? ch.localTonic : state.tonic;
+    const destTonic = newTonic != null ? pcNorm(newTonic) : pcNorm(ownT + delta);
+    const destMode = newMode || ch.localMode || state.mode;
+
+    let n;
     if (ch.custom || ch.quality === 'custom') {
-      const notes = (ch.notes || []).map((n) => (n + delta) % 12);
-      const root = (ch.root + delta) % 12;
-      const bass = ch.bassPc != null ? (ch.bassPc + delta) % 12 : root;
-      let n = M().makeCustomChord
+      const notes = (ch.notes || []).map((pc) => pcNorm(pc + delta));
+      const root = pcNorm(ch.root + delta);
+      const bass = ch.bassPc != null ? pcNorm(ch.bassPc + delta) : root;
+      n = M().makeCustomChord
         ? M().makeCustomChord(root, notes, {
             duration: ch.duration,
             roman: ch.roman,
@@ -680,30 +682,23 @@
             x.bassPc = bass;
             return x;
           })();
-      // Rotate this step's disk with the pitches (multi-disk stays multi-disk)
-      const ownT = ch.localTonic != null ? ch.localTonic : state.tonic;
-      n.localTonic =
-        newTonic != null ? newTonic : ((ownT + delta) % 12 + 12) % 12;
-      n.localMode = newMode || ch.localMode || state.mode;
-      return n;
+    } else {
+      n = M().makeChord(pcNorm(ch.root + delta), ch.quality, {
+        duration: ch.duration,
+        roman: ch.roman,
+        tag: ch.tag,
+        region: ch.region,
+      });
+      if (ch.bassPc != null && C().withBass) {
+        n = C().withBass(n, pcNorm(ch.bassPc + delta));
+        n.duration = ch.duration;
+        n.roman = ch.roman;
+        n.tag = ch.tag;
+        n.region = ch.region;
+      }
     }
-    let n = M().makeChord((ch.root + delta) % 12, ch.quality, {
-      duration: ch.duration,
-      roman: ch.roman,
-      tag: ch.tag,
-      region: ch.region,
-    });
-    if (ch.bassPc != null && C().withBass) {
-      n = C().withBass(n, (ch.bassPc + delta) % 12);
-      n.duration = ch.duration;
-      n.roman = ch.roman;
-      n.tag = ch.tag;
-      n.region = ch.region;
-    }
-    const ownT = ch.localTonic != null ? ch.localTonic : state.tonic;
-    n.localTonic =
-      newTonic != null ? newTonic : ((ownT + delta) % 12 + 12) % 12;
-    n.localMode = newMode || ch.localMode || state.mode;
+    n.localTonic = destTonic;
+    n.localMode = destMode;
     return n;
   }
 
@@ -991,35 +986,27 @@
 
   /**
    * Pick a bridge chord between a → b that lands on a sensible Chase seat.
-   * Prefer a diatonic scale seat of a's key that lies between them on the circle;
-   * fall back to shortest-arc mid root (NOT arithmetic mean of pitch classes).
+   * Prefer a diatonic scale seat of a's key near the circular midpoint;
+   * never use arithmetic mean of pitch classes (B→C is not F#).
    */
   function bridgeChordBetween(a, b, duration) {
     const bridgeKey = keyOf(a);
     const music = M();
-    let root = circularBlendRoot(a.root, b.root, 0.5);
+    const mid = circularBlendRoot(a.root, b.root, 0.5);
+    let root = mid;
     let quality = bridgeKey.mode === 'major' ? 'maj' : 'min';
     let roman = '→';
-    let region = 'diatonic';
 
-    // Prefer a scale seat of a's disk that isn't a or b
     if (music.circularHarmonicScale) {
       const seats = music.circularHarmonicScale(bridgeKey.tonic, bridgeKey.mode);
-      const mid = circularBlendRoot(a.root, b.root, 0.5);
       let best = null;
-      let bestDist = 99;
+      let bestScore = Infinity;
       seats.forEach((s) => {
         if (s.root === a.root || s.root === b.root) return;
-        let d = Math.abs(((s.root - mid + 12) % 12) - 6);
-        d = 6 - d; // distance on circle to mid
-        // also prefer between a and b on shortest arc
-        const arc = ((b.root - a.root + 12) % 12);
-        const forward = arc <= 6;
-        const fromA = ((s.root - a.root + 12) % 12);
-        const onArc = forward ? fromA > 0 && fromA < arc : fromA > arc && fromA < 12;
-        const score = d + (onArc ? 0 : 2);
-        if (score < bestDist) {
-          bestDist = score;
+        // Prefer seats close to the circular mid-root
+        const score = pcDist(s.root, mid);
+        if (score < bestScore) {
+          bestScore = score;
           best = s;
         }
       });
@@ -1028,13 +1015,12 @@
         roman = best.roman || '→';
         if (best.role === 'dom') quality = 'dom7';
         else if (best.qualities && best.qualities[0]) quality = best.qualities[0];
-        else quality = bridgeKey.mode === 'major' ? 'maj' : 'min';
       }
     }
 
     let ch = music.makeChord(root, quality, {
       duration,
-      region,
+      region: 'diatonic',
       tag: 'insert',
       roman,
     });
@@ -1044,37 +1030,22 @@
       ch.tag = 'insert';
       ch.roman = roman;
     }
-    stampKey(ch, bridgeKey);
-    return ch;
+    return stampKey(ch, bridgeKey);
   }
 
   /**
-   * Insert between two chords without lengthening the cell:
-   * steal duration from neighbors (prefer previous).
-   * Map edge click → this.
+   * Plan how many beats to steal from each neighbor for an edge insert.
+   * Returns null if neighbors are too short. Never leaves a side below 0.5.
    */
-  function insertBetweenWithTiming(afterIndex) {
-    const a = state.chords[afterIndex];
-    const b = state.chords[afterIndex + 1];
-    if (!a || !b) {
-      setSyncStatus('Edge insert needs two steps — click the line between them');
-      return;
-    }
+  function planEdgeInsertBeats(da, db) {
+    da = da || 4;
+    db = db || 4;
+    if (da + db < 2) return null;
 
-    // Guard: both already tiny — don't collapse into 0.5 cascade
-    const da = a.duration || 4;
-    const db = b.duration || 4;
-    if (da + db < 2) {
-      setSyncStatus('Neighbors too short to insert (need ≥ 2 beats combined)');
-      return;
-    }
-
-    pushUndo();
-
-    // Target insert length 1–2 beats, taken from neighbors so total stays constant
     let takeA = 0;
     let takeB = 0;
     let insertDur = 2;
+
     if (da >= 3 && db >= 3) {
       takeA = 1;
       takeB = 1;
@@ -1089,42 +1060,57 @@
     } else if (db >= 2) {
       takeB = Math.min(1.5, Math.max(0.5, snapBeats(db - 1)));
       insertDur = takeB;
+    } else if (da > 1 && db > 1) {
+      takeA = 0.5;
+      takeB = 0.5;
+      insertDur = 1;
+    } else if (da > 0.5) {
+      takeA = 0.5;
+      insertDur = 0.5;
+    } else if (db > 0.5) {
+      takeB = 0.5;
+      insertDur = 0.5;
     } else {
-      // Both short but combined ≥ 2: take 0.5 each if possible
-      takeA = da > 1 ? 0.5 : 0;
-      takeB = db > 1 ? 0.5 : 0;
-      insertDur = Math.max(0.5, takeA + takeB);
-      if (takeA + takeB < 0.5) {
-        // last resort: steal 0.5 from the longer one only
-        if (da >= db && da > 0.5) {
-          takeA = 0.5;
-          insertDur = 0.5;
-        } else if (db > 0.5) {
-          takeB = 0.5;
-          insertDur = 0.5;
-        } else {
-          state.undoStack.pop(); // abort undo we pushed
-          setSyncStatus('Neighbors too short to insert');
-          return;
-        }
-      }
+      return null;
     }
 
-    // Never leave neighbors below 0.5
-    if (da - takeA < 0.5) {
-      takeA = Math.max(0, da - 0.5);
-      insertDur = takeA + takeB;
-    }
-    if (db - takeB < 0.5) {
-      takeB = Math.max(0, db - 0.5);
-      insertDur = takeA + takeB;
-    }
-    insertDur = Math.max(0.5, snapBeats(insertDur));
+    // Floor neighbors at 0.5
+    if (da - takeA < 0.5) takeA = Math.max(0, da - 0.5);
+    if (db - takeB < 0.5) takeB = Math.max(0, db - 0.5);
+    insertDur = Math.max(0.5, snapBeats(takeA + takeB));
+    if (insertDur < 0.5 || takeA + takeB < 0.5) return null;
 
-    const ch = bridgeChordBetween(a, b, insertDur);
+    return {
+      takeA,
+      takeB,
+      insertDur,
+      leftDur: Math.max(0.5, snapBeats(da - takeA)),
+      rightDur: Math.max(0.5, snapBeats(db - takeB)),
+    };
+  }
 
-    state.chords[afterIndex] = M().withDuration(a, Math.max(0.5, snapBeats(da - takeA)));
-    state.chords[afterIndex + 1] = M().withDuration(b, Math.max(0.5, snapBeats(db - takeB)));
+  /**
+   * Insert between two chords without lengthening the cell.
+   * Map edge click → this.
+   */
+  function insertBetweenWithTiming(afterIndex) {
+    const a = state.chords[afterIndex];
+    const b = state.chords[afterIndex + 1];
+    if (!a || !b) {
+      setSyncStatus('Edge insert needs two steps — click the line between them');
+      return;
+    }
+
+    const plan = planEdgeInsertBeats(a.duration || 4, b.duration || 4);
+    if (!plan) {
+      setSyncStatus('Neighbors too short to insert (need ≥ 2 beats combined)');
+      return;
+    }
+
+    pushUndo();
+    const ch = bridgeChordBetween(a, b, plan.insertDur);
+    state.chords[afterIndex] = M().withDuration(a, plan.leftDur);
+    state.chords[afterIndex + 1] = M().withDuration(b, plan.rightDur);
     state.chords.splice(afterIndex + 1, 0, ch);
     state.selected = afterIndex + 1;
     state.fromPackId = null;
@@ -1136,7 +1122,7 @@
       'Insert on edge · ' +
         ch.name +
         ' · ' +
-        insertDur +
+        plan.insertDur +
         'b from neighbors · total ' +
         total +
         'b · between ' +
@@ -1179,9 +1165,9 @@
 
   function circularBlendRoot(a, b, t) {
     // shortest arc blend on pitch-class circle
-    let d = ((b - a + 12) % 12);
+    let d = ((pcNorm(b) - pcNorm(a) + 12) % 12);
     if (d > 6) d -= 12;
-    return ((a + Math.round(d * t)) % 12 + 12) % 12;
+    return pcNorm(pcNorm(a) + Math.round(d * t));
   }
 
   function applyChordAtIndex(pathIndex, newChord, opts) {
@@ -1196,13 +1182,13 @@
         : keyOf(prev);
     let ch = M().cloneChord(newChord);
     ch.duration = prev.duration || 4;
-    stampKey(ch, ownKey);
     ch.tag = ch.tag || 'pulled';
     if (C().bestInversion && pathIndex > 0) {
       ch = C().bestInversion(state.chords[pathIndex - 1], ch);
       ch.duration = prev.duration || 4;
-      stampKey(ch, ownKey);
+      ch.tag = ch.tag || 'pulled';
     }
+    stampKey(ch, ownKey);
     state.chords[pathIndex] = ch;
 
     if (opts.pullNeighbors && opts.pullStrength > 0) {
@@ -1223,8 +1209,8 @@
           pn = C().bestInversion(state.chords[pathIndex - 2], pn);
           pn.duration = p.duration;
         }
-        stampKey(pn, pKey);
         pn.tag = 'tugged';
+        stampKey(pn, pKey);
         state.chords[pathIndex - 1] = pn;
       }
       // Next: blend toward new chord from its side — keep next's disk
@@ -1242,8 +1228,8 @@
           nn = C().bestInversion(ch, nn);
           nn.duration = n.duration;
         }
-        stampKey(nn, nKey);
         nn.tag = 'tugged';
+        stampKey(nn, nKey);
         state.chords[pathIndex + 1] = nn;
       }
     }
