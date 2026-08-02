@@ -23,16 +23,78 @@ H.chordFromChaseSeat = function (seat, key) {
   }
 
   /**
+   * How well target sits between prev and next (voice-leading + common moves).
+   * Higher = better. Used to tier drag aim pads (good / ok / weak).
+   */
+  H.scoreAimContext = function (prev, target, next) {
+    if (!target) return 0;
+    const music = H.M();
+    const pcDist = (a, b) => {
+      const d = Math.abs(((a - b) % 12 + 12) % 12);
+      return Math.min(d, 12 - d);
+    };
+    let score = 0.35;
+
+    const join = (a, b, w) => {
+      if (!a || !b) return;
+      const vl = music.voiceLeadingQuality ? music.voiceLeadingQuality(a, b) : 0.55;
+      score += (vl != null ? vl : 0.55) * w;
+      const leap = pcDist(a.root, b.root);
+      // Step / common progressions over random leaps
+      if (leap === 0) score -= 0.18 * w; // static root
+      else if (leap === 1 || leap === 2) score += 0.12 * w;
+      else if (leap === 5 || leap === 7) score += 0.1 * w; // 4th/5th
+      else if (leap >= 5) score -= 0.06 * w;
+      // Dominant resolve: root up a 4th / down a 5th into next
+      if (a.quality === 'dom7' && ((a.root + 5) % 12) === b.root) score += 0.28 * w;
+    };
+
+    join(prev, target, 0.55);
+    join(target, next, 0.55);
+
+    // Prefer diatonic / functional colour over random shell
+    const reg = target.region || '';
+    if (reg === 'diatonic') score += 0.1;
+    else if (reg === 'secondary') score += 0.06;
+    else if (reg === 'interchange') score += 0.04;
+    else if (reg === 'tritone' || reg === 'chromatic') score -= 0.04;
+
+    // Dom7 that would resolve into next is a strong move
+    if (next && target.quality === 'dom7' && ((target.root + 5) % 12) === next.root) {
+      score += 0.18;
+    }
+    // Landing the resolution of prev V7
+    if (prev && prev.quality === 'dom7' && ((prev.root + 5) % 12) === target.root) {
+      score += 0.16;
+    }
+
+    return score;
+  };
+
+  H.tierAimScore = function (score) {
+    if (score >= 0.78) return 'good';
+    if (score >= 0.48) return 'ok';
+    return 'weak';
+  };
+
+  /**
    * Drag targets for map pull-to-swap.
    * Chase view: scale seats + tension shells (path lands on Chase layout).
    * Function view: only neighbourhood chart seats at their exact chart positions
    * (Chase alts next to Function nodes looked like double chords).
+   * Each target is scored against prev/next path chords for aim guidance.
    */
   H.buildAimTargets = function (pathIndex, chord) {
     const list = [];
     const seen = new Set();
     const diskKey = H.keyOf(chord || H.state.chords[pathIndex]);
     const dur = (chord && chord.duration) || H.stepDuration();
+    const prev = pathIndex > 0 ? H.state.chords[pathIndex - 1] : null;
+    const next =
+      pathIndex >= 0 && pathIndex < H.state.chords.length - 1
+        ? H.state.chords[pathIndex + 1]
+        : null;
+
     const add = (ch, label, role, extra) => {
       if (!ch) return;
       const k = ch.root + ':' + ch.quality;
@@ -44,10 +106,23 @@ H.chordFromChaseSeat = function (seat, key) {
         ? music.cloneChord(ch)
         : { ...ch, notes: (ch.notes || []).slice() };
       ch.duration = dur;
+      // Map seats are root-position functional picks — strip slash bass from chart nodes
+      ch.bassPc = ch.root;
+      if (H.C().withBass) ch = H.C().withBass(ch, ch.root);
+      else if (ch.name && String(ch.name).indexOf('/') >= 0) {
+        ch.name = String(ch.name).split('/')[0];
+      }
       H.stampKey(ch, diskKey);
+      const score = H.scoreAimContext(prev, ch, next);
       list.push(
         Object.assign(
-          { chord: ch, label: label || ch.name, role: role || '' },
+          {
+            chord: ch,
+            label: label || ch.name,
+            role: role || '',
+            score: score,
+            tier: H.tierAimScore(score),
+          },
           extra || {}
         )
       );
@@ -68,6 +143,7 @@ H.chordFromChaseSeat = function (seat, key) {
           _fnY: fn.y,
         });
       });
+      list.sort((a, b) => (b.score || 0) - (a.score || 0));
       return list;
     }
 
@@ -103,6 +179,7 @@ H.chordFromChaseSeat = function (seat, key) {
         .forEach((a) => add(a.chord, a.label, a.role || 'alt'));
     }
 
+    list.sort((a, b) => (b.score || 0) - (a.score || 0));
     return list;
   }
 
@@ -347,10 +424,22 @@ H.chordFromChaseSeat = function (seat, key) {
     let ch = H.M().cloneChord(newChord);
     ch.duration = prev.duration || 4;
     ch.tag = ch.tag || 'pulled';
-    if (H.C().bestInversion && pathIndex > 0) {
+    // Map drag chooses a functional seat — keep root position by default.
+    // (Auto bestInversion turned e.g. Am into Am/C and felt like a bug.)
+    // Pass smoothBass:true only when explicitly wanting VL revoicing.
+    if (opts.smoothBass && H.C().bestInversion && pathIndex > 0) {
       ch = H.C().bestInversion(H.state.chords[pathIndex - 1], ch);
       ch.duration = prev.duration || 4;
       ch.tag = ch.tag || 'pulled';
+    } else if (H.C().withBass) {
+      ch = H.C().withBass(ch, ch.root);
+      ch.duration = prev.duration || 4;
+      ch.tag = ch.tag || 'pulled';
+    } else {
+      ch.bassPc = ch.root;
+      if (ch.name && String(ch.name).indexOf('/') >= 0) {
+        ch.name = String(ch.name).split('/')[0];
+      }
     }
     H.stampKey(ch, ownKey);
     H.state.chords[pathIndex] = ch;

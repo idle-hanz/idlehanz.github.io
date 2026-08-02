@@ -79,7 +79,18 @@
       // Immediate soft hit of the aimed chord
       H.A().playChord({ chord: target.chord, soft: true, duration: 0.5 });
       const roleBit = target.role ? ' · ' + target.role : '';
-      H.setSyncStatus('Aiming ' + target.label + roleBit + ' — hold to hear context, release to set');
+      const tier = target.tier || (target.score != null ? H.tierAimScore(target.score) : '');
+      const fitBit =
+        tier === 'good'
+          ? ' · ★ strong join with neighbours'
+          : tier === 'ok'
+            ? ' · ok with neighbours'
+            : tier === 'weak'
+              ? ' · weak join (still allowed)'
+              : '';
+      H.setSyncStatus(
+        'Aiming ' + target.label + roleBit + fitBit + ' — hold to hear context, release to set'
+      );
       // After a short hold, audition prev → target → next (where you're going)
       aimTimer = setTimeout(() => {
         if (!H.map.snapAlt || H.map.snapAlt !== target) return;

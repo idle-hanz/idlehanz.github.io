@@ -982,14 +982,17 @@
           });
         }
       }
+      const tier = a.tier || 'ok';
       const t = {
         chord: a.chord,
         label: a.label || a.chord.name,
         role: a.role || '',
         functionNodeId: a.functionNodeId || null,
+        score: a.score != null ? a.score : 0.5,
+        tier: tier,
         x: x,
         y: y,
-        r: useFn ? 18 : 22,
+        r: useFn ? (tier === 'good' ? 18 : tier === 'ok' ? 15 : 12) : tier === 'good' ? 24 : tier === 'ok' ? 20 : 16,
         naturalX: x,
         naturalY: y,
       };
@@ -1323,34 +1326,47 @@
     if (this._mode === 'node' && this._dragNode) {
       const w = this.screenToWorld(sx, sy);
       this._moved = true;
-      // Find nearest aim target; soft-magnet pulls pointer toward it when close
+      // Nearest aim target; good joins magnet a bit harder than weak ones
       let best = null;
-      let bestD = Infinity;
+      let bestScore = Infinity;
+      let bestRawD = Infinity;
       this.alts.forEach((a) => {
         const d = Math.hypot(w.x - a.x, w.y - a.y);
-        if (d < bestD) {
-          bestD = d;
+        // Prefer strong joins when two pads compete
+        const bias = a.tier === 'good' ? -14 : a.tier === 'ok' ? -4 : 6;
+        const scored = d + bias;
+        if (scored < bestScore) {
+          bestScore = scored;
+          bestRawD = d;
           best = a;
         }
       });
-      const lockR = this.snapRadius;
-      const pullR = this.snapRadius * 1.65;
+      const lockR =
+        this.snapRadius * (best && best.tier === 'weak' ? 0.72 : best && best.tier === 'good' ? 1.15 : 1);
+      const pullR = this.snapRadius * (best && best.tier === 'good' ? 1.85 : 1.5);
       let mx = w.x;
       let my = w.y;
-      if (best && bestD < pullR) {
-        // Soft pull: magnet eases toward target center (easier aiming)
-        const t = 1 - bestD / pullR;
-        const ease = t * t * 0.72;
+      if (best && bestRawD < pullR) {
+        const t = 1 - bestRawD / pullR;
+        const ease = t * t * (best.tier === 'good' ? 0.82 : 0.65);
         mx = w.x + (best.x - w.x) * ease;
         my = w.y + (best.y - w.y) * ease;
       }
-      // Hard lock only inside snap radius
-      if (!best || bestD > lockR) best = null;
+      // Hard lock only inside snap radius (weaker pads harder to lock)
+      if (!best || bestRawD > lockR) best = null;
       this._dragPos = { x: mx, y: my };
       const prev = this.snapAlt;
       this.snapAlt = best;
       this._aimPreview = best
-        ? { chord: best.chord, x: best.x, y: best.y, label: best.label, role: best.role || '' }
+        ? {
+            chord: best.chord,
+            x: best.x,
+            y: best.y,
+            label: best.label,
+            role: best.role || '',
+            tier: best.tier || 'ok',
+            score: best.score,
+          }
         : null;
       if (best !== prev && this.onAimChange) {
         this.onAimChange(this._dragNode.i, best, {
@@ -1498,8 +1514,13 @@
     if (!this.disks || !this.disks.length) this._rebuildDisks(false);
 
     // ── Chase disks (circular harmonic scales) ──
-    // Draw inactive keys first (clearly visible), then active write-home disk
-    const disksDraw = (this.disks || []).slice().sort((a, b) => (a.active ? 1 : 0) - (b.active ? 1 : 0));
+    // Function view = same-key chart only — hide other-key disks (they looked
+    // like a second graph lighting up next to the centred Function chart).
+    // Draw inactive keys first, then active write-home disk
+    const disksDraw = (this.disks || [])
+      .filter((d) => this.mapView !== 'function' || d.active)
+      .slice()
+      .sort((a, b) => (a.active ? 1 : 0) - (b.active ? 1 : 0));
     disksDraw.forEach((disk) => {
       const active = !!disk.active;
       // Inactive disks must read as full second charts, not a faint ghost
@@ -1548,7 +1569,11 @@
           this.hover.item &&
           this.hover.item.root === s.root &&
           this.hover.item.activeDisk === active;
+        // Only illuminate Chase seats while dragging in Chase view (never
+        // light inactive/other-key seats during Function aim).
         const aimHere =
+          this.mapView !== 'function' &&
+          active &&
           this._mode === 'node' &&
           this.snapAlt &&
           this.snapAlt.chord &&
@@ -1910,27 +1935,65 @@
       ctx.lineWidth = 1 / z;
       ctx.stroke();
 
-      // Aim targets on seats (Chase layout or Function chart — same coords as path will use)
+      // Aim targets: good joins (green) > ok (gold) > weak (dim) — scored from prev/next
       const fnAim = this.mapView === 'function';
-      this.alts.forEach((a) => {
+      // Draw weak first so strong pads sit on top
+      const ordered = this.alts.slice().sort((a, b) => {
+        const rank = (t) => (t === 'good' ? 2 : t === 'ok' ? 1 : 0);
+        return rank(a.tier) - rank(b.tier);
+      });
+      ordered.forEach((a) => {
         const isSnap = this.snapAlt === a;
-        const padR = fnAim ? (isSnap ? 20 : 16) : isSnap ? 28 : 24;
+        const tier = a.tier || 'ok';
+        const baseR = fnAim
+          ? tier === 'good'
+            ? 17
+            : tier === 'ok'
+              ? 14
+              : 11
+          : tier === 'good'
+            ? 24
+            : tier === 'ok'
+              ? 20
+              : 15;
+        const padR = isSnap ? baseR + 3 : baseR;
         ctx.beginPath();
         ctx.arc(a.x, a.y, padR, 0, Math.PI * 2);
-        ctx.fillStyle = isSnap ? 'rgba(125,186,146,0.7)' : 'rgba(20,16,12,0.78)';
+        if (tier === 'good') {
+          ctx.fillStyle = isSnap ? 'rgba(125,186,146,0.78)' : 'rgba(125,186,146,0.38)';
+          ctx.strokeStyle = isSnap ? '#9ddea8' : 'rgba(125,186,146,0.85)';
+        } else if (tier === 'ok') {
+          ctx.fillStyle = isSnap ? 'rgba(232,201,138,0.65)' : 'rgba(20,16,12,0.72)';
+          ctx.strokeStyle = isSnap ? '#e8c98a' : 'rgba(232,201,138,0.75)';
+        } else {
+          ctx.fillStyle = isSnap ? 'rgba(140,130,120,0.45)' : 'rgba(12,10,8,0.35)';
+          ctx.strokeStyle = isSnap ? 'rgba(180,168,150,0.7)' : 'rgba(180,168,150,0.28)';
+        }
         ctx.fill();
-        ctx.strokeStyle = isSnap ? '#9ddea8' : 'rgba(232,201,138,0.9)';
-        ctx.lineWidth = (isSnap ? 3.5 : 2.2) / z;
+        ctx.lineWidth = (isSnap ? 3.2 : tier === 'good' ? 2.2 : tier === 'ok' ? 1.6 : 1) / z;
+        if (tier === 'weak' && !isSnap) ctx.setLineDash([3 / z, 3 / z]);
         ctx.stroke();
-        ctx.fillStyle = isSnap ? '#0a0a0a' : '#fff4d6';
-        ctx.font = `bold ${(fnAim ? 11 : 13) / z}px DM Sans, sans-serif`;
+        ctx.setLineDash([]);
+        ctx.fillStyle =
+          isSnap && tier === 'good'
+            ? '#0a0a0a'
+            : tier === 'weak'
+              ? 'rgba(200,190,175,0.45)'
+              : '#fff4d6';
+        ctx.font = `bold ${(fnAim ? (tier === 'weak' ? 9 : 11) : tier === 'weak' ? 10 : 13) / z}px DM Sans, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(a.role || a.label, a.x, a.y - (a.role ? 5 / z : 0));
-        if (a.role) {
-          ctx.fillStyle = isSnap ? 'rgba(10,10,10,0.75)' : 'rgba(232,201,138,0.95)';
+        ctx.fillText(a.role || a.label, a.x, a.y - (a.role && tier !== 'weak' ? 5 / z : 0));
+        if (a.role && tier !== 'weak') {
+          ctx.fillStyle = isSnap && tier === 'good' ? 'rgba(10,10,10,0.75)' : 'rgba(232,201,138,0.9)';
           ctx.font = `${(fnAim ? 9 : 10) / z}px DM Sans, sans-serif`;
-          ctx.fillText(a.label, a.x, a.y + 12 / z);
+          ctx.fillText(a.label, a.x, a.y + 11 / z);
+        }
+        // Small star on best joins
+        if (tier === 'good' && !isSnap) {
+          ctx.fillStyle = 'rgba(125,186,146,0.95)';
+          ctx.font = `bold ${9 / z}px DM Sans, sans-serif`;
+          ctx.fillText('★', a.x, a.y - padR - 6 / z);
         }
       });
 
