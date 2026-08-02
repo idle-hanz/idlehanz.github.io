@@ -364,6 +364,7 @@
         gate: !!n.gate,
         resolvesToId: n.resolvesToId || null,
         canOrbitPeers: !!n.canOrbitPeers,
+        onPath: !!n.onPath,
         x: x,
         y: y,
         r:
@@ -399,15 +400,21 @@
       if (hit) hoverId = hit.id;
     }
 
-    const edgeTouchesHover = (e) =>
-      hoverId && (e.fromId === hoverId || e.toId === hoverId);
+    const fo = (this.functionChart && this.functionChart.opts) || {};
+    const bothWays = fo.hoverBothWays !== false;
 
-    // Edges under nodes — dim all, brighten paths from hovered chord
+    const edgeTouchesHover = (e) => {
+      if (!hoverId) return false;
+      if (bothWays) return e.fromId === hoverId || e.toId === hoverId;
+      return e.fromId === hoverId; // outbound only
+    };
+
+    // Edges under nodes — dim all, brighten paths from/to hovered chord
     (this.functionChart.edges || []).forEach((e) => {
       const a = byId[e.fromId];
       const b = byId[e.toId];
       if (!a || !b) return;
-      // Orbit edges: only draw when hovering an interchange node (keeps map readable)
+      // Orbit edges: only when hovering borrow (unless always-show is desired — keep hover-only)
       if (e.kind === 'orbit' && !edgeTouchesHover(e)) return;
 
       const lit = !hoverId || edgeTouchesHover(e);
@@ -415,16 +422,22 @@
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
-      if (e.kind === 'resolve') {
+      if (e.kind === 'resolve' || e.kind === 'chain') {
         ctx.strokeStyle = lit
-          ? 'rgba(126,184,218,' + (dim ? '0.08' : hoverId ? '0.95' : '0.55') + ')'
+          ? 'rgba(126,184,218,' + (dim ? '0.08' : hoverId ? '0.95' : e.kind === 'chain' ? '0.45' : '0.55') + ')'
           : 'rgba(126,184,218,0.55)';
-        ctx.lineWidth = (lit && hoverId ? 2.8 : 1.8) / z;
-        ctx.setLineDash([5 / z, 4 / z]);
+        ctx.lineWidth = (lit && hoverId ? 2.8 : e.kind === 'chain' ? 1.5 : 1.8) / z;
+        ctx.setLineDash(e.kind === 'chain' ? [8 / z, 3 / z] : [5 / z, 4 / z]);
       } else if (e.kind === 'orbit') {
         ctx.strokeStyle = 'rgba(196,160,224,' + (hoverId ? '0.75' : '0.35') + ')';
         ctx.lineWidth = (hoverId ? 2 : 1.2) / z;
         ctx.setLineDash([2 / z, 4 / z]);
+      } else if (e.kind === 'skeleton') {
+        ctx.strokeStyle = lit
+          ? 'rgba(232,201,138,' + (dim ? '0.06' : hoverId ? '0.75' : '0.22') + ')'
+          : 'rgba(232,201,138,0.22)';
+        ctx.lineWidth = (lit && hoverId ? 2 : 1.1) / z;
+        ctx.setLineDash([]);
       } else {
         // gate
         ctx.strokeStyle = lit
@@ -433,12 +446,12 @@
         ctx.lineWidth = (lit && hoverId ? 2.2 : 1.1) / z;
         ctx.setLineDash([3 / z, 5 / z]);
       }
-      if (dim) ctx.globalAlpha = 0.25;
+      if (dim) ctx.globalAlpha = 0.22;
       ctx.stroke();
       ctx.globalAlpha = 1;
       ctx.setLineDash([]);
-      if (dim) return;
-      // arrow head toward target
+      if (dim || e.kind === 'skeleton') return;
+      // arrow head toward target (not for undirected skeleton)
       const ang = Math.atan2(b.y - a.y, b.x - a.x);
       const ax = b.x - Math.cos(ang) * (b.r + 4);
       const ay = b.y - Math.sin(ang) * (b.r + 4);
@@ -448,7 +461,7 @@
       ctx.lineTo(ax - Math.cos(ang + 0.4) * 7 / z, ay - Math.sin(ang + 0.4) * 7 / z);
       ctx.closePath();
       ctx.fillStyle =
-        e.kind === 'resolve'
+        e.kind === 'resolve' || e.kind === 'chain'
           ? 'rgba(126,184,218,' + (hoverId ? '0.95' : '0.7') + ')'
           : 'rgba(196,160,224,' + (hoverId ? '0.9' : '0.4') + ')';
       ctx.fill();
@@ -466,17 +479,22 @@
       const isH = hoverId && n.id === hoverId;
       const isNeighbor =
         hoverId &&
-        (this.functionChart.edges || []).some(
-          (e) =>
-            (e.fromId === hoverId && e.toId === n.id) ||
-            (e.toId === hoverId && e.fromId === n.id)
-        );
+        (this.functionChart.edges || []).some((e) => {
+          if (bothWays) {
+            return (
+              (e.fromId === hoverId && e.toId === n.id) ||
+              (e.toId === hoverId && e.fromId === n.id)
+            );
+          }
+          return e.fromId === hoverId && e.toId === n.id;
+        });
+      const onPath = fo.showPath !== false && n.onPath;
       ctx.beginPath();
-      ctx.arc(n.x, n.y, n.r + (isH ? 3 : isNeighbor ? 1.5 : 0), 0, Math.PI * 2);
+      ctx.arc(n.x, n.y, n.r + (isH ? 3 : isNeighbor ? 1.5 : onPath ? 1 : 0), 0, Math.PI * 2);
       ctx.fillStyle = isH ? col.fill : 'rgba(12,10,8,0.85)';
       ctx.fill();
-      ctx.strokeStyle = isNeighbor && !isH ? '#fff4d6' : col.fill;
-      ctx.lineWidth = (isH ? 2.8 : isNeighbor ? 2.2 : 1.6) / z;
+      ctx.strokeStyle = onPath && !isH ? '#e8c98a' : isNeighbor && !isH ? '#fff4d6' : col.fill;
+      ctx.lineWidth = (isH ? 2.8 : onPath ? 2.4 : isNeighbor ? 2.2 : 1.6) / z;
       if (n.role === 'secondary' || n.role === 'dominant') ctx.setLineDash([3 / z, 2 / z]);
       else ctx.setLineDash([]);
       ctx.stroke();

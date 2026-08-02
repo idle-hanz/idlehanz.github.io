@@ -309,6 +309,30 @@
     if (H.$('#view-function')) {
       H.$('#view-function').addEventListener('click', () => H.setMapView('function'));
     }
+    // Function-layer toggles (only matter in Function view)
+    const foMap = {
+      'fo-diatonic': 'showDiatonic',
+      'fo-skeleton': 'showSkeleton',
+      'fo-primary': 'showPrimaryV7',
+      'fo-secondaries': 'showSecondaries',
+      'fo-interchange': 'showInterchange',
+      'fo-sparse': 'sparseBorrow',
+      'fo-orbit': 'showOrbit',
+      'fo-gates': 'showGates',
+      'fo-hover': 'hoverBothWays',
+      'fo-chains': 'showChains',
+      'fo-path': 'showPath',
+    };
+    Object.keys(foMap).forEach((id) => {
+      const el = H.$('#' + id);
+      if (!el) return;
+      el.addEventListener('change', () => {
+        H.setFunctionOpt(foMap[id], el.checked);
+      });
+    });
+    if (H.syncFunctionOptsUI) H.syncFunctionOptsUI();
+    // Start with Function opts bar hidden (Chase default)
+    if (H.$('#function-opts')) H.$('#function-opts').hidden = true;
     if (H.$('#tog-horizon')) {
       H.$('#tog-horizon').addEventListener('change', (e) => {
         H.map.setShowHorizon(e.target.checked);

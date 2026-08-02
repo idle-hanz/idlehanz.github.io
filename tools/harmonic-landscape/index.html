@@ -591,6 +591,37 @@
       margin-top: 0.08rem;
     }
     #list-from-here { max-height: calc(100vh - 12rem); overflow: auto; padding-right: 0.15rem; }
+    .function-opts {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.35rem 0.65rem;
+      padding: 0.35rem 0.55rem;
+      margin: 0 0 0.35rem;
+      border: 1px solid rgba(126,184,218,0.25);
+      border-radius: 8px;
+      background: rgba(20,24,36,0.65);
+    }
+    .function-opts[hidden] { display: none !important; }
+    .function-opts-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #7eb8da;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      margin-right: 0.25rem;
+    }
+    .fo-ctl {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.28rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    .fo-ctl input { accent-color: #7eb8da; }
+    .fo-ctl:hover { color: var(--text); }
     .slot.diff {
       border-color: rgba(126,184,218,0.55);
       box-shadow: inset 3px 0 0 rgba(126,184,218,0.7);
@@ -822,6 +853,21 @@
           <button type="button" class="btn ghost" id="btn-arch" title="Add V7 → home">Arch home</button>
           <label class="ctl" style="margin-left:0.35rem;color:#c8b8a0" title="Show next-move dots around home (Chase view)"><input type="checkbox" id="tog-horizon" checked> Next-move dots</label>
           <label class="ctl" style="color:#c8b8a0" title="Show blue path only when a version is set as compare (Alt-click a chip)"><input type="checkbox" id="tog-alt"> Blue path</label>
+        </div>
+        <!-- Function-view options (visible only on Function page) -->
+        <div id="function-opts" class="function-opts" hidden>
+          <span class="function-opts-label">Function layers</span>
+          <label class="fo-ctl" title="Diatonic home-ring chords"><input type="checkbox" id="fo-diatonic" checked> Diatonic</label>
+          <label class="fo-ctl" title="Light I–IV–V–vi style links on the home ring"><input type="checkbox" id="fo-skeleton" checked> Skeleton</label>
+          <label class="fo-ctl" title="Primary V7 → I (G7→C in C)"><input type="checkbox" id="fo-primary" checked> V7→I</label>
+          <label class="fo-ctl" title="Secondary dominants V7/x → target"><input type="checkbox" id="fo-secondaries" checked> Secondaries</label>
+          <label class="fo-ctl" title="Modal interchange / borrow orbit"><input type="checkbox" id="fo-interchange" checked> Borrow</label>
+          <label class="fo-ctl" title="Only ♭III iv ♭VI ♭VII (paper chart core)"><input type="checkbox" id="fo-sparse"> Sparse borrow</label>
+          <label class="fo-ctl" title="Borrow chords can move to each other (hover)"><input type="checkbox" id="fo-orbit" checked> Orbit</label>
+          <label class="fo-ctl" title="I / IV / V in and out of borrow"><input type="checkbox" id="fo-gates" checked> Gates</label>
+          <label class="fo-ctl" title="Hover lights paths both into and out of a chord"><input type="checkbox" id="fo-hover" checked> Hover both ways</label>
+          <label class="fo-ctl" title="V/V chain into primary V7 (e.g. D7→G7)"><input type="checkbox" id="fo-chains"> V/V chains</label>
+          <label class="fo-ctl" title="Gold ring on chords that appear in your path"><input type="checkbox" id="fo-path" checked> Path</label>
         </div>
         <canvas id="map" aria-label="Harmonic path and directions"></canvas>
         <div class="map-footer">

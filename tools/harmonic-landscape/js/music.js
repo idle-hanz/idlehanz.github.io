@@ -273,14 +273,22 @@
 
     if (!isMinor) {
       // Major: borrow from natural minor (user chord-file orbit)
-      const specs = [
-        { d: 0, q: 'min', roman: 'i' },
-        { d: 3, q: 'maj', roman: '♭III' },
-        { d: 5, q: 'min', roman: 'iv' }, // Fm in C — must not be missing
-        { d: 7, q: 'min', roman: 'v' },
-        { d: 8, q: 'maj', roman: '♭VI' },
-        { d: 10, q: 'maj', roman: '♭VII' },
-      ];
+      // sparse: paper chart core only (♭III, iv, ♭VI, ♭VII)
+      const specs = opts.sparse
+        ? [
+            { d: 3, q: 'maj', roman: '♭III' },
+            { d: 5, q: 'min', roman: 'iv' },
+            { d: 8, q: 'maj', roman: '♭VI' },
+            { d: 10, q: 'maj', roman: '♭VII' },
+          ]
+        : [
+            { d: 0, q: 'min', roman: 'i' },
+            { d: 3, q: 'maj', roman: '♭III' },
+            { d: 5, q: 'min', roman: 'iv' },
+            { d: 7, q: 'min', roman: 'v' },
+            { d: 8, q: 'maj', roman: '♭VI' },
+            { d: 10, q: 'maj', roman: '♭VII' },
+          ];
       return specs.map((s) => {
         const ch = makeChord((t + s.d) % 12, s.q, {
           region: 'interchange',
@@ -317,10 +325,12 @@
    * Neighbourhood chart for one key (user's "chord file" view):
    * diatonic core, V7→I, secondaries → targets, interchange orbit, I/IV/V gates.
    */
-  function functionNeighborhood(tonic, modeKey) {
+  function functionNeighborhood(tonic, modeKey, opts) {
+    opts = opts || {};
     const t = pc(tonic);
     const mode = modeKey || 'minor';
     const preferFlat = keyPrefersFlat(t, mode);
+    const fo = opts.functionOpts || opts || {};
     const diat = diatonicChords(t, mode, false).map((c) =>
       makeChord(c.root, c.quality, {
         region: 'diatonic',
@@ -330,7 +340,10 @@
     );
     const primary = primaryDominant(t, mode, { preferFlat });
     const secondary = secondaryDominants(t, mode, { preferFlat });
-    const interchange = modalInterchange(t, mode, { preferFlat: true });
+    const interchange = modalInterchange(t, mode, {
+      preferFlat: true,
+      sparse: !!fo.sparseBorrow,
+    });
     // Classic gates in/out of borrow: I, IV, V
     const gates = [diat[0], diat[3], diat[4]].filter(Boolean).map((c) => ({
       ...c,

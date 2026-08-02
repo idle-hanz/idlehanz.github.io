@@ -279,16 +279,20 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
    * Function / neighbourhood chart for the active write home
    * (diatonic + secondaries + interchange + I/IV/V gates + edges).
    */
+  H.functionOpts = function () {
+    return H.state.functionOpts || {};
+  };
+
   H.buildFunctionChart = function () {
     const music = H.M();
+    const fo = H.functionOpts();
     if (!music.functionNeighborhood) {
-      return { nodes: [], edges: [], tonic: H.state.tonic, mode: H.state.mode };
+      return { nodes: [], edges: [], tonic: H.state.tonic, mode: H.state.mode, opts: fo };
     }
-    const nb = music.functionNeighborhood(H.state.tonic, H.state.mode);
+    const nb = music.functionNeighborhood(H.state.tonic, H.state.mode, { functionOpts: fo });
     const preferFlat = nb.preferFlat;
     const stamp = (ch) => {
       const x = music.cloneChord ? music.cloneChord(ch) : { ...ch, notes: (ch.notes || []).slice() };
-      // Keep display name from makeChord (flat spelling when set)
       H.stampKey(x, H.writeKey());
       return x;
     };
@@ -319,19 +323,47 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       return target;
     };
 
-    (nb.diatonic || []).forEach((ch) => {
-      const c = stamp(ch);
-      nodes.push({
-        id: idOf(c),
-        chord: c,
-        role: 'diatonic',
-        label: c.name,
-        roman: c.roman || '',
+    if (fo.showDiatonic !== false) {
+      (nb.diatonic || []).forEach((ch) => {
+        const c = stamp(ch);
+        nodes.push({
+          id: idOf(c),
+          chord: c,
+          role: 'diatonic',
+          label: c.name,
+          roman: c.roman || '',
+        });
       });
-    });
+    }
 
-    // Primary V7 → I (G7 → C in C major) — chart always includes this
-    if (nb.primaryDominant) {
+    // Light diatonic skeleton: I–IV–V–vi (and v/VI in minor-ish)
+    if (fo.showSkeleton !== false && fo.showDiatonic !== false && nb.diatonic && nb.diatonic.length >= 6) {
+      const d = nb.diatonic;
+      const link = (a, b) => {
+        if (!a || !b) return;
+        edges.push({
+          kind: 'skeleton',
+          fromId: idOf(a),
+          toId: idOf(b),
+          label: 'prog',
+        });
+      };
+      // Common core progressions (bidirectional for “who can go where”)
+      link(d[0], d[3]); // I–IV
+      link(d[3], d[0]);
+      link(d[0], d[4]); // I–V
+      link(d[4], d[0]);
+      link(d[0], d[5]); // I–vi
+      link(d[5], d[0]);
+      link(d[5], d[3]); // vi–IV
+      link(d[3], d[4]); // IV–V
+      link(d[5], d[1]); // vi–ii
+      link(d[1], d[4]); // ii–V
+      link(d[3], d[1]); // IV–ii
+    }
+
+    // Primary V7 → I
+    if (fo.showPrimaryV7 !== false && nb.primaryDominant) {
       const ch = stamp(nb.primaryDominant);
       const tid = ch.resolveTarget
         ? ch.resolveTarget.root + ':' + ch.resolveTarget.quality
@@ -351,69 +383,114 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       }
     }
 
-    // Secondaries: each only resolves to its own target (no peer links)
-    (nb.secondary || []).forEach((ch) => {
-      const c = stamp(ch);
-      const tid =
-        ch.resolveTarget ? ch.resolveTarget.root + ':' + ch.resolveTarget.quality : null;
-      nodes.push({
-        id: idOf(c),
-        chord: c,
-        role: 'secondary',
-        label: c.name,
-        roman: c.roman || '',
-        resolvesToId: tid,
-        canOrbitPeers: false,
+    // Secondaries → targets only
+    if (fo.showSecondaries !== false) {
+      (nb.secondary || []).forEach((ch) => {
+        const c = stamp(ch);
+        const tid =
+          ch.resolveTarget ? ch.resolveTarget.root + ':' + ch.resolveTarget.quality : null;
+        nodes.push({
+          id: idOf(c),
+          chord: c,
+          role: 'secondary',
+          label: c.name,
+          roman: c.roman || '',
+          resolvesToId: tid,
+          canOrbitPeers: false,
+        });
+        ensureDiatonicTarget(ch.resolveTarget);
+        if (tid) {
+          edges.push({ kind: 'resolve', fromId: idOf(c), toId: tid, label: '→' });
+        }
       });
-      ensureDiatonicTarget(ch.resolveTarget);
-      if (tid) {
-        edges.push({ kind: 'resolve', fromId: idOf(c), toId: tid, label: '→' });
-      }
-    });
+    }
 
-    const interNodes = [];
-    (nb.interchange || []).forEach((ch) => {
-      const c = stamp(ch);
-      const node = {
-        id: idOf(c),
-        chord: c,
-        role: 'interchange',
-        label: c.name,
-        roman: c.roman || '',
-        canOrbitPeers: true,
-      };
-      nodes.push(node);
-      interNodes.push(node);
-    });
-
-    // Interchange orbit: every borrow chord can move to every other borrow chord
-    for (let i = 0; i < interNodes.length; i++) {
-      for (let j = 0; j < interNodes.length; j++) {
-        if (i === j) continue;
+    // Optional V/V chains: secondary of V → primary V7 → I
+    if (fo.showChains && fo.showSecondaries !== false && nb.diatonic && nb.diatonic[4]) {
+      const v = nb.diatonic[4];
+      const vvRoot = (v.root + 7) % 12;
+      const vv = nodes.find((n) => n.role === 'secondary' && n.chord.root === vvRoot);
+      const prim = nodes.find((n) => n.role === 'dominant');
+      if (vv && prim) {
         edges.push({
-          kind: 'orbit',
-          fromId: interNodes[i].id,
-          toId: interNodes[j].id,
-          label: 'orbit',
+          kind: 'chain',
+          fromId: vv.id,
+          toId: prim.id,
+          label: 'V/V',
         });
       }
     }
 
-    // Gates I/IV/V ↔ each interchange (in/out of borrow)
-    (nb.gates || []).forEach((g) => {
-      const gid = idOf(g);
-      const node = nodes.find((n) => n.id === gid);
-      if (node) node.gate = true;
-      interNodes.forEach((ic) => {
-        edges.push({ kind: 'gate', fromId: gid, toId: ic.id, label: 'borrow' });
-        edges.push({ kind: 'gate', fromId: ic.id, toId: gid, label: 'return' });
+    const interNodes = [];
+    if (fo.showInterchange !== false) {
+      (nb.interchange || []).forEach((ch) => {
+        const c = stamp(ch);
+        const node = {
+          id: idOf(c),
+          chord: c,
+          role: 'interchange',
+          label: c.name,
+          roman: c.roman || '',
+          canOrbitPeers: true,
+        };
+        nodes.push(node);
+        interNodes.push(node);
       });
+    }
+
+    if (fo.showOrbit !== false) {
+      for (let i = 0; i < interNodes.length; i++) {
+        for (let j = 0; j < interNodes.length; j++) {
+          if (i === j) continue;
+          edges.push({
+            kind: 'orbit',
+            fromId: interNodes[i].id,
+            toId: interNodes[j].id,
+            label: 'orbit',
+          });
+        }
+      }
+    }
+
+    if (fo.showGates !== false) {
+      (nb.gates || []).forEach((g) => {
+        const gid = idOf(g);
+        let node = nodes.find((n) => n.id === gid);
+        if (!node && fo.showDiatonic === false) {
+          const c = stamp(g);
+          node = {
+            id: idOf(c),
+            chord: c,
+            role: 'diatonic',
+            label: c.name,
+            roman: c.roman || '',
+            gate: true,
+          };
+          nodes.push(node);
+        } else if (node) {
+          node.gate = true;
+        }
+        if (!node) return;
+        interNodes.forEach((ic) => {
+          edges.push({ kind: 'gate', fromId: gid, toId: ic.id, label: 'borrow' });
+          edges.push({ kind: 'gate', fromId: ic.id, toId: gid, label: 'return' });
+        });
+      });
+    }
+
+    // Mark nodes that appear in the current path (for highlight)
+    const pathIds = new Set(
+      (H.state.chords || []).map((c) => c.root + ':' + c.quality)
+    );
+    nodes.forEach((n) => {
+      n.onPath = pathIds.has(n.id);
     });
 
     return {
       tonic: nb.tonic,
       mode: nb.mode,
       preferFlat: preferFlat,
+      opts: fo,
       nodes: nodes,
       edges: edges,
     };

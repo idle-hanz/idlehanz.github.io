@@ -45,13 +45,49 @@ H.refreshAll = function () {
     const fnBtn = H.$('#view-function');
     if (chaseBtn) chaseBtn.classList.toggle('active', view === 'chase');
     if (fnBtn) fnBtn.classList.toggle('active', view === 'function');
+    const bar = H.$('#function-opts');
+    if (bar) bar.hidden = view !== 'function';
+    // Chase-only next-move dots control
+    const horz = H.$('#tog-horizon');
+    if (horz && horz.closest) {
+      const wrap = horz.closest('label') || horz;
+      if (wrap && wrap.style) wrap.style.opacity = view === 'function' ? '0.35' : '1';
+    }
+    H.syncFunctionOptsUI();
     H.refreshMap();
     H.setSyncStatus(
       view === 'function'
-        ? 'Function view · same key neighbourhood · blue = secondary · purple = borrow · gold = diatonic/gates'
+        ? 'Function view · use toggles under the map · hover lights paths'
         : 'Chase view · scale seats · multi-disk for true key changes'
     );
-  }
+  };
+
+  H.syncFunctionOptsUI = function () {
+    const fo = H.state.functionOpts || {};
+    const map = {
+      'fo-diatonic': 'showDiatonic',
+      'fo-skeleton': 'showSkeleton',
+      'fo-primary': 'showPrimaryV7',
+      'fo-secondaries': 'showSecondaries',
+      'fo-interchange': 'showInterchange',
+      'fo-sparse': 'sparseBorrow',
+      'fo-orbit': 'showOrbit',
+      'fo-gates': 'showGates',
+      'fo-hover': 'hoverBothWays',
+      'fo-chains': 'showChains',
+      'fo-path': 'showPath',
+    };
+    Object.keys(map).forEach((id) => {
+      const el = H.$('#' + id);
+      if (el) el.checked = !!fo[map[id]];
+    });
+  };
+
+  H.setFunctionOpt = function (key, value) {
+    if (!H.state.functionOpts) H.state.functionOpts = {};
+    H.state.functionOpts[key] = !!value;
+    if (H.map && H.map.mapView === 'function') H.refreshMap();
+  };
 
   H.renderTimeStrip = function () {
     const host = H.$('#time-strip');
