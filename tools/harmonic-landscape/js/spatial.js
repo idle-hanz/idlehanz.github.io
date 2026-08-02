@@ -69,6 +69,8 @@
     this._aimPreview = null; // { chord, x, y, label, role }
     this._bind();
     this.resize();
+    this.rememberKey(this.origin.tonic, this.origin.mode);
+    this._rebuildDisks();
   }
 
   SpatialMap.prototype._bind = function () {
