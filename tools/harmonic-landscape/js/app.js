@@ -10,10 +10,15 @@
   H.init = function () {
     H.map = new HLSpatial.SpatialMap(H.$('#map'));
     H.map.setOrigin(H.state.tonic, H.state.mode);
-    H.map.onSelectPath = (i, ch) => {
+    H.map.onSelectPath = (i, ch, opts) => {
       H.state.selected = i;
       H.A().ensure();
       H.A().playChord({ chord: ch });
+      // During drag start: skip full refreshMap (rebuilds disks / path → shake)
+      if (opts && opts.deferUI) {
+        H.updateMapStatus();
+        return;
+      }
       H.refreshUI();
     };
     H.map.onSelectHorizon = (item) => H.commitHorizon(item);
@@ -98,19 +103,41 @@
       // Immediate soft hit of the aimed chord
       H.A().playChord({ chord: target.chord, soft: true, duration: 0.5 });
       const roleBit = target.role ? ' · ' + target.role : '';
-      const tier = target.tier || (target.score != null ? H.tierAimScore(target.score) : '');
+      const aimMode = (meta && meta.aimMode) || target.aimMode || '';
+      const tier =
+        target.tier ||
+        (target.score != null ? H.tierAimScore(target.score, aimMode) : '');
       const fitBit =
         tier === 'good'
-          ? ' · ★ strong join with neighbours'
+          ? aimMode === 'loop'
+            ? ' · ★ strong loop join'
+            : aimMode === 'building'
+              ? ' · ★ strong from previous / open end'
+              : ' · ★ strong join with neighbours'
           : tier === 'ok'
-            ? ' · ok with neighbours'
+            ? aimMode === 'loop'
+              ? ' · ok loop join'
+              : aimMode === 'building'
+                ? ' · ok continuation'
+                : ' · ok with neighbours'
             : tier === 'weak'
               ? ' · weak join (still allowed)'
               : '';
+      const modeBit =
+        aimMode === 'loop'
+          ? ' · LOOP on (last → first)'
+          : aimMode === 'building'
+            ? ' · open end (loop off)'
+            : '';
       H.setSyncStatus(
-        'Aiming ' + target.label + roleBit + fitBit + ' — hold to hear context, release to set'
+        'Aiming ' +
+          target.label +
+          roleBit +
+          fitBit +
+          modeBit +
+          ' — hold to hear context, release to set'
       );
-      // After a short hold, audition prev → target → next (where you're going)
+      // After a short hold, audition prev → target → next (or loop first)
       aimTimer = setTimeout(() => {
         if (!H.map.snapAlt || H.map.snapAlt !== target) return;
         const seq = [];
@@ -127,11 +154,19 @@
             Math.max(H.state.bpm, 110),
             { pulse: false, loop: false }
           );
+          const loopNote =
+            aimMode === 'loop' ? ' (loop)' : aimMode === 'building' ? ' (open end)' : '';
           H.setSyncStatus(
-            'Audition: ' +
+            'Audition' +
+              loopNote +
+              ': ' +
               seq.map((c) => c.name).join(' → ') +
               ' · release to set ' +
               target.label
+          );
+        } else if (aimMode === 'building') {
+          H.setSyncStatus(
+            'Open end · ' + target.label + ' from previous · release to set'
           );
         }
       }, 280);

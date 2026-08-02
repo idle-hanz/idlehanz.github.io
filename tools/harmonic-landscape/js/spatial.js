@@ -101,8 +101,13 @@
 
   SpatialMap.prototype.resize = function () {
     const r = this.canvas.getBoundingClientRect();
-    this.w = Math.max(280, r.width);
-    this.h = Math.max(220, r.height);
+    const nw = Math.max(280, r.width);
+    const nh = Math.max(220, r.height);
+    // Skip no-op / mid-aim resizes (DOM reflow while aiming caused shake)
+    if (this._mode === 'node') return;
+    if (Math.abs(nw - (this.w || 0)) < 1 && Math.abs(nh - (this.h || 0)) < 1) return;
+    this.w = nw;
+    this.h = nh;
     this.dpr = window.devicePixelRatio || 1;
     this.canvas.width = Math.floor(this.w * this.dpr);
     this.canvas.height = Math.floor(this.h * this.dpr);
@@ -143,6 +148,8 @@
     }
     this.origin = next;
     this.rememberKey(next.tonic, next.mode);
+    // Mid-drag rebuilds re-layout the path and make the map jitter
+    if (this._mode === 'node') return;
     this._rebuildDisks();
     if (this.path && this.path.length) {
       this._layoutPath();
@@ -1448,7 +1455,8 @@
       this._dragPos = { x: hit.item.x, y: hit.item.y };
       this._snapSticky = null; // hysteresis for aim target
       this.current = hit.item.i;
-      if (this.onSelectPath) this.onSelectPath(hit.item.i, hit.item.chord);
+      // Light select only — full refreshUI rebuilds layout mid-drag (jitter)
+      if (this.onSelectPath) this.onSelectPath(hit.item.i, hit.item.chord, { deferUI: true });
       let alts = [];
       if (this.onRequestAlts) alts = this.onRequestAlts(hit.item.i, hit.item.chord) || [];
       this._layoutAlts(hit.item.i, alts);
@@ -1510,17 +1518,16 @@
     if (this._mode === 'node' && this._dragNode) {
       const w = this.screenToWorld(sx, sy);
       this._moved = true;
-      // Nearest aim target; good joins magnet a bit harder than weak ones
+      // Pure pointer aim — no soft magnet (that pulled the crosshair every frame
+      // and made the scene feel like it was shaking). Hard lock only.
       let best = null;
       let bestScore = Infinity;
       let bestRawD = Infinity;
       this.alts.forEach((a) => {
         const d = Math.hypot(w.x - a.x, w.y - a.y);
-        // Prefer strong joins when two pads compete
-        const bias = a.tier === 'good' ? -14 : a.tier === 'ok' ? -4 : 6;
-        // Sticky hysteresis: current lock is harder to lose (stops pad flicker / shake)
-        const sticky =
-          this._snapSticky && this._snapSticky === a ? -10 : 0;
+        const bias = a.tier === 'good' ? -10 : a.tier === 'ok' ? -3 : 4;
+        // Sticky: keep current lock unless clearly closer to another pad
+        const sticky = this._snapSticky && this._snapSticky === a ? -16 : 0;
         const scored = d + bias + sticky;
         if (scored < bestScore) {
           bestScore = scored;
@@ -1530,21 +1537,18 @@
       });
       const lockR =
         this.snapRadius *
-        (best && best.tier === 'weak' ? 0.72 : best && best.tier === 'good' ? 1.15 : 1);
-      // Softer magnet — less pull thrash near pad boundaries
-      const pullR = this.snapRadius * (best && best.tier === 'good' ? 1.55 : 1.25);
-      let mx = w.x;
-      let my = w.y;
-      if (best && bestRawD < pullR) {
-        const t = 1 - bestRawD / pullR;
-        const ease = t * t * (best.tier === 'good' ? 0.55 : 0.4);
-        mx = w.x + (best.x - w.x) * ease;
-        my = w.y + (best.y - w.y) * ease;
-      }
-      // Hard lock only inside snap radius (weaker pads harder to lock)
-      if (!best || bestRawD > lockR) best = null;
+        (best && best.tier === 'weak' ? 0.7 : best && best.tier === 'good' ? 1.12 : 1);
+      // Stay locked a bit further out once sticky (hysteresis on exit)
+      const exitR =
+        this._snapSticky && best === this._snapSticky
+          ? lockR * 1.22
+          : lockR;
+      if (!best || bestRawD > exitR) best = null;
       this._snapSticky = best;
-      this._dragPos = { x: mx, y: my };
+      // Magnet: follow pointer freely; only snap dead-centre when locked
+      this._dragPos = best
+        ? { x: best.x, y: best.y }
+        : { x: w.x, y: w.y };
       const prev = this.snapAlt;
       this.snapAlt = best;
       this._aimPreview = best
@@ -1556,13 +1560,26 @@
             role: best.role || '',
             tier: best.tier || 'ok',
             score: best.score,
+            aimMode: best.aimMode || '',
           }
         : null;
       if (best !== prev && this.onAimChange) {
-        this.onAimChange(this._dragNode.i, best, {
-          prevChord: this.nodes[this._dragNode.i - 1] && this.nodes[this._dragNode.i - 1].chord,
-          nextChord: this.nodes[this._dragNode.i + 1] && this.nodes[this._dragNode.i + 1].chord,
+        const i = this._dragNode.i;
+        // Prefer app-level neighbors (loop / building aware)
+        let prevChord = this.nodes[i - 1] && this.nodes[i - 1].chord;
+        let nextChord = this.nodes[i + 1] && this.nodes[i + 1].chord;
+        let aimMode = (best && best.aimMode) || '';
+        if (typeof global.HLApp !== 'undefined' && global.HLApp.aimNeighbors) {
+          const nbr = global.HLApp.aimNeighbors(i);
+          prevChord = nbr.prev;
+          nextChord = nbr.next;
+          aimMode = aimMode || nbr.mode || '';
+        }
+        this.onAimChange(i, best, {
+          prevChord: prevChord,
+          nextChord: nextChord,
           originChord: this._dragNode.chord,
+          aimMode: aimMode,
         });
       }
       this.canvas.style.cursor = best ? 'pointer' : 'crosshair';
@@ -1592,7 +1609,10 @@
   };
 
   SpatialMap.prototype._up = function () {
-    if (this._mode === 'node' && this._dragNode) {
+    const wasNode = this._mode === 'node';
+    const dragI = this._dragNode && this._dragNode.i;
+    const dragCh = this._dragNode && this._dragNode.chord;
+    if (wasNode && this._dragNode) {
       if (this._moved) {
         // Only commit if aimed at a target — no free-space "teleport"
         if (this.snapAlt) {
@@ -1625,6 +1645,12 @@
     this.snapAlt = null;
     this._aimPreview = null;
     this.canvas.style.cursor = 'grab';
+    // After aim, catch up UI that we deferred at pointer-down
+    if (wasNode && dragCh && this.onSelectPath && this._moved) {
+      // pull already refreshed via afterEdit; only need select refresh if cancelled
+    } else if (wasNode && dragCh && this.onSelectPath && !this._moved) {
+      // click-select already requested full UI above
+    }
   };
 
   /** Nearest sensible map position among alts + path-compatible palette ghosts */
@@ -1752,42 +1778,33 @@
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Harmonic-scale seats (Chase) — dim/skip on active disk in Function view
-      // While dragging, skip seat discs (aim pads own those spots — no double paint)
+      // Harmonic-scale seats (Chase) — skip active disk in Function view.
+      // While dragging: draw seats very dim under aim pads (don't remove them —
+      // popping seats on/off felt like the map shaking).
       const seats =
-        M &&
-        M.circularHarmonicScale &&
-        !(this.mapView === 'function' && active) &&
-        !(this._mode === 'node' && active)
+        M && M.circularHarmonicScale && !(this.mapView === 'function' && active)
           ? M.circularHarmonicScale(disk.tonic, disk.mode)
           : [];
+      const dragDim = this._mode === 'node' && active;
       seats.forEach((s) => {
         const rad = s.role === 'tonic' ? dR * 0.42 : dR * 0.72;
         const sx = cx + Math.cos(s.angle) * rad;
         const sy = cy + Math.sin(s.angle) * rad * 0.88;
         const seatHover =
+          !dragDim &&
           this.hover &&
           this.hover.type === 'seat' &&
           this.hover.item &&
           this.hover.item.root === s.root &&
           this.hover.item.activeDisk === active;
-        // Only illuminate Chase seats while dragging in Chase view (never
-        // light inactive/other-key seats during Function aim).
-        const aimHere =
-          this.mapView !== 'function' &&
-          active &&
-          this._mode === 'node' &&
-          this.snapAlt &&
-          this.snapAlt.chord &&
-          this.snapAlt.chord.root === s.root;
         const seatR = (active ? 20 : 11) / this.camera.zoom;
         ctx.beginPath();
-        ctx.arc(sx, sy, seatR * (seatHover || aimHere ? 1.2 : 1), 0, Math.PI * 2);
-        if (aimHere) {
-          ctx.fillStyle = 'rgba(125,186,146,0.55)';
+        ctx.arc(sx, sy, seatR * (seatHover ? 1.2 : dragDim ? 0.85 : 1), 0, Math.PI * 2);
+        if (dragDim) {
+          ctx.fillStyle = 'rgba(180,168,150,0.06)';
           ctx.fill();
-          ctx.strokeStyle = '#9ddea8';
-          ctx.lineWidth = 2.5 / this.camera.zoom;
+          ctx.strokeStyle = 'rgba(232,201,138,0.12)';
+          ctx.lineWidth = 1 / this.camera.zoom;
           ctx.stroke();
         } else if (seatHover && active) {
           ctx.fillStyle = 'rgba(232,201,138,0.45)';
@@ -1807,21 +1824,24 @@
           ctx.lineWidth = 1.2 / this.camera.zoom;
           ctx.stroke();
         }
-        ctx.fillStyle = active
-          ? seatHover || aimHere
-            ? '#fff4d6'
-            : 'rgba(230,220,200,0.9)'
-          : 'rgba(160,170,190,0.55)';
-        ctx.font = `bold ${12 / this.camera.zoom}px DM Sans, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(s.roman, sx, sy - (active ? 2 / this.camera.zoom : 0));
-        if (active) {
-          const nm = M.noteName(s.root);
-          ctx.fillStyle =
-            seatHover || aimHere ? 'rgba(255,244,214,0.95)' : 'rgba(200,184,160,0.75)';
-          ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
-          ctx.fillText(nm, sx, sy + 12 / this.camera.zoom);
+        if (!dragDim) {
+          ctx.fillStyle = active
+            ? seatHover
+              ? '#fff4d6'
+              : 'rgba(230,220,200,0.9)'
+            : 'rgba(160,170,190,0.55)';
+          ctx.font = `bold ${12 / this.camera.zoom}px DM Sans, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(s.roman, sx, sy - (active ? 2 / this.camera.zoom : 0));
+          if (active) {
+            const nm = M.noteName(s.root);
+            ctx.fillStyle = seatHover
+              ? 'rgba(255,244,214,0.95)'
+              : 'rgba(200,184,160,0.75)';
+            ctx.font = `${9 / this.camera.zoom}px DM Sans, sans-serif`;
+            ctx.fillText(nm, sx, sy + 12 / this.camera.zoom);
+          }
         }
       });
 

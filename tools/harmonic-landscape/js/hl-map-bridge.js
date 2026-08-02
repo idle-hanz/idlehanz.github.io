@@ -23,12 +23,61 @@ H.chordFromChaseSeat = function (seat, key) {
   }
 
   /**
-   * How well target sits between prev and next (voice-leading + common moves).
-   * Higher = better. Used to tier drag aim pads (good / ok / weak).
+   * Neighbours for aim scoring at pathIndex.
+   * - middle: prev + next
+   * - building: last chord, loop off → only prev (open end / still writing)
+   * - loop: last chord, loop on → next wraps to first chord
+   * - start: first chord → next only (or loop from last if loop on)
    */
-  H.scoreAimContext = function (prev, target, next) {
+  H.aimNeighbors = function (pathIndex) {
+    const chords = H.state.chords || [];
+    const n = chords.length;
+    if (!n || pathIndex < 0 || pathIndex >= n) {
+      return { prev: null, next: null, mode: 'empty', home: null };
+    }
+    const home = H.makeHomeChord
+      ? H.makeHomeChord()
+      : H.M().makeChord(H.state.tonic, H.state.mode === 'major' ? 'maj' : 'min', {
+          region: 'diatonic',
+          roman: H.state.mode === 'major' ? 'I' : 'i',
+        });
+    const looping = !!H.state.loop && n >= 2;
+    let prev = pathIndex > 0 ? chords[pathIndex - 1] : null;
+    let next = pathIndex < n - 1 ? chords[pathIndex + 1] : null;
+    let mode = 'middle';
+
+    if (pathIndex === n - 1 && pathIndex === 0) {
+      // single chord
+      mode = looping ? 'loop' : 'building';
+      prev = null;
+      next = null;
+    } else if (pathIndex === n - 1) {
+      // last step
+      if (looping) {
+        next = chords[0];
+        mode = 'loop';
+      } else {
+        next = null;
+        mode = 'building';
+      }
+    } else if (pathIndex === 0) {
+      mode = 'start';
+      if (looping) prev = chords[n - 1]; // arrival from loop end
+    }
+
+    return { prev: prev, next: next, mode: mode, home: home, looping: looping };
+  };
+
+  /**
+   * How well target sits between prev and next (voice-leading + common moves).
+   * mode: middle | building | loop | start — changes weights for last-chord cases.
+   */
+  H.scoreAimContext = function (prev, target, next, opts) {
+    opts = opts || {};
     if (!target) return 0;
     const music = H.M();
+    const mode = opts.mode || (next && prev ? 'middle' : next ? 'start' : prev ? 'building' : 'solo');
+    const home = opts.home || null;
     const pcDist = (a, b) => {
       const d = Math.abs(((a - b) % 12 + 12) % 12);
       return Math.min(d, 12 - d);
@@ -36,34 +85,60 @@ H.chordFromChaseSeat = function (seat, key) {
     let score = 0.35;
 
     const join = (a, b, w) => {
-      if (!a || !b) return;
+      if (!a || !b || !(w > 0)) return;
       const vl = music.voiceLeadingQuality ? music.voiceLeadingQuality(a, b) : 0.55;
       score += (vl != null ? vl : 0.55) * w;
       const leap = pcDist(a.root, b.root);
-      // Step / common progressions over random leaps
-      if (leap === 0) score -= 0.18 * w; // static root
+      if (leap === 0) score -= 0.18 * w;
       else if (leap === 1 || leap === 2) score += 0.12 * w;
-      else if (leap === 5 || leap === 7) score += 0.1 * w; // 4th/5th
+      else if (leap === 5 || leap === 7) score += 0.1 * w;
       else if (leap >= 5) score -= 0.06 * w;
-      // Dominant resolve: root up a 4th / down a 5th into next
       if (a.quality === 'dom7' && ((a.root + 5) % 12) === b.root) score += 0.28 * w;
     };
 
-    join(prev, target, 0.55);
-    join(target, next, 0.55);
-
-    // Prefer diatonic / functional colour over random shell
-    const reg = target.region || '';
-    if (reg === 'diatonic') score += 0.1;
-    else if (reg === 'secondary') score += 0.06;
-    else if (reg === 'interchange') score += 0.04;
-    else if (reg === 'tritone' || reg === 'chromatic') score -= 0.04;
-
-    // Dom7 that would resolve into next is a strong move
-    if (next && target.quality === 'dom7' && ((target.root + 5) % 12) === next.root) {
-      score += 0.18;
+    if (mode === 'building') {
+      // Open end — still writing: only care about leave-from-prev; reward good "next moves"
+      join(prev, target, 1.05);
+      const reg = target.region || '';
+      if (reg === 'diatonic') score += 0.16;
+      else if (reg === 'secondary') score += 0.1;
+      else if (reg === 'interchange') score += 0.06;
+      // Strong continuation gestures toward home / cadence setup
+      if (home) {
+        if (target.root === home.root && (target.quality === home.quality || !home.quality)) {
+          score += 0.14; // land home
+        }
+        if (target.quality === 'dom7' && ((target.root + 5) % 12) === home.root) {
+          score += 0.22; // V7 of home — classic open-end setup
+        }
+      }
+    } else if (mode === 'loop') {
+      // Last step loops to first — both joins matter; closing the cycle slightly preferred
+      join(prev, target, 0.5);
+      join(target, next, 0.7);
+      if (next && target.quality === 'dom7' && ((target.root + 5) % 12) === next.root) {
+        score += 0.24; // cadence into loop top
+      }
+      if (next && target.root === next.root) score -= 0.12; // static into loop start
+    } else if (mode === 'start') {
+      join(prev, target, prev ? 0.45 : 0); // optional loop-from-end
+      join(target, next, 0.95);
+    } else {
+      join(prev, target, 0.55);
+      join(target, next, 0.55);
     }
-    // Landing the resolution of prev V7
+
+    const reg = target.region || '';
+    if (mode !== 'building') {
+      if (reg === 'diatonic') score += 0.1;
+      else if (reg === 'secondary') score += 0.06;
+      else if (reg === 'interchange') score += 0.04;
+      else if (reg === 'tritone' || reg === 'chromatic') score -= 0.04;
+    }
+
+    if (next && target.quality === 'dom7' && ((target.root + 5) % 12) === next.root) {
+      score += 0.12;
+    }
     if (prev && prev.quality === 'dom7' && ((prev.root + 5) % 12) === target.root) {
       score += 0.16;
     }
@@ -71,7 +146,13 @@ H.chordFromChaseSeat = function (seat, key) {
     return score;
   };
 
-  H.tierAimScore = function (score) {
+  H.tierAimScore = function (score, mode) {
+    // Single-sided contexts (building) score a bit lower overall — ease thresholds
+    if (mode === 'building') {
+      if (score >= 0.72) return 'good';
+      if (score >= 0.42) return 'ok';
+      return 'weak';
+    }
     if (score >= 0.78) return 'good';
     if (score >= 0.48) return 'ok';
     return 'weak';
@@ -89,11 +170,10 @@ H.chordFromChaseSeat = function (seat, key) {
     const seen = new Set();
     const diskKey = H.keyOf(chord || H.state.chords[pathIndex]);
     const dur = (chord && chord.duration) || H.stepDuration();
-    const prev = pathIndex > 0 ? H.state.chords[pathIndex - 1] : null;
-    const next =
-      pathIndex >= 0 && pathIndex < H.state.chords.length - 1
-        ? H.state.chords[pathIndex + 1]
-        : null;
+    const nbr = H.aimNeighbors(pathIndex);
+    const prev = nbr.prev;
+    const next = nbr.next;
+    const aimMode = nbr.mode;
 
     const add = (ch, label, role, extra) => {
       if (!ch) return;
@@ -113,7 +193,10 @@ H.chordFromChaseSeat = function (seat, key) {
         ch.name = String(ch.name).split('/')[0];
       }
       H.stampKey(ch, diskKey);
-      const score = H.scoreAimContext(prev, ch, next);
+      const score = H.scoreAimContext(prev, ch, next, {
+        mode: aimMode,
+        home: nbr.home,
+      });
       list.push(
         Object.assign(
           {
@@ -121,7 +204,8 @@ H.chordFromChaseSeat = function (seat, key) {
             label: label || ch.name,
             role: role || '',
             score: score,
-            tier: H.tierAimScore(score),
+            tier: H.tierAimScore(score, aimMode),
+            aimMode: aimMode,
           },
           extra || {}
         )
