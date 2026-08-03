@@ -819,14 +819,21 @@
             <button type="button" class="btn ghost" id="btn-clear" title="Clear path only — write home and versions stay">Clear path</button>
             <button type="button" class="btn ghost btn-danger" id="btn-reset-all" title="Empty slate: no path, no pack, fresh cell, map disks wiped">Reset all</button>
           </div>
-          <div class="add-row" id="step-dur" style="margin-top:0.3rem;align-items:center" title="Length for new steps (Add, Home, From here when building forward)">
+          <div class="add-row" id="step-dur" style="margin-top:0.3rem;align-items:center;flex-wrap:wrap" title="Length for new steps (Add, Home, map seats, From here when building forward). Type any value — e.g. 20 for four bars of 5/4.">
             <span class="hint" style="margin:0;text-transform:uppercase;font-size:0.62rem;letter-spacing:0.04em">New step</span>
             <button type="button" class="chip" data-step-dur="0.5" title="Half beat">½</button>
             <button type="button" class="chip" data-step-dur="1">1</button>
             <button type="button" class="chip" data-step-dur="2">2</button>
-            <button type="button" class="chip active" data-step-dur="4">4</button>
+            <button type="button" class="chip" data-step-dur="4">4</button>
+            <button type="button" class="chip" data-step-dur="5" title="One bar of 5/4">5</button>
             <button type="button" class="chip" data-step-dur="8">8</button>
-            <span class="hint" style="margin:0">beats</span>
+            <button type="button" class="chip" data-step-dur="10" title="Two bars of 5/4">10</button>
+            <button type="button" class="chip" data-step-dur="16">16</button>
+            <button type="button" class="chip" data-step-dur="20" title="Four bars of 5/4">20</button>
+            <label class="ctl" style="margin:0;gap:0.25rem" title="Type any beat length (half-beat steps)">
+              <input type="number" id="step-dur-num" min="0.5" max="256" step="0.5" value="4" style="width:3.6rem;padding:0.2rem 0.3rem;border-radius:6px;border:1px solid var(--line);background:#12110f;color:var(--ink);font-size:0.8rem">
+              <span class="hint" style="margin:0">beats</span>
+            </label>
           </div>
           <p class="hint" style="margin-top:0.25rem">Drag ⋮⋮ · ←→ select · <kbd>Space</kbd> play · <kbd>Shift+Space</kbd> from sel · blue edge = differs from compare</p>
           <div id="slots"></div>

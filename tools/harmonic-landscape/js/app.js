@@ -390,6 +390,19 @@
       H.$('#step-dur').querySelectorAll('[data-step-dur]').forEach((btn) => {
         btn.addEventListener('click', () => H.setDefaultDuration(parseFloat(btn.dataset.stepDur)));
       });
+      const stepNum = H.$('#step-dur-num');
+      if (stepNum) {
+        const applyStep = () => {
+          H.setDefaultDuration(parseFloat(stepNum.value) || 4);
+        };
+        stepNum.addEventListener('change', applyStep);
+        stepNum.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            applyStep();
+          }
+        });
+      }
       H.setDefaultDuration(H.state.defaultDuration, { silent: true });
     }
     if (H.$('#btn-swing')) H.$('#btn-swing').addEventListener('click', H.suggestSwingNext);

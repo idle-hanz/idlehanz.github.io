@@ -730,10 +730,29 @@
   };
 
   SpatialMap.prototype.setPath = function (chords, currentIndex) {
-    if (this._mode === 'node') return;
+    // Always keep path data in sync with the sequence list
     this.path = (chords || []).map((c) => ({ ...c }));
-    this.current = currentIndex != null ? currentIndex : this.path.length - 1;
+    this.current =
+      currentIndex != null
+        ? currentIndex
+        : this.path.length
+          ? this.path.length - 1
+          : -1;
+    // Mid-aim: defer layout so drag stays stable, but don't drop the update
+    if (this._mode === 'node') {
+      this._pathDirty = true;
+      return;
+    }
+    this._pathDirty = false;
     // Disks follow keys present in the path so multi-key journeys stay visible
+    this._rebuildDisks();
+    this._layoutPath();
+    this._emitTrajectory();
+  };
+
+  SpatialMap.prototype._flushPathIfDirty = function () {
+    if (!this._pathDirty || this._mode === 'node') return;
+    this._pathDirty = false;
     this._rebuildDisks();
     this._layoutPath();
     this._emitTrajectory();
@@ -1971,12 +1990,8 @@
     this.snapAlt = null;
     this._aimPreview = null;
     this.canvas.style.cursor = 'grab';
-    // After aim, catch up UI that we deferred at pointer-down
-    if (wasNode && dragCh && this.onSelectPath && this._moved) {
-      // pull already refreshed via afterEdit; only need select refresh if cancelled
-    } else if (wasNode && dragCh && this.onSelectPath && !this._moved) {
-      // click-select already requested full UI above
-    }
+    // Apply any sequence edits that arrived while aiming (map was deferred)
+    if (this._flushPathIfDirty) this._flushPathIfDirty();
   };
 
   /** Nearest sensible map position among alts + path-compatible palette ghosts */

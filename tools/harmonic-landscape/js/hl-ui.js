@@ -634,11 +634,14 @@ H.refreshAll = function () {
         </label>
       </div>
       <label class="field">Duration (beats)
-        <input type="range" id="dur" min="0.5" max="16" step="0.5" value="${ch.duration}" />
-        <span id="dur-v">${ch.duration}</span>
+        <div class="row" style="align-items:center;gap:0.4rem;margin-top:0.2rem">
+          <input type="range" id="dur" min="0.5" max="64" step="0.5" value="${Math.min(64, Math.max(0.5, ch.duration || 4))}" style="flex:1" />
+          <input type="number" id="dur-num" min="0.5" max="256" step="0.5" value="${ch.duration || 4}" style="width:3.8rem;padding:0.2rem 0.3rem;border-radius:6px;border:1px solid var(--line);background:#12110f;color:var(--ink)" title="Type any length (e.g. 20 for four bars of 5/4)" />
+          <span class="hint" style="margin:0">b</span>
+        </div>
       </label>
-      <div class="dur-presets row" style="margin:0.35rem 0">
-        ${[0.5, 1, 1.5, 2, 3, 4, 6, 8].map((b) => `<button type="button" class="chip dur-p" data-b="${b}">${b}</button>`).join('')}
+      <div class="dur-presets row" style="margin:0.35rem 0;flex-wrap:wrap">
+        ${[0.5, 1, 2, 4, 5, 8, 10, 16, 20, 32].map((b) => `<button type="button" class="chip dur-p${Number(ch.duration) === b ? ' on' : ''}" data-b="${b}">${b}</button>`).join('')}
       </div>
       <div class="field" style="margin-top:0.35rem">Bass</div>
       <div class="bass-row" id="bass-row"></div>
@@ -665,17 +668,54 @@ H.refreshAll = function () {
       H.setSelectedRootQuality(ch.root, e.target.value);
     });
     const slider = host.querySelector('#dur');
+    const durNum = host.querySelector('#dur-num');
+    const syncDurUI = (v) => {
+      const d = H.snapBeats(v);
+      if (slider) {
+        // Range tops out at 64 for usability; number field can go higher
+        slider.value = String(Math.min(64, d));
+      }
+      if (durNum && document.activeElement !== durNum) durNum.value = String(d);
+      host.querySelectorAll('.dur-p').forEach((btn) => {
+        btn.classList.toggle('on', parseFloat(btn.dataset.b) === d);
+      });
+    };
     let durUndoArmed = false;
-    slider.addEventListener('pointerdown', () => {
-      durUndoArmed = true;
-      H.pushUndo();
-    });
-    slider.addEventListener('input', () => {
-      host.querySelector('#dur-v').textContent = slider.value;
-      H.setDuration(parseFloat(slider.value), true);
-    });
+    if (slider) {
+      slider.addEventListener('pointerdown', () => {
+        durUndoArmed = true;
+        H.pushUndo();
+      });
+      slider.addEventListener('input', () => {
+        const v = parseFloat(slider.value);
+        if (durNum) durNum.value = String(v);
+        H.setDuration(v, true);
+        host.querySelectorAll('.dur-p').forEach((btn) => {
+          btn.classList.toggle('on', parseFloat(btn.dataset.b) === v);
+        });
+      });
+    }
+    if (durNum) {
+      const applyNum = () => {
+        const v = H.snapBeats(parseFloat(durNum.value));
+        durNum.value = String(v);
+        H.setDuration(v);
+        syncDurUI(v);
+      };
+      durNum.addEventListener('change', applyNum);
+      durNum.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          applyNum();
+        }
+      });
+    }
     host.querySelectorAll('.dur-p').forEach((btn) => {
-      btn.addEventListener('click', () => H.setDuration(parseFloat(btn.dataset.b)));
+      btn.addEventListener('click', () => {
+        const v = parseFloat(btn.dataset.b);
+        H.setDuration(v);
+        syncDurUI(v);
+      });
     });
     host.querySelector('#insp-dup').addEventListener('click', H.duplicateSelected);
     if (host.querySelector('#insp-split')) {

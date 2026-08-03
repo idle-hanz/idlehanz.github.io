@@ -75,15 +75,19 @@ H.smoothVoicings = function () {
     const i = H.state.selected;
     if (i < 0 || !H.state.chords[i]) return;
     if (!skipUndo) H.pushUndo();
-    H.state.chords[i] = H.M().withDuration(H.state.chords[i], beats);
+    // Half-beat grid; allow long holds (e.g. 20b in 5/4) — no artificial 16b cap
+    const d = H.snapBeats(beats);
+    H.state.chords[i] = H.M().withDuration(H.state.chords[i], d);
     if (H.S()) H.pushToSharedSession('landscape');
     H.refreshSequence();
     H.refreshMap();
   }
 
-  /** Snap duration to half-beat grid, clamp ≥ 0.5 */
+  /** Snap duration to half-beat grid, clamp ≥ 0.5 (no upper cap for long holds). */
   H.snapBeats = function (b) {
-    return Math.max(0.5, Math.round(b * 2) / 2);
+    const n = Number(b);
+    if (!isFinite(n) || n <= 0) return 0.5;
+    return Math.max(0.5, Math.round(n * 2) / 2);
   }
 
   /**

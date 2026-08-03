@@ -707,14 +707,23 @@ H.chordFromChaseSeat = function (seat, key) {
 
   H.setDefaultDuration = function (beats, opts) {
     opts = opts || {};
-    H.state.defaultDuration = Math.max(0.5, H.snapBeats(beats));
+    H.state.defaultDuration = H.snapBeats(beats);
     const host = H.$('#step-dur');
     if (host) {
       host.querySelectorAll('[data-step-dur]').forEach((b) => {
-        b.classList.toggle('active', parseFloat(b.dataset.stepDur) === H.state.defaultDuration);
+        b.classList.toggle(
+          'active',
+          parseFloat(b.dataset.stepDur) === H.state.defaultDuration
+        );
       });
+      const custom = host.querySelector('#step-dur-num');
+      if (custom && document.activeElement !== custom) {
+        custom.value = String(H.state.defaultDuration);
+      }
     }
-    if (!opts.silent) H.setSyncStatus('New steps · ' + H.state.defaultDuration + ' beats each');
+    if (!opts.silent) {
+      H.setSyncStatus('New steps · ' + H.state.defaultDuration + ' beats each');
+    }
   }
 
   H.makeEnteredChord = function (root, q) {
@@ -740,6 +749,14 @@ H.chordFromChaseSeat = function (seat, key) {
 
   H.addChordFromPicker = function (insertMode) {
     H.pushUndo();
+    // If aim mode was stuck open, clear so the map can re-layout
+    if (H.map && H.map._mode === 'node') {
+      H.map._mode = null;
+      H.map._dragNode = null;
+      H.map.alts = [];
+      H.map.snapAlt = null;
+      H.map._pathDirty = false;
+    }
     const root = parseInt(H.$('#add-root').value, 10);
     const q = H.$('#add-quality').value;
     const ch = H.makeEnteredChord(root, q);
@@ -754,8 +771,21 @@ H.chordFromChaseSeat = function (seat, key) {
     }
     H.state.fromPackId = null;
     H.afterEdit();
+    // Force map path even if something left a dirty/aim flag
+    if (H.map) {
+      H.map._pathDirty = false;
+      H.map.setPath(H.state.chords, H.state.selected);
+    }
     H.A().ensure();
     H.A().playChord({ chord: ch });
+    H.setSyncStatus(
+      'Added ' +
+        (ch.name || '') +
+        ' · ' +
+        (ch.duration || H.stepDuration()) +
+        'b · step ' +
+        (H.state.selected + 1)
+    );
   }
 
   H.duplicateSelected = function () {
@@ -793,6 +823,17 @@ H.chordFromChaseSeat = function (seat, key) {
   }
 
   H.afterEdit = function () {
+    // Never leave map mid-aim after a sequence edit — list and map must match
+    if (H.map && H.map._mode === 'node') {
+      H.map._mode = null;
+      H.map._dragNode = null;
+      H.map._dragOrigin = null;
+      H.map._dragPos = null;
+      H.map.alts = [];
+      H.map.snapAlt = null;
+      H.map._aimPreview = null;
+      H.map._pathDirty = false;
+    }
     H.recognize({ preserveName: H.state.nameLocked });
     H.refreshAll();
     if (H.S() && H.state.chords.length) {
