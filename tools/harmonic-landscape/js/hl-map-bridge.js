@@ -749,14 +749,6 @@ H.chordFromChaseSeat = function (seat, key) {
 
   H.addChordFromPicker = function (insertMode) {
     H.pushUndo();
-    // If aim mode was stuck open, clear so the map can re-layout
-    if (H.map && H.map._mode === 'node') {
-      H.map._mode = null;
-      H.map._dragNode = null;
-      H.map.alts = [];
-      H.map.snapAlt = null;
-      H.map._pathDirty = false;
-    }
     const root = parseInt(H.$('#add-root').value, 10);
     const q = H.$('#add-quality').value;
     const ch = H.makeEnteredChord(root, q);
@@ -770,12 +762,7 @@ H.chordFromChaseSeat = function (seat, key) {
       H.state.selected = H.state.chords.length - 1;
     }
     H.state.fromPackId = null;
-    H.afterEdit();
-    // Force map path even if something left a dirty/aim flag
-    if (H.map) {
-      H.map._pathDirty = false;
-      H.map.setPath(H.state.chords, H.state.selected);
-    }
+    H.afterEdit(); // clears aim mode + refreshMap/setPath once
     H.A().ensure();
     H.A().playChord({ chord: ch });
     H.setSyncStatus(
@@ -823,17 +810,8 @@ H.chordFromChaseSeat = function (seat, key) {
   }
 
   H.afterEdit = function () {
-    // Never leave map mid-aim after a sequence edit — list and map must match
-    if (H.map && H.map._mode === 'node') {
-      H.map._mode = null;
-      H.map._dragNode = null;
-      H.map._dragOrigin = null;
-      H.map._dragPos = null;
-      H.map.alts = [];
-      H.map.snapAlt = null;
-      H.map._aimPreview = null;
-      H.map._pathDirty = false;
-    }
+    // Single map lifecycle: clear aim → refresh sequence/map/strip once
+    if (H.map && H.map.clearInteraction) H.map.clearInteraction();
     H.recognize({ preserveName: H.state.nameLocked });
     H.refreshAll();
     if (H.S() && H.state.chords.length) {

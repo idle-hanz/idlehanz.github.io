@@ -58,13 +58,7 @@ H.refreshAll = function () {
       console.error('refreshMap failed', err);
       // Last-ditch: still push path onto map so Chase matches sequence
       try {
-        if (H.map._mode === 'node') {
-          H.map._mode = null;
-          H.map._dragNode = null;
-          H.map.alts = [];
-          H.map.snapAlt = null;
-          H.map._pathDirty = false;
-        }
+        if (H.map.clearInteraction) H.map.clearInteraction({ skipHorizon: true });
         H.map.setPath(H.state.chords, H.state.selected);
       } catch (err2) {
         console.error('refreshMap setPath recovery failed', err2);

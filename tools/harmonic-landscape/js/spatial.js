@@ -20,6 +20,15 @@
     alt:         { fill: '#e8c98a', ghost: 'rgba(232,201,138,0.55)' },
   };
 
+  /** Shared seat radii (fraction of disk R) — Chase seats + Function diatonic ring */
+  const SEAT = {
+    tonic: 0.42,
+    scale: 0.72,
+    shell: 1.12,
+    v7: 0.92,
+    squash: 0.88,
+  };
+
   function SpatialMap(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
@@ -72,18 +81,44 @@
     this.onTrajectory = null; // (caption) => void
     this.snapRadius = 56; // larger seats → easier drop
     this.scaleSeats = []; // clickable seats on active disk
-    this._mode = null;
+    this._mode = null; // null | 'pan' | 'node' (aim/drag)
     this._dragNode = null;
     this._dragOrigin = null; // original node world pos (chord stays here)
     this._dragPos = null; // magnet / aim point — not the chord
     this._last = null;
     this._moved = false;
     this._aimPreview = null; // { chord, x, y, label, role }
+    this._pathDirty = false; // sequence changed while aiming
+    this._pendingHorizon = null; // horizon items deferred during aim
     this._bind();
     this.resize();
     this.rememberKey(this.origin.tonic, this.origin.mode);
     this._rebuildDisks();
   }
+
+  /**
+   * End pan/aim interaction and apply any deferred path/horizon updates.
+   * Single place for afterEdit / Add / refresh recovery (was copy-pasted).
+   */
+  SpatialMap.prototype.clearInteraction = function (opts) {
+    opts = opts || {};
+    this._mode = null;
+    this._dragNode = null;
+    this._dragOrigin = null;
+    this._dragPos = null;
+    this._snapSticky = null;
+    this._last = null;
+    this.alts = [];
+    this.snapAlt = null;
+    this._aimPreview = null;
+    this._pathDirty = false;
+    if (this.canvas) this.canvas.style.cursor = 'grab';
+    if (this._pendingHorizon) {
+      const items = this._pendingHorizon;
+      this._pendingHorizon = null;
+      if (!opts.skipHorizon) this.setHorizon(items);
+    }
+  };
 
   SpatialMap.prototype._bind = function () {
     const c = this.canvas;
@@ -447,10 +482,10 @@
     const cy = disk.cy || 0;
     // Same R as Chase seats so the wheel is the same physical size in both views
     const R = disk.R || 120;
-    const SEAT_R = R * 0.72; // matches Chase scale-seat ring
-    const TONIC_R = R * 0.42;
-    const BORROW_R = R * 1.12; // matches Chase shell ring (not a bigger orbit)
-    const V7_R = R * 0.92;
+    const SEAT_R = R * SEAT.scale;
+    const TONIC_R = R * SEAT.tonic;
+    const BORROW_R = R * SEAT.shell;
+    const V7_R = R * SEAT.v7;
 
     // Chase harmonic-scale seats → exact same angles/radii for diatonic Function nodes
     const scaleSeats =
@@ -472,7 +507,7 @@
         : -Math.PI / 2 + (i / Math.max(1, interList.length)) * Math.PI * 2;
       interPos[n.id] = {
         x: cx + Math.cos(ang) * BORROW_R,
-        y: cy + Math.sin(ang) * BORROW_R * 0.88,
+        y: cy + Math.sin(ang) * BORROW_R * SEAT.squash,
       };
     });
 
@@ -514,14 +549,14 @@
             : -Math.PI / 2;
         const ang = tAng + 0.52;
         x = cx + Math.cos(ang) * V7_R;
-        y = cy + Math.sin(ang) * V7_R * 0.88;
+        y = cy + Math.sin(ang) * V7_R * SEAT.squash;
       } else {
         // Diatonic / gates: same ring as Chase roman seats (same wheel)
         const seat = seatByRoot[ch.root];
         if (seat) {
           const rad = seat.role === 'tonic' ? TONIC_R : SEAT_R;
           x = cx + Math.cos(seat.angle) * rad;
-          y = cy + Math.sin(seat.angle) * rad * 0.88;
+          y = cy + Math.sin(seat.angle) * rad * SEAT.squash;
         } else if (M && M.chaseChordPos) {
           const base = M.chaseChordPos(ch, t, mode, { cx: cx, cy: cy, R: R });
           x = base.x;
@@ -817,7 +852,12 @@
    * written chord jumped to its true seat — far from the hollow ring.)
    */
   SpatialMap.prototype.setHorizon = function (items) {
-    if (this._mode === 'node') return;
+    // Defer during aim so next-move dots still land after release
+    if (this._mode === 'node') {
+      this._pendingHorizon = items || [];
+      return;
+    }
+    this._pendingHorizon = null;
     const M = global.HLMusic;
     const disk = this._activeDisk();
     const anchor =
@@ -968,31 +1008,6 @@
     return pos;
   };
 
-  SpatialMap.prototype._separateNodes = function (nodes, minDist) {
-    minDist = minDist || 32;
-    for (let pass = 0; pass < 3; pass++) {
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const a = nodes[i];
-          const b = nodes[j];
-          let dx = b.x - a.x;
-          let dy = b.y - a.y;
-          let d = Math.hypot(dx, dy) || 0.01;
-          if (d < minDist) {
-            const push = ((minDist - d) / 2) * 0.7;
-            dx /= d;
-            dy /= d;
-            a.x -= dx * push;
-            a.y -= dy * push;
-            b.x += dx * push;
-            b.y += dy * push;
-          }
-        }
-      }
-    }
-    return nodes;
-  };
-
   /** Mild de-overlap that never flings nodes far from their seats. */
   SpatialMap.prototype._softSeparate = function (nodes, minDist, maxPush) {
     minDist = minDist || 22;
@@ -1051,14 +1066,14 @@
     const mode = this.origin.mode || 'minor';
     const hit = M.seatForChord(ch, t, mode);
     if (!hit || !hit.seat) return null;
-    let rad = R * 0.72;
-    if (hit.seat.role === 'tonic' && hit.onScale && !hit.shell) rad = R * 0.42;
-    else if (hit.shell === 'secondary') rad = R * 0.92;
+    let rad = R * SEAT.scale;
+    if (hit.seat.role === 'tonic' && hit.onScale && !hit.shell) rad = R * SEAT.tonic;
+    else if (hit.shell === 'secondary') rad = R * SEAT.v7;
     else if (hit.shell === 'variant') rad = R * 0.82;
-    else if (hit.shell === true) rad = R * 1.12;
+    else if (hit.shell === true) rad = R * SEAT.shell;
     const ang = hit.seat.angle;
     let x = cx + Math.cos(ang) * rad;
-    let y = cy + Math.sin(ang) * rad * 0.88;
+    let y = cy + Math.sin(ang) * rad * SEAT.squash;
     // Stack revisits slightly so repeats don't fully cover
     let stack = 0;
     const peers = stackPath || this.path || [];
@@ -1521,9 +1536,9 @@
           tag: 'chase-seat',
         });
         // Same radii as path seats + Function diatonic ring
-        const radius = s.role === 'tonic' ? disk.R * 0.42 : disk.R * 0.72;
+        const radius = s.role === 'tonic' ? disk.R * SEAT.tonic : disk.R * SEAT.scale;
         const x = disk.cx + Math.cos(s.angle) * radius;
-        const y = disk.cy + Math.sin(s.angle) * radius * 0.88;
+        const y = disk.cy + Math.sin(s.angle) * radius * SEAT.squash;
         // Stamp disk ownership on seat chords so drop/click keep multi-disk correct
         ch.localTonic = disk.tonic;
         ch.localMode = disk.mode;
@@ -2005,47 +2020,9 @@
         this.onSelectPath(this._dragNode.i, this._dragNode.chord);
       }
     }
-    this._mode = null;
-    this._dragNode = null;
-    this._dragOrigin = null;
-    this._dragPos = null;
-    this._snapSticky = null;
-    this._last = null;
-    this.alts = [];
-    this.snapAlt = null;
-    this._aimPreview = null;
-    this.canvas.style.cursor = 'grab';
+    this.clearInteraction();
     // Apply any sequence edits that arrived while aiming (map was deferred)
-    if (this._flushPathIfDirty) this._flushPathIfDirty();
-  };
-
-  /** Nearest sensible map position among alts + path-compatible palette ghosts */
-  SpatialMap.prototype.nearestSensible = function (wx, wy, pathIndex) {
-    let best = null;
-    let bestD = Infinity;
-    const consider = (chord, label, x, y) => {
-      const d = (wx - x) * (wx - x) + (wy - y) * (wy - y);
-      if (d < bestD) {
-        bestD = d;
-        best = { chord, label: label || chord.name, x, y, dist: Math.sqrt(d) };
-      }
-    };
-    this.alts.forEach((a) => consider(a.chord, a.label, a.x, a.y));
-    // Also sample common roots around home
-    const M = global.HLMusic;
-    if (M) {
-      const quals = ['min', 'maj', 'dom7', 'min7', 'maj7'];
-      for (let r = 0; r < 12; r++) {
-        quals.forEach((q) => {
-          const ch = M.makeChord(r, q, { region: 'diatonic' });
-          const pos = this._chordPos(ch, pathIndex || 0, 0);
-          consider(ch, ch.name, pos.x, pos.y);
-        });
-      }
-    }
-    // Only accept if reasonably close (not random far drop)
-    if (best && best.dist < 90) return best;
-    return best; // still return nearest even if far — caller uses strength
+    this._flushPathIfDirty();
   };
 
   SpatialMap.prototype.start = function () {
@@ -2153,9 +2130,9 @@
           : [];
       const dragDim = this._mode === 'node' && active;
       seats.forEach((s) => {
-        const rad = s.role === 'tonic' ? dR * 0.42 : dR * 0.72;
+        const rad = s.role === 'tonic' ? dR * SEAT.tonic : dR * SEAT.scale;
         const sx = cx + Math.cos(s.angle) * rad;
-        const sy = cy + Math.sin(s.angle) * rad * 0.88;
+        const sy = cy + Math.sin(s.angle) * rad * SEAT.squash;
         const seatHover =
           !dragDim &&
           this.hover &&

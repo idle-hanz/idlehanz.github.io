@@ -208,12 +208,7 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       strip.classList.remove('resizing-strip');
     }
 
-    H.afterEdit();
-    // Force strip + H.map again after session push
-    H.renderTimeStrip();
-    if (H.map) {
-      H.map.setPath(H.state.chords, H.state.selected);
-    }
+    H.afterEdit(); // refreshAll → refreshMap + time strip (no second setPath)
     H.updateMapStatus();
 
     const afterIdx = fit.writeAt + fit.pieces.length;
