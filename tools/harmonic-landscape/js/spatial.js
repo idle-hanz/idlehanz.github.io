@@ -142,7 +142,8 @@
     }
   };
 
-  SpatialMap.prototype.setOrigin = function (tonic, mode) {
+  SpatialMap.prototype.setOrigin = function (tonic, mode, opts) {
+    opts = opts || {};
     const M = global.HLMusic;
     const next = {
       tonic: typeof tonic === 'number' ? tonic : M ? M.pc(tonic) : 0,
@@ -154,9 +155,9 @@
     }
     this.origin = next;
     this.rememberKey(next.tonic, next.mode);
-    // Mid-drag rebuilds re-layout the path and make the map jitter
+    // Mid-drag: only record origin (path layout deferred)
     if (this._mode === 'node') return;
-    // Same key already loaded — skip rebuild (view switch was jumping the wheel)
+    // Same key + camera freeze: skip disk rebuild (view switch)
     if (
       prev &&
       prev.tonic === next.tonic &&
@@ -168,7 +169,9 @@
       return;
     }
     this._rebuildDisks();
-    if (this.path && this.path.length) {
+    // Path layout is setPath's job (refreshMap passes layoutPath:false).
+    // Only layout here when called standalone (e.g. early boot).
+    if (opts.layoutPath !== false && this.path && this.path.length) {
       this._layoutPath();
       this._emitTrajectory();
     }
@@ -271,83 +274,88 @@
    * Chase halo: adjacent keys around the pivot (selected path step).
    * Ghost wheels offer “establish home” pads; they clear when pivot moves
    * unless that key becomes a solid traveled disk.
+   * Never throw — a failure must not freeze path/timeline updates.
    */
   SpatialMap.prototype._rebuildGhostHalo = function () {
     this.ghostDisks = [];
     this.ghostOptions = [];
-    if (this.mapView !== 'chase') return;
-    if (!this.path || !this.path.length) return;
-    const M = global.HLMusic;
-    const C = global.HLCompose || M;
-    if (!M || !C || !C.adjacentKeys || !C.establishHomeOptions) return;
+    try {
+      if (this.mapView !== 'chase') return;
+      if (!this.path || !this.path.length) return;
+      const M = global.HLMusic;
+      const C = global.HLCompose || M;
+      if (!M || !C || !C.adjacentKeys || !C.establishHomeOptions) return;
 
-    const idx =
-      this.current >= 0 && this.current < this.path.length
-        ? this.current
-        : this.path.length - 1;
-    const pivotCh = this.path[idx];
-    if (!pivotCh) return;
+      const idx =
+        this.current >= 0 && this.current < this.path.length
+          ? this.current
+          : this.path.length - 1;
+      const pivotCh = this.path[idx];
+      if (!pivotCh) return;
 
-    const pT =
-      pivotCh.localTonic != null ? pivotCh.localTonic : this.origin.tonic;
-    const pM = pivotCh.localMode || this.origin.mode;
-    const pivotDisk = this._diskForChord(pivotCh) || this._activeDisk();
-    const basex = pivotDisk.cx || 0;
-    const basey = pivotDisk.cy || 0;
-    const baseR = pivotDisk.R || 120;
+      const pT =
+        pivotCh.localTonic != null ? pivotCh.localTonic : this.origin.tonic;
+      const pM = pivotCh.localMode || this.origin.mode;
+      const pivotDisk = this._diskForChord(pivotCh) || this._activeDisk();
+      const basex = pivotDisk.cx || 0;
+      const basey = pivotDisk.cy || 0;
+      const baseR = pivotDisk.R || 120;
 
-    const solidIds = new Set(
-      (this.disks || []).map((d) => this._keyId(d.tonic, d.mode))
-    );
-    const adj = C.adjacentKeys(pT, pM, 4).filter(
-      (k) => !solidIds.has(this._keyId(k.tonic, k.mode))
-    );
-    if (!adj.length) return;
+      const solidIds = new Set(
+        (this.disks || []).map((d) => this._keyId(d.tonic, d.mode))
+      );
+      const adj = (C.adjacentKeys(pT, pM, 4) || []).filter(
+        (k) => k && !solidIds.has(this._keyId(k.tonic, k.mode))
+      );
+      if (!adj.length) return;
 
-    const gR = baseR * 0.72;
-    const dist = baseR * 1.65;
-    // Fan ghosts around pivot disk, slightly outward on fifths circle
-    adj.forEach((k, i) => {
-      let steps = M.fifthsDistance ? M.fifthsDistance(pT, k.tonic) : i + 1;
-      if (steps === 0) steps = k.mode !== pM ? 0.5 : i + 1;
-      const ang =
-        -Math.PI / 2 +
-        (steps !== 0
-          ? (steps / 6) * Math.PI
-          : ((i + 0.5) / adj.length) * Math.PI * 1.5 - 0.4);
-      const gcx = basex + Math.cos(ang) * dist;
-      const gcy = basey + Math.sin(ang) * dist * 0.9;
-      const ghost = {
-        tonic: k.tonic,
-        mode: k.mode,
-        cx: gcx,
-        cy: gcy,
-        R: gR,
-        active: false,
-        ghost: true,
-        relation: k.relation || '',
-        character: k.character || '',
-        label: M.noteName(k.tonic),
-        pivotIndex: idx,
-      };
-      this.ghostDisks.push(ghost);
+      const gR = baseR * 0.72;
+      const dist = baseR * 1.65;
+      adj.forEach((k, i) => {
+        let steps = M.fifthsDistance ? M.fifthsDistance(pT, k.tonic) : i + 1;
+        if (steps === 0) steps = k.mode !== pM ? 0.5 : i + 1;
+        const ang =
+          -Math.PI / 2 +
+          (steps !== 0
+            ? (steps / 6) * Math.PI
+            : ((i + 0.5) / Math.max(1, adj.length)) * Math.PI * 1.5 - 0.4);
+        const gcx = basex + Math.cos(ang) * dist;
+        const gcy = basey + Math.sin(ang) * dist * 0.9;
+        const ghost = {
+          tonic: k.tonic,
+          mode: k.mode,
+          cx: gcx,
+          cy: gcy,
+          R: gR,
+          active: false,
+          ghost: true,
+          relation: k.relation || '',
+          character: k.character || '',
+          label: M.noteName(k.tonic),
+          pivotIndex: idx,
+        };
+        this.ghostDisks.push(ghost);
 
-      const opts = C.establishHomeOptions(k.tonic, k.mode);
-      // Stack establish pads at ghost centre (I above, V7→I below)
-      opts.forEach((opt, j) => {
-        this.ghostOptions.push({
-          id: opt.id,
-          label: opt.label,
-          job: opt.job,
-          character: opt.character,
-          route: opt.route,
-          ghostDisk: ghost,
-          x: gcx,
-          y: gcy + (j === 0 ? -16 : 16),
-          r: 15,
+        const opts = C.establishHomeOptions(k.tonic, k.mode) || [];
+        opts.forEach((opt, j) => {
+          this.ghostOptions.push({
+            id: opt.id,
+            label: opt.label,
+            job: opt.job,
+            character: opt.character,
+            route: opt.route,
+            ghostDisk: ghost,
+            x: gcx,
+            y: gcy + (j === 0 ? -16 : 16),
+            r: 15,
+          });
         });
       });
-    });
+    } catch (err) {
+      console.warn('_rebuildGhostHalo failed', err);
+      this.ghostDisks = [];
+      this.ghostOptions = [];
+    }
   };
 
   SpatialMap.prototype._activeDisk = function () {
@@ -744,10 +752,27 @@
       return;
     }
     this._pathDirty = false;
-    // Disks follow keys present in the path so multi-key journeys stay visible
-    this._rebuildDisks();
-    this._layoutPath();
-    this._emitTrajectory();
+    try {
+      // Disks follow keys present in the path so multi-key journeys stay visible
+      this._rebuildDisks();
+      this._layoutPath();
+      this._emitTrajectory();
+    } catch (err) {
+      console.error('setPath layout failed', err);
+      // Ensure nodes array still reflects path so draw isn't empty
+      try {
+        if (!this.nodes || this.nodes.length !== this.path.length) {
+          this.nodes = this.path.map((ch, i) => ({
+            chord: ch,
+            x: (i - (this.path.length - 1) / 2) * 40,
+            y: 0,
+            r: 16,
+            i: i,
+          }));
+        }
+        this._emitTrajectory();
+      } catch (_) {}
+    }
   };
 
   SpatialMap.prototype._flushPathIfDirty = function () {

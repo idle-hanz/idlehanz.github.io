@@ -201,7 +201,8 @@
     H.map.onTrajectory = (info) => {
       const el = H.$('#traj-caption');
       if (el && info) el.textContent = info.caption || '';
-      H.renderTimeStrip();
+      // Force strip so a stuck resize flag can't freeze the timeline
+      H.renderTimeStrip({ force: true });
     };
     H.map.setCameraMode('home');
     H.map.start();

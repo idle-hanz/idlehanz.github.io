@@ -23,26 +23,57 @@ H.refreshAll = function () {
 
   H.refreshMap = function (opts) {
     opts = opts || {};
+    if (!H.map) {
+      H.renderTimeStrip({ force: true });
+      return;
+    }
     H.ensurePathOwned();
-    const keep = !!(opts.keepCamera && H.map);
+    const keep = !!opts.keepCamera;
     if (keep) H.map._keepCameraOnce = true;
     const camSnap = keep && H.map.snapshotCamera ? H.map.snapshotCamera() : null;
-    H.map.setOrigin(H.state.tonic, H.state.mode);
-    H.map.setPath(H.state.chords, H.state.selected);
-    // Chase: next-move constellation. Function: neighbourhood chart for write home.
-    if (H.map.mapView === 'function' && H.buildFunctionChart) {
-      H.map.setFunctionChart(H.buildFunctionChart());
-      H.map.setHorizon([]);
-    } else {
-      if (H.map.setFunctionChart) H.map.setFunctionChart(null);
-      H.map.setHorizon(H.buildHorizon({ forMap: true, limit: 14 }));
+    try {
+      // Origin only — path layout is owned by setPath (avoids layout with stale path)
+      if (H.map.setOrigin) {
+        H.map.setOrigin(H.state.tonic, H.state.mode, { layoutPath: false });
+      }
+      H.map.setPath(H.state.chords, H.state.selected);
+      // Chase: next-move constellation. Function: neighbourhood chart for write home.
+      if (H.map.mapView === 'function' && H.buildFunctionChart) {
+        H.map.setFunctionChart(H.buildFunctionChart());
+        H.map.setHorizon([]);
+      } else {
+        if (H.map.setFunctionChart) H.map.setFunctionChart(null);
+        try {
+          H.map.setHorizon(H.buildHorizon({ forMap: true, limit: 14 }));
+        } catch (err) {
+          console.warn('setHorizon failed', err);
+          H.map.setHorizon([]);
+        }
+      }
+      H.refreshAltPath();
+      if (camSnap && H.map.restoreCamera) {
+        H.map.restoreCamera(camSnap, { snap: true });
+      }
+    } catch (err) {
+      console.error('refreshMap failed', err);
+      // Last-ditch: still push path onto map so Chase matches sequence
+      try {
+        if (H.map._mode === 'node') {
+          H.map._mode = null;
+          H.map._dragNode = null;
+          H.map.alts = [];
+          H.map.snapAlt = null;
+          H.map._pathDirty = false;
+        }
+        H.map.setPath(H.state.chords, H.state.selected);
+      } catch (err2) {
+        console.error('refreshMap setPath recovery failed', err2);
+      }
+    } finally {
+      H.map._keepCameraOnce = false;
+      // Always refresh timeline — never depend on map layout succeeding
+      H.renderTimeStrip({ force: true });
     }
-    H.renderTimeStrip();
-    H.refreshAltPath();
-    if (camSnap && H.map && H.map.restoreCamera) {
-      H.map.restoreCamera(camSnap, { snap: true });
-    }
-    if (H.map) H.map._keepCameraOnce = false;
   }
 
   /**
@@ -135,11 +166,12 @@ H.refreshAll = function () {
     if (H.map && H.map.mapView === 'function') H.refreshMap();
   };
 
-  H.renderTimeStrip = function () {
+  H.renderTimeStrip = function (opts) {
+    opts = opts || {};
     const host = H.$('#time-strip');
     if (!host) return;
-    // Don't rebuild DOM mid-drag — live updates tweak flex/labels instead
-    if (host.dataset.resizing === '1') return;
+    // Don't rebuild DOM mid-drag — unless force (sequence edit / view switch)
+    if (host.dataset.resizing === '1' && !opts.force) return;
     host.dataset.resizing = '';
     host.innerHTML = '';
     if (!H.state.chords.length) {
