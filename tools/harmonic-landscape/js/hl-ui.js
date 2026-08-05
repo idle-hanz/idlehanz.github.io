@@ -222,14 +222,20 @@ H.refreshAll = function () {
           host.dataset.didResize = '';
           return;
         }
-        H.state.selected = i;
-        H.A().ensure();
-        // Preview at real beat length for current BPM (not a fixed 1.35s)
-        H.A().playChord({
-          chord: ch,
-          duration: H.chordAudioSeconds(ch, { soft: false }),
-        });
-        H.refreshUI();
+        // Light select — full refreshUI on every strip click hurt long sequences
+        if (H.selectStep) {
+          H.selectStep(i, { play: true });
+          // Prefer full-step audition length
+          if (ch && H.A().playChord) {
+            H.A().playChord({
+              chord: ch,
+              duration: H.chordAudioSeconds(ch, { soft: false }),
+            });
+          }
+        } else {
+          H.state.selected = i;
+          H.refreshUI();
+        }
       });
       // Double-click: split this step (timing stays same total)
       btn.addEventListener('dblclick', (e) => {
