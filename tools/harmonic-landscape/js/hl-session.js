@@ -333,7 +333,7 @@ H.setSyncStatus = function (msg) {
       // maybeChaseAfterKeyChange already refreshed; still ensure origin/path
       H.map.setOrigin(H.state.tonic, H.state.mode);
       H.map.setPath(H.state.chords, H.state.selected);
-      H.map.setHorizon(H.buildHorizon({ forMap: true, limit: 14 }));
+      H.map.setHorizon([]); // Chase map: seats + ghosts only
       if (H.map.disks && H.map.disks.length > 1 && H.map.cameraMode === 'home') {
         // Zoom out enough to see both disks
         H.map.camera.tz = Math.min(H.map.camera.tz || 1, 0.72);

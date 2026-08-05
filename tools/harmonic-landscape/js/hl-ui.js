@@ -37,18 +37,14 @@ H.refreshAll = function () {
         H.map.setOrigin(H.state.tonic, H.state.mode, { layoutPath: false });
       }
       H.map.setPath(H.state.chords, H.state.selected);
-      // Chase: next-move constellation. Function: neighbourhood chart for write home.
+      // Chase: seats + path + ghosts only (no next-move hollow dots on the map).
+      // Function: neighbourhood chart. From here list still has full suggestions.
       if (H.map.mapView === 'function' && H.buildFunctionChart) {
         H.map.setFunctionChart(H.buildFunctionChart());
         H.map.setHorizon([]);
       } else {
         if (H.map.setFunctionChart) H.map.setFunctionChart(null);
-        try {
-          H.map.setHorizon(H.buildHorizon({ forMap: true, limit: 14 }));
-        } catch (err) {
-          console.warn('setHorizon failed', err);
-          H.map.setHorizon([]);
-        }
+        H.map.setHorizon([]);
       }
       H.refreshAltPath();
       if (camSnap && H.map.restoreCamera) {
@@ -110,11 +106,11 @@ H.refreshAll = function () {
     if (fnBtn) fnBtn.classList.toggle('active', view === 'function');
     const bar = H.$('#function-opts');
     if (bar) bar.hidden = view !== 'function';
-    // Chase-only next-move dots control
+    // Next-move dots removed from map (seats + ghosts only)
     const horz = H.$('#tog-horizon');
     if (horz && horz.closest) {
       const wrap = horz.closest('label') || horz;
-      if (wrap && wrap.style) wrap.style.opacity = view === 'function' ? '0.35' : '1';
+      if (wrap) wrap.hidden = true;
     }
     H.syncFunctionOptsUI();
     H.refreshMap({ keepCamera: true });
@@ -137,7 +133,7 @@ H.refreshAll = function () {
       H.setSyncStatus(
         view === 'function'
           ? 'Function · same-key atlas (diatonic, V7s, borrow) · Land/modulate → Chase'
-          : 'Chase · journey on the scale · next-move = path/cadence/mod · multi-disk for new keys'
+          : 'Chase · seats + path + nearby-key ghosts · advanced colour on Function'
       );
     }
   };
@@ -181,10 +177,13 @@ H.refreshAll = function () {
         'ts-step' +
         (i === H.state.selected ? ' selected' : '') +
         (H.map && H.map.playing === i ? ' playing' : '');
-      // Width proportional to beats (timeline = tempo H.map)
+      // Width proportional to beats; shrink min-width for long sequences
       const beats = ch.duration != null ? ch.duration : 4;
+      const n = H.state.chords.length;
+      const minW = n > 24 ? 1.4 : n > 14 ? 1.8 : 2.2;
+      const beatScale = n > 24 ? 0.28 : n > 14 ? 0.4 : 0.55;
       btn.style.flex = beats + ' 1 0';
-      btn.style.minWidth = Math.max(2.2, beats * 0.55) + 'rem';
+      btn.style.minWidth = Math.max(minW, beats * beatScale) + 'rem';
       const sec = H.A().beatsToSeconds ? H.A().beatsToSeconds(beats, H.state.bpm) : beats;
       btn.title =
         i +
@@ -569,9 +568,52 @@ H.refreshAll = function () {
     H.$('#path-text').textContent = H.state.chords.map((c) => c.name).join(' → ') || 'Empty — add a chord or load a feel';
   }
 
+  /** Light select — no full map rebuild (important for long sequences). */
+  H.selectStep = function (i, opts) {
+    opts = opts || {};
+    if (i < 0 || i >= H.state.chords.length) return;
+    H.state.selected = i;
+    const ch = H.state.chords[i];
+    if (opts.play !== false && ch) {
+      H.A().ensure();
+      H.A().playChord({ chord: ch });
+    }
+    if (H.map) {
+      H.map.current = i;
+      if (H.map._rebuildGhostHalo) H.map._rebuildGhostHalo();
+    }
+    // Update slot chrome without nuking the whole list
+    const host = H.$('#slots');
+    if (host) {
+      host.querySelectorAll('.slot').forEach((el) => {
+        const idx = parseInt(el.dataset.index, 10);
+        el.classList.toggle('selected', idx === i);
+      });
+    }
+    const strip = H.$('#time-strip');
+    if (strip) {
+      strip.querySelectorAll('.ts-step').forEach((el) => {
+        const idx = parseInt(el.dataset.i, 10);
+        el.classList.toggle('selected', idx === i);
+      });
+    }
+    H.renderInspector();
+    H.renderVlReadout();
+    H.updateMapStatus();
+  };
+
   H.renderSlots = function () {
     const host = H.$('#slots');
+    if (!host) return;
     host.innerHTML = '';
+    // Long lists: keep the list scrollable so add/edit stay reachable
+    if (H.state.chords.length > 12) {
+      host.style.maxHeight = 'min(48vh, 28rem)';
+      host.style.overflowY = 'auto';
+    } else {
+      host.style.maxHeight = '';
+      host.style.overflowY = '';
+    }
     const diffs = H.diffIndicesVsCompare();
     const playing = H.map ? H.map.playing : -1;
     H.state.chords.forEach((ch, i) => {
@@ -581,10 +623,11 @@ H.refreshAll = function () {
         (i === H.state.selected ? ' selected' : '') +
         (diffs.has(i) ? ' diff' : '') +
         (playing === i ? ' playing-step' : '');
-      el.draggable = true;
+      // Only the grip reorders — whole-row drag made long lists feel broken
+      el.draggable = false;
       el.dataset.index = String(i);
       el.innerHTML = `
-        <span class="grip" title="Drag to reorder">⋮⋮</span>
+        <span class="grip" title="Drag to reorder" draggable="true">⋮⋮</span>
         <span class="n">${i + 1}</span>
         <span class="nm">${ch.name}</span>
         <span class="rm">${ch.roman || ''}</span>
@@ -592,24 +635,25 @@ H.refreshAll = function () {
         <button type="button" class="x" title="Remove">×</button>
       `;
       el.addEventListener('click', (e) => {
-        if (e.target.classList.contains('x')) return;
-        H.state.selected = i;
-        H.A().ensure();
-        H.A().playChord({ chord: ch });
-        H.refreshUI();
+        if (e.target.classList.contains('x') || e.target.classList.contains('grip')) return;
+        H.selectStep(i);
       });
       el.querySelector('.x').addEventListener('click', (e) => {
         e.stopPropagation();
         H.state.selected = i;
         H.removeSelected();
       });
-      el.addEventListener('dragstart', (e) => {
+      const grip = el.querySelector('.grip');
+      grip.addEventListener('dragstart', (e) => {
         H.dragSlotIndex = i;
         el.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', String(i));
+        try {
+          e.dataTransfer.setDragImage(el, 12, 12);
+        } catch (_) {}
       });
-      el.addEventListener('dragend', () => {
+      grip.addEventListener('dragend', () => {
         el.classList.remove('dragging');
         H.dragSlotIndex = null;
         host.querySelectorAll('.slot').forEach((s) => s.classList.remove('drag-over'));
@@ -623,12 +667,19 @@ H.refreshAll = function () {
       el.addEventListener('drop', (e) => {
         e.preventDefault();
         el.classList.remove('drag-over');
-        const from = H.dragSlotIndex != null ? H.dragSlotIndex : parseInt(e.dataTransfer.getData('text/plain'), 10);
-        const to = i;
-        if (!isNaN(from)) H.reorderChord(from, to);
+        const from =
+          H.dragSlotIndex != null
+            ? H.dragSlotIndex
+            : parseInt(e.dataTransfer.getData('text/plain'), 10);
+        if (!isNaN(from)) H.reorderChord(from, i);
       });
       host.appendChild(el);
     });
+    // Keep selected step in view for long lists
+    const sel = host.querySelector('.slot.selected');
+    if (sel && sel.scrollIntoView) {
+      sel.scrollIntoView({ block: 'nearest' });
+    }
   }
 
   H.renderInspector = function () {

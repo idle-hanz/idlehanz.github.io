@@ -57,7 +57,7 @@
     this.mapView = 'chase';
     this.functionChart = null; // { nodes, edges, tonic, mode }
     this.functionNodes = [];
-    this.showHorizon = true;
+    this.showHorizon = false; // map dots off — Chase is seats + ghosts only
     this.showAlt = true;
     this.camera = { x: 0, y: 0, zoom: 1, tx: 0, ty: 0, tz: 1 };
     this.hover = null;
@@ -1802,23 +1802,23 @@
     this.snapAlt = null;
 
     if (hit && hit.type === 'path') {
+      // Click = select. Aim only after a real drag (long paths re-use seats and
+      // used to feel like "everything starts dragging").
       this._mode = 'node';
-      // Lock camera to current visual pose so aim coords stay stable
+      this._aimArmed = false;
       this.camera.tx = this.camera.x;
       this.camera.ty = this.camera.y;
       this.camera.tz = this.camera.zoom;
       this._dragNode = hit.item;
       this._dragOrigin = { x: hit.item.x, y: hit.item.y };
       this._dragPos = { x: hit.item.x, y: hit.item.y };
-      this._snapSticky = null; // hysteresis for aim target
+      this._snapSticky = null;
+      this._ptrDown = { x: e.clientX, y: e.clientY };
       this.current = hit.item.i;
-      // Light select only — full refreshUI rebuilds layout mid-drag (jitter)
+      this.alts = [];
       if (this.onSelectPath) this.onSelectPath(hit.item.i, hit.item.chord, { deferUI: true });
-      let alts = [];
-      if (this.onRequestAlts) alts = this.onRequestAlts(hit.item.i, hit.item.chord) || [];
-      this._layoutAlts(hit.item.i, alts);
       this.canvas.setPointerCapture(e.pointerId);
-      this.canvas.style.cursor = 'grabbing';
+      this.canvas.style.cursor = 'pointer';
       return;
     }
     if (hit && hit.type === 'seat') {
@@ -1895,9 +1895,24 @@
 
     if (this._mode === 'node' && this._dragNode) {
       const w = this.screenToWorld(sx, sy);
+      // Arm aim only after leaving a small dead-zone (click ≠ drag)
+      if (!this._aimArmed && this._ptrDown) {
+        const pd = Math.hypot(e.clientX - this._ptrDown.x, e.clientY - this._ptrDown.y);
+        if (pd < 10) {
+          this._dragPos = { x: w.x, y: w.y };
+          return;
+        }
+        this._aimArmed = true;
+        this._moved = true;
+        let alts = [];
+        if (this.onRequestAlts) {
+          alts = this.onRequestAlts(this._dragNode.i, this._dragNode.chord) || [];
+        }
+        this._layoutAlts(this._dragNode.i, alts);
+        this.canvas.style.cursor = 'grabbing';
+      }
       this._moved = true;
-      // Pure pointer aim — no soft magnet (that pulled the crosshair every frame
-      // and made the scene feel like it was shaking). Hard lock only.
+      // Pure pointer aim — hard lock only (no soft magnet thrash)
       let best = null;
       let bestScore = Infinity;
       let bestRawD = Infinity;
@@ -2020,6 +2035,8 @@
         this.onSelectPath(this._dragNode.i, this._dragNode.chord);
       }
     }
+    this._aimArmed = false;
+    this._ptrDown = null;
     this.clearInteraction();
     // Apply any sequence edits that arrived while aiming (map was deferred)
     this._flushPathIfDirty();

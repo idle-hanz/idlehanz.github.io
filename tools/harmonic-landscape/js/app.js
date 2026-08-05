@@ -11,15 +11,20 @@
     H.map = new HLSpatial.SpatialMap(H.$('#map'));
     H.map.setOrigin(H.state.tonic, H.state.mode);
     H.map.onSelectPath = (i, ch, opts) => {
-      H.state.selected = i;
-      H.A().ensure();
-      H.A().playChord({ chord: ch });
-      // During drag start: skip full refreshMap (rebuilds disks / path → shake)
+      // Light select — full refreshUI on every map click wrecked long sequences
       if (opts && opts.deferUI) {
+        H.state.selected = i;
+        if (H.map) H.map.current = i;
         H.updateMapStatus();
         return;
       }
-      H.refreshUI();
+      if (H.selectStep) H.selectStep(i, { play: true });
+      else {
+        H.state.selected = i;
+        H.A().ensure();
+        H.A().playChord({ chord: ch });
+        H.refreshUI();
+      }
     };
     H.map.onSelectHorizon = (item) => H.commitHorizon(item);
     H.map.onHoverHorizon = (item) => {
