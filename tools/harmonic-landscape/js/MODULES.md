@@ -1,80 +1,78 @@
 # Harmonic Landscape — app modules
 
-The editor used to be one ~4k-line `app.js`. It is split across a shared namespace
-**`window.HLApp`** (`H` in each file).
+Editor lives on **`window.HLApp`** (`H` in each file).
 
 ## Load order
 
-1. Engine libs: `ih-session`, `music`, `compose`, `audio`, `packs`, `spatial`
-2. `hl-core.js` — creates `HLApp` + `state`
-3. Feature modules (any order among themselves is OK if all load before boot):
-   - `hl-undo.js` — snapshot, undo/redo, ownership keys, session chord convert
-   - `hl-session.js` — IHSession handoff, packs, write-home / Land here
-   - `hl-map-bridge.js` — Chase seats, aim drag, edge insert, path edits, `afterEdit`
-   - `hl-versions.js` — version chips, blue compare, fork variations
-   - `hl-edit.js` — smooth, rename, durations, bass, strip resize math
-   - `hl-horizon.js` — From here packages + fit timing
-   - `hl-playback.js` — play / playhead / export
-   - `hl-ui.js` — render strip, slots, inspector, packs, horizon lists, **`refreshMap`**
-4. `app.js` — **boot only**: `init`, `wire`, `DOMContentLoaded`
+1. Engine: `ih-session`, `music`, `compose`, `audio`, `packs`, then map:
+   - `spatial.js` — ctor, camera, setPath/setOrigin API, `HLSpatial` export
+   - `spatial-layout.js` — disks, seats, path/function layout
+   - `spatial-input.js` — hit-test, pointer, aim/drag
+   - `spatial-draw.js` — canvas paint
+   (Pure split of former monolith; load in that order.)
+2. `hl-core.js` — `HLApp` + `state`
+3. Feature modules (all before boot):
+   - `hl-undo.js` — snapshot (incl. write home), undo/redo, ownership keys
+   - `hl-session.js` — session, packs, write-home / Land here
+   - `hl-map-bridge.js` — seats, aim, leave-home, path edits, `afterEdit`
+   - `hl-versions.js` — version chips, blue compare
+   - `hl-edit.js` — smooth, rename, durations, bass
+   - `hl-horizon.js` — **From here list** + fit timing (`buildHorizon` is list-only)
+   - `hl-playback.js` — play / playhead / place-preserving resync
+   - `hl-ui.js` — strip, slots, inspector, packs, **`refreshMap`**
+4. `app.js` — `init` / `wire` only
 
-## Conventions
-
-- Shared state: `H.state` (chords, tonic, cellId, compareCellId, …)
-- Map instance: `H.map` (`SpatialMap` from `spatial.js`)
-- DOM: `H.$('#id')`
-- Engines: `H.M()` `H.A()` `H.C()` `H.P()` `H.S()`
-- Methods: `H.playSeq()`, `H.afterEdit()`, …
-
-## Lifecycle (keep thin)
+## Lifecycle
 
 **Sequence edit** → `H.afterEdit()`:
 
-1. `map.clearInteraction()` — end aim/pan, flush deferred horizon  
-2. `recognize` + `refreshAll()`  
-3. `refreshAll` → `refreshMap()` once (origin, path, horizon/function chart, time strip)  
-4. optional session push + alt path  
+1. `map.clearInteraction()`  
+2. `recognize` + `refreshAll()` → **`refreshMap()` once**  
+3. session push + playback resync if playing  
 
-**Do not** call `setPath` / `renderTimeStrip` again after `afterEdit` unless you have a special case.
+**Do not** call `setPath` again after `afterEdit` unless special-case.
 
-**View switch** → `H.setMapView(view)` → `refreshMap({ keepCamera: true })`.
+**Write home** with `skipEdit: true` only updates origin bookkeeping; callers plant then `afterEdit`.
 
-**Map interaction modes** (`spatial.js`):
+## Product split
 
-| Mode | Meaning |
-|------|---------|
-| `null` | Idle / hover |
-| `pan` | Dragging empty canvas |
-| `node` | Aiming a path chord (or post edge-insert aim) |
+| | **Journey** (Chase) | **In this key** (Function) |
+|--|---------------------|----------------------------|
+| Job | Multi-key path | Same-key atlas |
+| Map | Seats + path + purple leave-home ghosts | Diatonic / V7 / borrow chart |
+| Suggestions | From here list (+ ghosts) | Function toggles + From here |
 
-`clearInteraction()` is the single exit from `pan`/`node`.
+Map **next-move hollow dots** are retired (`setHorizon` is a no-op stub).
 
-## Product split (Chase vs Function)
+## Leave home (one plant path)
 
-| | **Chase** | **Function** |
-|--|-----------|--------------|
-| Job | Journey / multi-key | Same-key atlas |
-| Path seats | Write-home scale seats (ownership wins) | Function chart seats (aligned radii) |
-| Suggestions | Next-move: direction / cadence / mod | Dominants + Borrow toggles |
-| Key change | Ghost adjacent wheels + establish I / V7→I | Auto → Chase on committed key change |
+- Ghost pad / aim purple pad / From here **Mod** / **Land here**  
+- Shared: `leaveHomeToKey` / `plantEstablishRoute` / `plantLandTonic`  
+- Does **not** retag old steps onto the new disk  
 
-## Where the weight is
+## Hover next-arrows
 
-| File | Role | Notes |
-|------|------|--------|
-| `spatial.js` (~3k lines) | All map layout + hit + draw | Largest; further splits could be layout / hit / draw later |
-| `compose.js` | Suggest, VL, modulate helpers | Adjacent keys + establish options for ghosts |
-| `hl-horizon.js` | From here + map horizon | `forMap` filters lean Chase dots |
-| `hl-map-bridge.js` | Path edits, aim targets, afterEdit | Prefer this for map↔state glue |
-| `hl-ui.js` | DOM render + `refreshMap` | Single map refresh entry |
+- `previewNextFromStep(i)` → weighted arrows from path node to scale seats + leave-home  
+- Thickness/alpha = join score (`scoreAimContext` + kind priors; dim pivots get half-step boost)  
+- Click tip → append (or establish if modulate)  
 
-## Debt / next cleanups (not blocking)
+## Weight
 
-- Split `spatial.js` draw vs layout vs input if it grows further  
-- `setWritingHome` still does its own `setOrigin`/`setPath` when `skipEdit` (could call `refreshMap`)  
-- `workbench.js` is a separate tool surface; keep out of HLApp path  
-- Engine libs (`music`/`compose`) could share a single `seatRadius(disk, role)` with map `SEAT` constants  
+| File | Role |
+|------|------|
+| `spatial.js` (~2.9k) | Map layout, hit, draw |
+| `compose.js` | Suggest, VL, adjacent keys, establish options |
+| `hl-ui.js` | DOM + refreshMap |
+| `hl-map-bridge.js` | Map ↔ state glue |
+## Backups
 
-## Pre-split backup
+- Pre-refactor: `Desktop/harmonic-landscape/backups/js-*-pre-refactor/`  
+- Pre-split monolith: `backups/js-20260802-170014/app.js`
+- Pre song-package / end-into / fretboard clip: `backups/js-20260806-175120-pre-song-schema/`
 
-`backups/js-20260802-170014/app.js` — monolith before this split.
+## Song / Fretboard (shared `ih-session.js`)
+
+- Fretboard hard cap: **8** chords (`IHSession.FRETBOARD_MAX_CHORDS`). Landscape/Arrangement clip via `clipForFretboard` before handoff.
+- Section cycle: `reps` + optional `endCellId` (last rep) + `intoCellId` (after reps) + `seam`.
+- Song package: `format: idlehanz-song-package` via `exportSongPackage` / `importSongPackage`.
+- Design pin: `Desktop/Harmonic Landscape - Design Freeze.md`

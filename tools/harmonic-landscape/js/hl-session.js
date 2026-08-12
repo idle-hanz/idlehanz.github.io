@@ -154,6 +154,247 @@ H.setSyncStatus = function (msg) {
     H.playSeq({ once: true });
   }
 
+  /**
+   * Full project snapshot for Save / Load file (not just browser session).
+   * Chords use session-friendly shape when ih-session is present.
+   */
+  H.buildProjectPayload = function () {
+    const chordToJson = (c) => {
+      if (H.S() && H.S().fromLandscapeChord) return H.S().fromLandscapeChord(c);
+      return {
+        root: c.root,
+        quality: c.quality,
+        duration: c.duration,
+        bassPc: c.bassPc,
+        roman: c.roman,
+        region: c.region,
+        tag: c.tag,
+        localTonic: c.localTonic,
+        localMode: c.localMode,
+        name: c.name,
+        notes: (c.notes || []).slice(),
+        custom: !!c.custom,
+      };
+    };
+    return {
+      format: 'harmonic-landscape-project',
+      version: 1,
+      savedAt: new Date().toISOString(),
+      title: H.state.title || 'Untitled sequence',
+      bpm: H.state.bpm,
+      loop: !!H.state.loop,
+      pulse: !!H.state.pulse,
+      followPlayhead: !!H.state.followPlayhead,
+      tonic: H.state.tonic,
+      mode: H.state.mode,
+      defaultDuration: H.state.defaultDuration != null ? H.state.defaultDuration : 4,
+      style: H.state.style || 'neutral',
+      selected: Math.max(0, H.state.selected | 0),
+      cellId: H.state.cellId || null,
+      fromPackId: H.state.fromPackId || null,
+      nameLocked: !!H.state.nameLocked,
+      functionOpts: H.state.functionOpts
+        ? {
+            dominants: H.state.functionOpts.dominants !== false,
+            borrow: H.state.functionOpts.borrow !== false,
+            tritone: !!H.state.functionOpts.tritone,
+            dim: !!H.state.functionOpts.dim,
+            valts: !!H.state.functionOpts.valts,
+            colours: !!H.state.functionOpts.colours,
+          }
+        : {
+            dominants: true,
+            borrow: true,
+            tritone: false,
+            dim: false,
+            valts: false,
+            colours: false,
+          },
+      chords: (H.state.chords || []).map(chordToJson),
+    };
+  };
+
+  /** Download current work as a .json project file + refresh browser session. */
+  H.saveProjectFile = function () {
+    if (!H.state.chords || !H.state.chords.length) {
+      H.setSyncStatus('Nothing to save — add chords first');
+      return;
+    }
+    const payload = H.buildProjectPayload();
+    const text = JSON.stringify(payload, null, 2);
+    const out = H.$('#export-out');
+    if (out) out.value = text;
+    if (H.dl) {
+      H.dl(
+        new Blob([text], { type: 'application/json' }),
+        (H.slug ? H.slug(payload.title) : 'harmonic-landscape') + '.hl.json'
+      );
+    }
+    // Keep browser session in sync when available
+    try {
+      if (H.pushToSharedSession) H.pushToSharedSession('landscape-file');
+    } catch (_) {
+      /* ignore */
+    }
+    H.setSyncStatus('Project saved · ' + payload.title + ' · ' + payload.chords.length + ' steps');
+  };
+
+  /**
+   * Load a .hl.json / project JSON (from file input or parsed object).
+   */
+  H.loadProjectPayload = function (data, opts) {
+    opts = opts || {};
+    if (!data || typeof data !== 'object') {
+      H.setSyncStatus('Load failed · invalid file');
+      return false;
+    }
+    // Accept our project format, or a bare handoff / cell-like object with chords
+    let chordsRaw = data.chords;
+    if (!chordsRaw && data.cell && data.cell.chords) chordsRaw = data.cell.chords;
+    if (!Array.isArray(chordsRaw) || !chordsRaw.length) {
+      H.setSyncStatus('Load failed · no chords in file');
+      return false;
+    }
+    if (H.pushUndo && H.state.chords && H.state.chords.length) H.pushUndo();
+
+    const tonic =
+      data.tonic != null
+        ? data.tonic
+        : data.key && data.key.tonic != null
+          ? data.key.tonic
+          : H.state.tonic;
+    const mode =
+      data.mode ||
+      (data.key && data.key.mode) ||
+      H.state.mode ||
+      'minor';
+    const bpm = data.bpm != null ? data.bpm : H.state.bpm;
+
+    H.state.tonic = ((Number(tonic) % 12) + 12) % 12;
+    H.state.mode = mode;
+    H.state.bpm = Number(bpm) || 96;
+    if (data.loop != null) H.state.loop = !!data.loop;
+    if (data.pulse != null) H.state.pulse = !!data.pulse;
+    if (data.followPlayhead != null) H.state.followPlayhead = !!data.followPlayhead;
+    if (data.defaultDuration != null) {
+      H.state.defaultDuration = H.snapBeats
+        ? H.snapBeats(data.defaultDuration)
+        : data.defaultDuration;
+    }
+    if (data.style && H.STYLES && H.STYLES[data.style]) {
+      H.state.style = data.style;
+      try {
+        localStorage.setItem('hl-style', data.style);
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    if (data.functionOpts && typeof data.functionOpts === 'object') {
+      H.state.functionOpts = Object.assign(
+        H.state.functionOpts || {},
+        data.functionOpts
+      );
+    }
+    H.state.title = data.title || data.cellName || 'Loaded project';
+    H.state.nameLocked = data.nameLocked !== false;
+    H.state.cellId = data.cellId || null;
+    H.state.fromPackId = data.fromPackId || data.packId || null;
+
+    // Hydrate chords
+    H.state.chords = chordsRaw.map((sc) => {
+      if (H.sessionChordToLandscape) return H.sessionChordToLandscape(sc);
+      if (H.M() && H.M().makeChord) {
+        const ch = H.M().makeChord(sc.root, sc.quality || 'maj', {
+          duration: sc.duration != null ? sc.duration : 4,
+          region: sc.region || 'diatonic',
+          roman: sc.roman || '',
+          tag: sc.tag || 'loaded',
+        });
+        if (sc.localTonic != null) {
+          ch.localTonic = sc.localTonic;
+          ch.localMode = sc.localMode || mode;
+        } else if (H.stampKey) {
+          H.stampKey(ch, { tonic: H.state.tonic, mode: H.state.mode });
+        }
+        return ch;
+      }
+      return sc;
+    });
+    const sel =
+      data.selected != null
+        ? data.selected
+        : data.focus != null
+          ? data.focus
+          : 0;
+    H.state.selected = Math.max(
+      0,
+      Math.min(H.state.chords.length - 1, sel | 0)
+    );
+    if (H.setSelectedIndices) {
+      H.setSelectedIndices([H.state.selected], H.state.selected);
+    }
+
+    // Sync dropdowns
+    const tEl = H.$('#tonic');
+    const mEl = H.$('#mode');
+    const bEl = H.$('#bpm');
+    if (tEl) tEl.value = String(H.state.tonic);
+    if (mEl) mEl.value = H.state.mode;
+    if (bEl) bEl.value = String(H.state.bpm);
+    const loopEl = H.$('#loop');
+    if (loopEl) loopEl.checked = !!H.state.loop;
+    const pulseEl = H.$('#pulse');
+    if (pulseEl) pulseEl.checked = !!H.state.pulse;
+    if (H.setDefaultDuration) {
+      H.setDefaultDuration(H.state.defaultDuration, { silent: true });
+    }
+    if (H.syncStyleUI) H.syncStyleUI();
+    if (H.syncFunctionOptsUI) H.syncFunctionOptsUI();
+    if (H.map && H.map.setOrigin) {
+      H.map.setOrigin(H.state.tonic, H.state.mode, { layoutPath: false });
+    }
+    if (H.refreshAll) H.refreshAll();
+    else if (H.afterEdit) H.afterEdit();
+    try {
+      if (H.pushToSharedSession) H.pushToSharedSession('landscape-load');
+    } catch (_) {
+      /* ignore */
+    }
+    if (!opts.silent) {
+      H.setSyncStatus(
+        'Project loaded · ' +
+          H.state.title +
+          ' · ' +
+          H.state.chords.length +
+          ' steps · ' +
+          (H.keyLabel ? H.keyLabel() : '')
+      );
+    }
+    return true;
+  };
+
+  H.loadProjectFile = function (file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function () {
+      try {
+        const data = JSON.parse(String(reader.result || ''));
+        H.loadProjectPayload(data);
+        const out = H.$('#export-out');
+        if (out) out.value = JSON.stringify(data, null, 2);
+      } catch (err) {
+        console.error(err);
+        H.setSyncStatus(
+          'Load failed · ' + (err && err.message ? err.message : 'bad JSON')
+        );
+      }
+    };
+    reader.onerror = function () {
+      H.setSyncStatus('Load failed · could not read file');
+    };
+    reader.readAsText(file);
+  };
+
   H.sendToFretboard = function () {
     if (!H.state.chords.length) {
       alert('Add some chords first.');
@@ -164,7 +405,15 @@ H.setSyncStatus = function (msg) {
       return;
     }
     H.pushToSharedSession('landscape');
-    const chords = H.state.chords.map((c) => H.S().fromLandscapeChord(c));
+    const all = H.state.chords.map((c) => H.S().fromLandscapeChord(c));
+    // Fretboard hard cap = 8 (addSlot). Prefer a window around the selected step.
+    const clip = H.S().clipForFretboard
+      ? H.S().clipForFretboard(all, { focus: H.state.selected })
+      : { chords: all.slice(0, 8), truncated: all.length > 8, total: all.length, max: 8, start: 0 };
+    const focusInClip = Math.max(
+      0,
+      Math.min(clip.chords.length - 1, (H.state.selected | 0) - (clip.start || 0))
+    );
     const payload = H.S().buildHandoffPayload({
       by: 'landscape',
       to: 'fretboard',
@@ -173,12 +422,36 @@ H.setSyncStatus = function (msg) {
       key: { tonic: H.state.tonic, mode: H.state.mode },
       cellId: H.state.cellId,
       cellName: H.state.title,
-      focus: H.state.selected,
-      chords,
+      focus: focusInClip,
+      chords: clip.chords,
     });
     const ok = H.S().openWithHandoff(H.S().PATHS.fretboardFromLandscape, payload);
-    H.setSyncStatus(ok ? 'Opened Fretboard with sequence' : 'Could not open Fretboard — check Desktop paths');
-    H.$('#export-out').value = JSON.stringify(payload, null, 2);
+    const clipMsg = H.S().fretboardClipMessage
+      ? H.S().fretboardClipMessage(clip)
+      : clip.truncated
+        ? 'Fretboard max 8 · truncated from ' + clip.total
+        : '';
+    if (ok) {
+      H.setSyncStatus(
+        clip.truncated
+          ? 'Opened Fretboard · ' + clipMsg
+          : 'Opened Fretboard with ' + clip.chords.length + ' chords'
+      );
+    } else {
+      H.setSyncStatus('Could not open Fretboard — check Desktop paths');
+    }
+    if (clip.truncated) {
+      try {
+        console.info('[HL] Fretboard clip:', clipMsg);
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    H.$('#export-out').value = JSON.stringify(
+      Object.assign({}, payload, { _fretboardClip: clipMsg || null, _sourceTotal: all.length }),
+      null,
+      2
+    );
   }
 
   H.fillControls = function () {
@@ -258,9 +531,55 @@ H.setSyncStatus = function (msg) {
     btn.title = pending
       ? 'Commit staged key ' +
         H.keyLabelFor(H.dropdownKey()) +
-        ' — open that Chase disk (H.map stays put until you click)'
-      : 'Land here — use Write home + Mode as the new disk from the selected step';
-  }
+        ' — plant its tonic after the selected step (old path stays on its disks)'
+      : 'Land here — stage a different Write home / Mode first, then click';
+    const badge = H.$('#staged-badge');
+    const lab = H.$('#staged-label');
+    if (badge) {
+      badge.classList.toggle('on', pending);
+      if (lab) {
+        lab.textContent = pending
+          ? H.keyLabelFor(H.dropdownKey()) + ' · Land'
+          : '—';
+      }
+    }
+    if (H.renderPlaceReadout) H.renderPlaceReadout();
+  };
+
+  /** Append tonic (I/i) of write home — fast I–V–I–V building */
+  H.quickAddTonic = function () {
+    if (!H.makeHomeChord) return;
+    const ch = H.makeHomeChord({ duration: H.stepDuration() });
+    H.commitHorizon(
+      { chord: ch, kind: 'home', label: ch.name, job: 'tonic' },
+      { insert: true }
+    );
+  };
+
+  /** Append V (prefer V7 in major-ish colour) of write home */
+  H.quickAddDominant = function () {
+    const music = H.M();
+    const t = H.state.tonic;
+    const isMin =
+      H.state.mode === 'minor' ||
+      ((music.MODES[H.state.mode] || {}).romanBase === 'minor');
+    const ch = music.makeChord((t + 7) % 12, 'dom7', {
+      duration: H.stepDuration(),
+      region: 'diatonic',
+      roman: 'V7',
+      tag: 'quick',
+    });
+    H.stampKey(ch, H.writeKey());
+    H.commitHorizon(
+      {
+        chord: ch,
+        kind: 'direction',
+        label: ch.name,
+        job: isMin ? 'V7 (minor home)' : 'V7',
+      },
+      { insert: true }
+    );
+  };
 
   /**
    * Writing home = active Chase disk + From here gravity.
@@ -288,21 +607,6 @@ H.setSyncStatus = function (msg) {
       H.state.chords = H.state.chords.map((ch) => H.transposeChord(ch, delta, nextT, nextM));
     }
 
-    // Modulation pivot: selected + later steps move to the new disk; earlier stay
-    if (opts.retagFromSelected && !opts.transpose && H.state.chords.length) {
-      const from =
-        H.state.selected >= 0 && H.state.selected < H.state.chords.length
-          ? H.state.selected
-          : H.state.chords.length - 1;
-      for (let i = 0; i < H.state.chords.length; i++) {
-        const freeze = i < from;
-        H.stampKey(H.state.chords[i], {
-          tonic: freeze ? prevT : nextT,
-          mode: freeze ? prevM : nextM,
-        });
-      }
-    }
-
     H.state.tonic = nextT;
     H.state.mode = nextM;
     // Sync dropdowns before clearing pending so Land-here highlight is correct
@@ -312,50 +616,42 @@ H.setSyncStatus = function (msg) {
 
     const keyChanged = prevT !== nextT || prevM !== nextM;
 
-    // Function = same-key atlas. Real key change → Chase (two wheels).
+    // Function = same-key atlas. Real key change → Journey (Chase)
     let switchedToChase = false;
     if (keyChanged && H.map && H.map.mapView === 'function' && H.maybeChaseAfterKeyChange) {
       switchedToChase = H.maybeChaseAfterKeyChange({
         silent: true,
         message:
-          'New key → Chase · ' +
+          'New key → Journey · ' +
           H.keyLabel() +
-          ' · multi-disk journey · Function stays same-key only',
+          ' · multi-disk · In this key stays same-key only',
       });
     }
 
-    // Tell H.map about both keys before path layout
+    // Lightweight map bookkeeping; full path layout via afterEdit / refreshMap
     if (H.map) {
       if (H.map.rememberKey) {
         H.map.rememberKey(prevT, prevM);
         H.map.rememberKey(nextT, nextM);
       }
-      // maybeChaseAfterKeyChange already refreshed; still ensure origin/path
-      H.map.setOrigin(H.state.tonic, H.state.mode);
-      H.map.setPath(H.state.chords, H.state.selected);
-      H.map.setHorizon([]); // Chase map: seats + ghosts only
-      if (H.map.disks && H.map.disks.length > 1 && H.map.cameraMode === 'home') {
-        // Zoom out enough to see both disks
-        H.map.camera.tz = Math.min(H.map.camera.tz || 1, 0.72);
-        H.map.camera.tx = 0;
-        H.map.camera.ty = 0;
-        H.map.camera.x = 0;
-        H.map.camera.y = 0;
-        H.map.camera.zoom = H.map.camera.tz;
+      if (H.map.setOrigin) {
+        H.map.setOrigin(H.state.tonic, H.state.mode, { layoutPath: false });
       }
+      if (!opts.skipEdit) {
+        H.map.setPath(H.state.chords, H.state.selected);
+      }
+      // Do not auto-reframe multi-disk here — use Fit if you want both wheels in view
     }
 
     if (opts.skipEdit) {
+      // Caller will afterEdit / plant — avoid double setPath
       H.renderTitle();
-      H.renderHorizonLists();
-      H.updateMapStatus();
-      H.renderTimeStrip();
-      H.refreshAltPath();
+      if (H.updateMapStatus) H.updateMapStatus();
       if (switchedToChase) {
         H.setSyncStatus(
           'Write home → ' +
             H.keyLabel() +
-            ' · switched to Chase · multi-disk journey · Function is same-key only'
+            ' · switched to Journey · multi-disk · In this key is same-key only'
         );
       }
     } else {
@@ -364,7 +660,7 @@ H.setSyncStatus = function (msg) {
         H.setSyncStatus(
           'Write home → ' +
             H.keyLabel() +
-            ' · switched to Chase · multi-disk journey · Function is same-key only'
+            ' · switched to Journey · multi-disk · In this key is same-key only'
         );
       }
     }
@@ -469,18 +765,26 @@ H.setSyncStatus = function (msg) {
 
   /**
    * Commit Write home + Mode from the dropdowns.
-   * Flow: pick key/mode (H.map stays put) → select the pivot step → Land here.
-   * Chords keep absolute pitches; selected + later join the new disk; earlier stay.
+   * Flow: pick key/mode (H.map stays put) → select pivot → Land here.
+   * Same contract as ghost establish: switch gravity, do NOT retag old steps,
+   * plant destination tonic after the pivot on the new disk.
    */
   H.landSelectionAsHome = function () {
     const dest = H.dropdownKey();
     const sameHome = dest.tonic === H.state.tonic && dest.mode === H.state.mode;
 
-    // Empty path: just set the compass (nothing to retag)
+    // Empty path: set compass and seed tonic so there is something to play
     if (!H.state.chords.length) {
       H.state._prevTonicForTranspose = H.state.tonic;
-      H.setWritingHome(dest.tonic, dest.mode, { transpose: false });
-      H.setSyncStatus('Write home → ' + H.keyLabel() + ' · empty path · click Home or a seat to start');
+      H.pushUndo();
+      H.setWritingHome(dest.tonic, dest.mode, { transpose: false, skipEdit: true });
+      const seeded = H.plantLandTonic(dest);
+      H.afterEdit();
+      H.setSyncStatus(
+        'Write home → ' +
+          H.keyLabel() +
+          (seeded ? ' · planted ' + seeded + ' · path started' : ' · empty path · click a seat to start')
+      );
       return;
     }
 
@@ -488,7 +792,7 @@ H.setSyncStatus = function (msg) {
       H.setSyncStatus(
         'Already on ' +
           H.keyLabel() +
-          ' · pick a different Write home / Mode, then Land here · or Transpose all to move pitches'
+          ' · nothing landed · pick another Write home / Mode (badge turns purple), then Land here — or click a purple ghost to leave home'
       );
       H.updateLandButton();
       return;
@@ -496,26 +800,90 @@ H.setSyncStatus = function (msg) {
 
     H.state._prevTonicForTranspose = H.state.tonic;
     H.pushUndo();
-    // Pivot = selection (or last step): that step + later sit on the new disk
+    if (H.ensurePathOwned) H.ensurePathOwned();
+    const pivotSel =
+      H.state.selected >= 0 && H.state.selected < H.state.chords.length
+        ? H.state.selected
+        : H.state.chords.length - 1;
+    // Switch gravity only — old journey keeps its disks (matches ghost establish)
     const result = H.setWritingHome(dest.tonic, dest.mode, {
       transpose: false,
-      retagFromSelected: true,
+      skipEdit: true,
     });
+    // Plant destination I / i after the pivot on the new wheel
+    const planted = H.plantLandTonic(dest, pivotSel);
+    H.afterEdit();
     const disks = H.map && H.map.disks ? H.map.disks.length : 1;
-    const pivot =
-      H.state.selected >= 0 && H.state.selected < H.state.chords.length
-        ? H.state.selected + 1
-        : H.state.chords.length;
     H.setSyncStatus(
-      'Land here · disk ' +
+      'Land here · write home ' +
         H.keyLabel() +
         (disks > 1 ? ' · ' + disks + ' Chase disks' : '') +
-        ' · from step ' +
-        pivot +
-        ' onward · earlier steps stay on previous key · pitches unchanged' +
+        (planted ? ' · added ' + planted : planted === null ? ' · (tonic already next)' : '') +
+        ' · earlier steps stay on their wheels' +
         (result && result.switchedToChase ? ' · switched to Chase' : '')
     );
-  }
+  };
+
+  /**
+   * Insert/append destination tonic (I or i) after pivotSel.
+   * Used by Land here so switching Write home is not diagram-only.
+   * Returns planted chord name, or null if nothing added.
+   */
+  H.plantLandTonic = function (dest, pivotSel) {
+    if (!dest) return null;
+    const music = H.M();
+    const mode = dest.mode || H.state.mode || 'minor';
+    const isMinor = (music.MODES[mode] || music.MODES.minor).romanBase === 'minor';
+    let route = null;
+    if (H.C() && H.C().establishHomeOptions) {
+      const opts = H.C().establishHomeOptions(dest.tonic, mode) || [];
+      const tonicOpt = opts.find((o) => o.id === 'tonic') || opts[0];
+      if (tonicOpt && tonicOpt.route && tonicOpt.route.length) {
+        route = tonicOpt.route;
+      }
+    }
+    if (!route || !route.length) {
+      const t = music.pc(dest.tonic);
+      route = [
+        music.makeChord(t, isMinor ? 'min' : 'maj', {
+          region: 'diatonic',
+          roman: isMinor ? 'i' : 'I',
+          tag: 'establish',
+        }),
+      ];
+    }
+
+    // Skip if the step after the pivot is already this same tonic (avoid double-land)
+    const want = route[0];
+    const after =
+      pivotSel != null && pivotSel >= 0 ? H.state.chords[pivotSel + 1] : null;
+    if (
+      after &&
+      after.root === want.root &&
+      after.quality === want.quality &&
+      (after.localTonic == null || after.localTonic === dest.tonic)
+    ) {
+      return null;
+    }
+
+    // Shared plant path with ghost establish (append at end / insert mid)
+    if (H.plantEstablishRoute) {
+      return H.plantEstablishRoute({ tonic: dest.tonic, mode: mode }, route, pivotSel);
+    }
+    // Fallback if map-bridge not loaded yet
+    const step = H.stepDuration();
+    const pieces = route.map((c) => {
+      const x = music.cloneChord
+        ? music.cloneChord(c)
+        : Object.assign({}, c, { notes: (c.notes || []).slice() });
+      x.duration = step;
+      H.stampKey(x, { tonic: dest.tonic, mode: mode });
+      return x;
+    });
+    H.state.chords.push(...pieces);
+    H.state.selected = H.state.chords.length - 1;
+    return pieces.map((p) => p.name).join(' → ');
+  };
 
   /** Stage Write home / Mode without moving the map (until Land here). */
   H.stageWriteHomeFromDropdowns = function (opts) {
@@ -583,6 +951,11 @@ H.setSyncStatus = function (msg) {
   H.loadPack = function (id, opts) {
     const pack = H.P().getPack(id);
     if (!pack) return;
+    // Allow undoing a pack that replaced an existing path
+    if (H.state.chords.length) H.pushUndo();
+    if (H.A() && H.A().isPlaying && H.A().isPlaying() && H.stopPlaybackUI) {
+      H.stopPlaybackUI();
+    }
     H.state.chords = H.P().materialize(pack, H.state.tonic, H.state.mode);
     H.state.fromPackId = id;
     // New cell each pack load — unique name so they don't all read "Home grit"
@@ -591,10 +964,12 @@ H.setSyncStatus = function (msg) {
     H.state.nameLocked = false;
     H.state.recognition = { pack, exact: true, match: 'exact', confidence: 1 };
     H.state.selected = Math.max(0, H.state.chords.length - 1);
+    // Stamp pack chords onto current write home
+    if (H.ensurePathOwned) H.ensurePathOwned();
     H.refreshAll();
     if (H.S()) H.pushToSharedSession('landscape');
     if (!opts || !opts.silent) H.playSeq({ once: true });
-  }
+  };
 
   /** Chord for a Chase scale seat (default quality on that seat). */
 })(typeof window !== "undefined" ? window : globalThis);

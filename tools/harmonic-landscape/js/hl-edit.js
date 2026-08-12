@@ -72,16 +72,109 @@ H.smoothVoicings = function () {
   }
 
   H.setDuration = function (beats, skipUndo) {
-    const i = H.state.selected;
-    if (i < 0 || !H.state.chords[i]) return;
-    if (!skipUndo) H.pushUndo();
-    // Half-beat grid; allow long holds (e.g. 20b in 5/4) — no artificial 16b cap
+    const indices = H.getSelectedIndices
+      ? H.getSelectedIndices()
+      : H.state.selected >= 0
+        ? [H.state.selected]
+        : [];
+    if (!indices.length) return;
+    H.setDurationForIndices(indices, beats, { skipUndo: skipUndo });
+  };
+
+  /** Indices currently multi-selected (timeline). Always includes primary `selected` when valid. */
+  H.getSelectedIndices = function () {
+    const n = (H.state.chords || []).length;
+    let idxs = (H.state.selectedIndices || [])
+      .map((i) => (i | 0))
+      .filter((i) => i >= 0 && i < n);
+    if (!idxs.length && H.state.selected >= 0 && H.state.selected < n) {
+      idxs = [H.state.selected];
+    }
+    // de-dupe + sort
+    const seen = {};
+    const out = [];
+    idxs.forEach((i) => {
+      if (!seen[i]) {
+        seen[i] = 1;
+        out.push(i);
+      }
+    });
+    out.sort((a, b) => a - b);
+    return out;
+  };
+
+  H.setSelectedIndices = function (indices, primary) {
+    const n = (H.state.chords || []).length;
+    const clean = (indices || [])
+      .map((i) => (i | 0))
+      .filter((i) => i >= 0 && i < n);
+    const seen = {};
+    H.state.selectedIndices = [];
+    clean.forEach((i) => {
+      if (!seen[i]) {
+        seen[i] = 1;
+        H.state.selectedIndices.push(i);
+      }
+    });
+    H.state.selectedIndices.sort((a, b) => a - b);
+    if (primary != null && primary >= 0 && primary < n) {
+      H.state.selected = primary;
+    } else if (H.state.selectedIndices.length) {
+      H.state.selected = H.state.selectedIndices[H.state.selectedIndices.length - 1];
+    } else {
+      H.state.selected = n ? Math.min(Math.max(0, H.state.selected), n - 1) : -1;
+    }
+    if (
+      H.state.selected >= 0 &&
+      H.state.selectedIndices.indexOf(H.state.selected) < 0
+    ) {
+      H.state.selectedIndices.push(H.state.selected);
+      H.state.selectedIndices.sort((a, b) => a - b);
+    }
+  };
+
+  /**
+   * Set duration on many steps at once (timeline multi-select).
+   */
+  H.setDurationForIndices = function (indices, beats, opts) {
+    opts = opts || {};
+    const n = (H.state.chords || []).length;
+    const idxs = (indices || []).filter((i) => i >= 0 && i < n);
+    if (!idxs.length) return;
+    if (!opts.skipUndo) H.pushUndo();
     const d = H.snapBeats(beats);
-    H.state.chords[i] = H.M().withDuration(H.state.chords[i], d);
+    idxs.forEach((i) => {
+      H.state.chords[i] = H.M().withDuration(H.state.chords[i], d);
+    });
+    H.state.fromPackId = null;
     if (H.S()) H.pushToSharedSession('landscape');
     H.refreshSequence();
-    H.refreshMap();
-  }
+    H.refreshMap({ keepCamera: true });
+    if (H.renderTimeStrip) H.renderTimeStrip({ force: true, scrollToSelected: false });
+    if (H.syncDurationBar) H.syncDurationBar();
+    if (H.resyncPlaybackPreservingPlace) {
+      if (opts.skipUndo) {
+        if (H._durResyncTimer) clearTimeout(H._durResyncTimer);
+        H._durResyncTimer = setTimeout(() => {
+          H._durResyncTimer = null;
+          H.resyncPlaybackPreservingPlace();
+        }, 140);
+      } else {
+        if (H._durResyncTimer) {
+          clearTimeout(H._durResyncTimer);
+          H._durResyncTimer = null;
+        }
+        H.resyncPlaybackPreservingPlace();
+      }
+    }
+    if (!opts.silent) {
+      H.setSyncStatus(
+        idxs.length > 1
+          ? 'Duration · ' + d + 'b · ' + idxs.length + ' steps'
+          : 'Duration · step ' + (idxs[0] + 1) + ' · ' + d + 'b'
+      );
+    }
+  };
 
   /** Snap duration to half-beat grid, clamp ≥ 0.5 (no upper cap for long holds). */
   H.snapBeats = function (b) {
@@ -143,13 +236,38 @@ H.smoothVoicings = function () {
     if (i < 0 || !H.state.chords[i] || !H.C().withBass) return;
     H.pushUndo();
     const dur = H.state.chords[i].duration;
+    const ownKey = H.keyOf(H.state.chords[i]);
     H.state.chords[i] = H.C().withBass(H.state.chords[i], pc);
     H.state.chords[i].duration = dur;
+    H.stampKey(H.state.chords[i], ownKey);
     H.state.fromPackId = null;
+    if (H.map && H.map.clearInteraction) H.map.clearInteraction();
     H.afterEdit();
+    if (H.map && H.map.setPath) H.map.setPath(H.state.chords, H.state.selected);
     H.A().ensure();
     H.A().playChord({ chord: H.state.chords[i] });
-  }
+  };
+
+  /**
+   * Best-effort roman for a chord in a key (after inspector edits).
+   * Avoids stale labels like "V7" after the user changes quality to maj.
+   */
+  H.romanForChordInKey = function (ch, key) {
+    if (!ch || !H.M()) return '';
+    const music = H.M();
+    const k = key || H.writeKey();
+    if (music.seatForChord) {
+      const hit = music.seatForChord(ch, k.tonic, k.mode || 'minor');
+      if (hit && hit.seat && hit.seat.roman && hit.seat.roman !== '?') {
+        const fam = music.qualityFamily ? music.qualityFamily(ch.quality) : '';
+        // V seat + dominant family → V7
+        if (hit.seat.role === 'dom' && fam === 'dom') return 'V7';
+        if (hit.seat.role === 'tonic' && fam === 'dom') return hit.seat.roman;
+        return hit.seat.roman;
+      }
+    }
+    return '';
+  };
 
   H.setSelectedRootQuality = function (root, quality) {
     const i = H.state.selected;
@@ -157,31 +275,62 @@ H.smoothVoicings = function () {
     H.pushUndo();
     const prev = H.state.chords[i];
     const ownKey = H.keyOf(prev);
+    // Fresh name/notes from makeChord — never keep a stale display name
     let ch = H.M().makeChord(root, quality, {
-      duration: prev.duration,
-      roman: prev.roman,
-      region: prev.region,
+      duration: prev.duration != null ? prev.duration : 4,
+      region: prev.region || 'diatonic',
       tag: 'edited',
+      // roman recomputed below for the new quality
+      roman: '',
     });
+    ch.roman = H.romanForChordInKey(ch, ownKey) || '';
     if (H.C().withBass && prev.bassPc != null) {
-      // keep bass if still a chord tone
-      const tones = ch.notes.map((n) => ((n % 12) + 12) % 12);
-      if (tones.includes(prev.bassPc)) ch = H.C().withBass(ch, prev.bassPc);
+      const tones = (ch.notes || []).map((n) => ((n % 12) + 12) % 12);
+      if (tones.includes(prev.bassPc)) {
+        ch = H.C().withBass(ch, prev.bassPc);
+        ch.duration = prev.duration != null ? prev.duration : 4;
+        ch.roman = H.romanForChordInKey(ch, ownKey) || ch.roman;
+      }
     }
-    ch.duration = prev.duration;
+    ch.duration = prev.duration != null ? prev.duration : 4;
     H.stampKey(ch, ownKey);
     H.state.chords[i] = ch;
     H.state.fromPackId = null;
+    // Ensure map is not stuck mid-aim (would defer setPath layout)
+    if (H.map) {
+      if (H.map.clearInteraction) H.map.clearInteraction();
+      H.map._mode = null;
+      H.map._pathDirty = false;
+    }
     H.afterEdit();
+    // Hard sync path nodes (quality-only edits can look like "nothing moved")
+    if (H.map && H.map.setPath) {
+      H.map.setPath(H.state.chords, H.state.selected);
+    }
+    if (H.previewNextFromStep && H.map && H.map.mapView !== 'function') {
+      H.previewNextFromStep(i, { silent: true });
+    }
     H.A().ensure();
     H.A().playChord({ chord: ch });
-  }
+    H.setSyncStatus(
+      'Edited step ' +
+        (i + 1) +
+        ' → ' +
+        (ch.name || '?') +
+        (ch.roman ? ' (' + ch.roman + ')' : '') +
+        ' · map updated'
+    );
+  };
 
   /**
    * Clear the working path only (keeps write home, versions, undo of prior clears).
    */
   H.clearSeq = function () {
     if (H.state.chords.length) H.pushUndo();
+    if (H.A() && H.A().isPlaying && H.A().isPlaying()) {
+      if (H.stopPlaybackUI) H.stopPlaybackUI();
+      else if (H.A().stopPlayback) H.A().stopPlayback();
+    }
     H.state.chords = [];
     H.state.selected = -1;
     H.state.title = 'Untitled sequence';
@@ -190,7 +339,7 @@ H.smoothVoicings = function () {
     H.state.nameLocked = false;
     H.refreshAll();
     H.setSyncStatus('Path cleared · write home still ' + H.keyLabel() + ' · Reset all = zero slate');
-  }
+  };
 
   /**
    * Full zero slate: empty path, no pack, no blue compare, fresh cell id,

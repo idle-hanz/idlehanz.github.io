@@ -9,11 +9,25 @@
   const HANDOFF_KEY = 'idlehanz_handoff_v1';
   const HASH_PREFIX = 'ih=';
 
+  /**
+   * Fretboard progression hard cap (guitar_fretboard_app addSlot).
+   * Landscape / Arrangement must clip before handoff.
+   */
+  const FRETBOARD_MAX_CHORDS = 8;
+  const SONG_PACKAGE_FORMAT = 'idlehanz-song-package';
+  const SONG_PACKAGE_VERSION = 1;
+
   /** Landscape quality → fretboard chordTypes index */
   const QUALITY_TO_TYPE = {
     maj: 0,
     min: 1,
     dom7: 2,
+    // Altered/extended dominants → nearest frettable type (plain 7)
+    dom7b9: 2,
+    dom7s9: 2,
+    dom7s11: 2,
+    dom7b13: 2,
+    dom7alt: 2,
     maj7: 3,
     min7: 4,
     halfdim: 5,
@@ -82,7 +96,7 @@
       if (c.familyId == null) c.familyId = null;
       if (c.versionIndex == null) c.versionIndex = 1;
     });
-    // Migrate sections: chain + seam
+    // Migrate sections: chain + seam + cycle exit (end / into)
     song.arrangement.forEach((sec) => {
       if (!sec.chain || !sec.chain.length) {
         sec.chain = sec.cellId ? [sec.cellId] : [];
@@ -92,8 +106,57 @@
         sec.seam = { type: 'none', chords: [] };
       }
       if (sec.reps == null) sec.reps = 1;
+      // last rep only: play end cell instead of body chain (cycle exit)
+      if (sec.endCellId === undefined) sec.endCellId = null;
+      // after all reps, once: bridge cell before seam / next section
+      if (sec.intoCellId === undefined) sec.intoCellId = null;
     });
     return song;
+  }
+
+  /**
+   * Clip a chord list for Fretboard (max 8).
+   * opts.start: optional window start index (default 0).
+   * returns { chords, truncated, total, start, max }
+   */
+  function clipForFretboard(chords, opts) {
+    opts = opts || {};
+    const max = FRETBOARD_MAX_CHORDS;
+    const list = Array.isArray(chords) ? chords : [];
+    const total = list.length;
+    let start = opts.start != null ? Math.max(0, opts.start | 0) : 0;
+    // If focus is near the end, slide window so focus is included when possible
+    if (opts.focus != null && opts.focus >= 0 && total > max) {
+      const f = opts.focus | 0;
+      start = Math.max(0, Math.min(total - max, f - Math.floor(max / 2)));
+    }
+    if (start > total) start = 0;
+    const sliced = list.slice(start, start + max);
+    return {
+      chords: sliced,
+      truncated: total > max,
+      total: total,
+      start: start,
+      max: max,
+      dropped: Math.max(0, total - sliced.length),
+    };
+  }
+
+  function fretboardClipMessage(clip) {
+    if (!clip || !clip.truncated) return '';
+    const from = (clip.start || 0) + 1;
+    const to = (clip.start || 0) + clip.chords.length;
+    return (
+      'Fretboard max ' +
+      clip.max +
+      ' chords · sent ' +
+      from +
+      '–' +
+      to +
+      ' of ' +
+      clip.total +
+      ' (full song stays in Landscape / Arrangement)'
+    );
   }
 
   function loadSong() {
@@ -681,7 +744,12 @@
         if (c.custom || c.quality === 'custom') {
           row.c = 1;
           row.nm = c.name || customChordLabel(c.root, notes.length ? notes : [c.root]);
+        } else if (c.name) {
+          row.nm = c.name;
         }
+        // Multi-disk stamps (Landscape); Fretboard may ignore but must not drop on re-open Landscape
+        if (c.localTonic != null) row.lt = ((c.localTonic % 12) + 12) % 12;
+        if (c.localMode) row.lm = c.localMode;
         return row;
       }),
     };
@@ -704,7 +772,11 @@
       if (isCustom) {
         out.custom = true;
         out.name = c.nm || customChordLabel(c.r, notes.length ? notes : [c.r]);
+      } else if (c.nm) {
+        out.name = c.nm;
       }
+      if (c.lt != null) out.localTonic = ((c.lt % 12) + 12) % 12;
+      if (c.lm) out.localMode = c.lm;
       return out;
     });
   }
@@ -901,40 +973,83 @@
     return resolvePaths();
   }
 
-  /** Flatten arrangement to ordered chords with durations (beats). Includes chain + seams. */
+  /** Push one cell's chords into flatten out with meta tags. */
+  function pushCellChords(out, song, cellId, meta) {
+    const cell = song.cells[cellId];
+    if (!cell || !cell.chords) return;
+    cell.chords.forEach((ch) => {
+      out.push(
+        Object.assign({}, ch, {
+          _section: meta.section || '',
+          _cell: cell.name || '',
+          _rep: meta.rep != null ? meta.rep : 0,
+          _version: cell.versionIndex || 1,
+          _role: meta.role || 'body',
+          _seam: !!meta.seam,
+        })
+      );
+    });
+  }
+
+  /**
+   * Cell ids played for one rep of a section.
+   * Last rep uses endCellId (if set) instead of the body chain.
+   */
+  function sectionRepChain(sec, repIndex, reps) {
+    const isLast = repIndex === reps - 1;
+    if (isLast && sec.endCellId && sec.endCellId !== '') {
+      return [sec.endCellId];
+    }
+    return sectionChain(sec);
+  }
+
+  /** Flatten arrangement to ordered chords with durations (beats). Includes end/into + seams. */
   function flattenArrangement(song) {
     if (!song) return [];
     ensureSongShape(song);
     const out = [];
     const secs = song.arrangement || [];
     secs.forEach((sec, secIdx) => {
-      const chain = sectionChain(sec);
       const reps = Math.max(1, +(sec.reps || 1));
       for (let r = 0; r < reps; r++) {
+        const chain = sectionRepChain(sec, r, reps);
+        const role = r === reps - 1 && sec.endCellId ? 'end' : 'body';
         chain.forEach((cid) => {
-          const cell = song.cells[cid];
-          if (!cell || !cell.chords) return;
-          cell.chords.forEach((ch) => {
-            out.push({
-              ...ch,
-              _section: sec.name || '',
-              _cell: cell.name || '',
-              _rep: r,
-              _version: cell.versionIndex || 1,
-            });
+          pushCellChords(out, song, cid, {
+            section: sec.name || '',
+            rep: r,
+            role: role,
           });
         });
       }
-      // Seam into next section (once, after all reps)
+      // After all reps: optional one-shot bridge into next section
+      if (sec.intoCellId) {
+        pushCellChords(out, song, sec.intoCellId, {
+          section: sec.name || '',
+          rep: reps,
+          role: 'into',
+        });
+      }
+      // Seam into next section (once, after end/into)
       const next = secs[secIdx + 1];
       if (next) {
-        const chainA = sectionChain(sec);
-        const chainB = sectionChain(next);
-        const cellA = song.cells[chainA[chainA.length - 1]];
-        const cellB = song.cells[chainB[0]];
+        const fromCellId =
+          sec.intoCellId ||
+          (sec.endCellId && reps >= 1 ? sec.endCellId : null) ||
+          (sectionChain(sec).slice(-1)[0] || null);
+        const toChain = sectionRepChain(next, 0, Math.max(1, +(next.reps || 1)));
+        const cellA = fromCellId ? song.cells[fromCellId] : null;
+        const cellB = toChain[0] ? song.cells[toChain[0]] : null;
         const fromCh = cellA && cellA.chords && cellA.chords[cellA.chords.length - 1];
         const toCh = cellB && cellB.chords && cellB.chords[0];
-        applySeam(out, sec.seam || defaultSeam(), fromCh, toCh, song.key, (sec.name || '') + '→' + (next.name || ''));
+        applySeam(
+          out,
+          sec.seam || defaultSeam(),
+          fromCh,
+          toCh,
+          song.key,
+          (sec.name || '') + '→' + (next.name || '')
+        );
       }
     });
     return out;
@@ -953,10 +1068,106 @@
   function sectionBars(song, sec) {
     ensureSongShape(song);
     const chain = sectionChain(sec);
-    const beats = chainBeats(song, chain);
-    // seam beats not counted in section bars display (they're between)
+    const bodyBeats = chainBeats(song, chain);
     const reps = Math.max(1, +(sec.reps || 1));
-    return (beats * reps) / 4;
+    let beats = 0;
+    // body reps except last
+    if (reps > 1) beats += bodyBeats * (reps - 1);
+    // last rep: end cell or body
+    if (sec.endCellId) {
+      beats += chainBeats(song, [sec.endCellId]);
+    } else {
+      beats += bodyBeats;
+    }
+    // into once
+    if (sec.intoCellId) {
+      beats += chainBeats(song, [sec.intoCellId]);
+    }
+    // seam beats not counted in section bars display (they're between)
+    return beats / 4;
+  }
+
+  /**
+   * Portable full song document for Save / Load (not browser session alone).
+   */
+  function exportSongPackage(song) {
+    ensureSongShape(song);
+    return {
+      format: SONG_PACKAGE_FORMAT,
+      version: SONG_PACKAGE_VERSION,
+      savedAt: now(),
+      title: song.title || 'Untitled',
+      bpm: song.bpm != null ? song.bpm : 96,
+      key: song.key
+        ? { tonic: song.key.tonic, mode: song.key.mode }
+        : { tonic: 11, mode: 'minor' },
+      notes: song.notes || '',
+      style: song.style || '',
+      cells: song.cells || {},
+      families: song.families || {},
+      arrangement: (song.arrangement || []).map((sec) => ({
+        id: sec.id,
+        name: sec.name,
+        cellId: sec.cellId,
+        chain: sectionChain(sec),
+        reps: Math.max(1, +(sec.reps || 1)),
+        endCellId: sec.endCellId || null,
+        intoCellId: sec.intoCellId || null,
+        seam: sec.seam
+          ? {
+              type: sec.seam.type || 'none',
+              chords: (sec.seam.chords || []).map((c) => ({ ...c })),
+            }
+          : defaultSeam(),
+      })),
+      focus: song.focus
+        ? {
+            cellId: song.focus.cellId || null,
+            sectionId: song.focus.sectionId || null,
+            chordIndex: song.focus.chordIndex || 0,
+          }
+        : { cellId: null, sectionId: null, chordIndex: 0 },
+    };
+  }
+
+  function isSongPackage(data) {
+    return !!(
+      data &&
+      typeof data === 'object' &&
+      (data.format === SONG_PACKAGE_FORMAT ||
+        (data.cells && data.arrangement && data.version === 1 && !data.chords))
+    );
+  }
+
+  /**
+   * Hydrate a song object from package (or already-session-shaped song).
+   * Does not save — caller should saveSong if desired.
+   */
+  function importSongPackage(data, opts) {
+    opts = opts || {};
+    if (!data || typeof data !== 'object') return null;
+    let song;
+    if (data.format === SONG_PACKAGE_FORMAT || (data.cells && data.arrangement)) {
+      song = {
+        version: 1,
+        title: data.title || 'Untitled',
+        bpm: data.bpm != null ? data.bpm : 96,
+        key: data.key
+          ? { tonic: data.key.tonic, mode: data.key.mode || 'minor' }
+          : { tonic: 11, mode: 'minor' },
+        notes: data.notes || '',
+        style: data.style || '',
+        updatedAt: now(),
+        updatedBy: opts.by || 'import',
+        cells: data.cells || {},
+        families: data.families || {},
+        arrangement: data.arrangement || [],
+        focus: data.focus || { cellId: null, sectionId: null, chordIndex: 0 },
+      };
+    } else {
+      return null;
+    }
+    return ensureSongShape(song);
   }
 
   function totalBars(song) {
@@ -983,6 +1194,9 @@
   global.IHSession = {
     SESSION_KEY,
     HANDOFF_KEY,
+    FRETBOARD_MAX_CHORDS,
+    SONG_PACKAGE_FORMAT,
+    SONG_PACKAGE_VERSION,
     QUALITY_TO_TYPE,
     TYPE_TO_QUALITY,
     emptySong,
@@ -997,6 +1211,7 @@
     siblingsOfCell,
     deleteCell,
     sectionChain,
+    sectionRepChain,
     defaultSeam,
     suggestSeamChords,
     setSectionChain,
@@ -1011,6 +1226,8 @@
     normalizePcs,
     chordsToFretboardSlots,
     fretboardSlotsToChords,
+    clipForFretboard,
+    fretboardClipMessage,
     buildHandoffPayload,
     expandHandoffChords,
     encodeHandoff,
@@ -1031,5 +1248,8 @@
     flattenArrangement,
     sectionBars,
     totalBars,
+    exportSongPackage,
+    importSongPackage,
+    isSongPackage,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

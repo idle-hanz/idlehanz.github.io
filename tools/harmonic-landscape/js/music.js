@@ -24,6 +24,13 @@
     maj9:  { intervals: [0, 4, 7, 11, 14], label: 'maj9', symbol: 'maj9' },
     min9:  { intervals: [0, 3, 7, 10, 14], label: 'm9', symbol: 'm9' },
     add9:  { intervals: [0, 4, 7, 14], label: 'add9', symbol: 'add9' },
+    // Altered / extended dominants (intervals may wrap >11; notes use % 12)
+    dom7b9:  { intervals: [0, 4, 7, 10, 13], label: '7b9',  symbol: '7♭9' },
+    dom7s9:  { intervals: [0, 4, 7, 10, 15], label: '7#9',  symbol: '7♯9' },
+    dom7s11: { intervals: [0, 4, 7, 10, 18], label: '7#11', symbol: '7♯11' },
+    dom7b13: { intervals: [0, 4, 7, 10, 20], label: '7b13', symbol: '7♭13' },
+    // 7alt: 3 + b7 + b9 + #9 + b13 (no perfect 5th)
+    dom7alt: { intervals: [0, 4, 10, 13, 15, 20], label: '7alt', symbol: '7alt' },
   };
 
   /** Mode scale degrees relative to major (0-based pitch classes from tonic) */
@@ -112,7 +119,7 @@
       duration: opts.duration != null ? opts.duration : 4, // beats (quarter notes)
       inversion: opts.inversion || 0,
       bassPc,
-      region: opts.region || 'diatonic', // diatonic | secondary | interchange | chromatic | tritone | parallel
+      region: opts.region || 'diatonic', // diatonic | secondary | interchange | chromatic | tritone | parallel | diminished | flavour
       roman: opts.roman || '',
       tag: opts.tag || '',
       custom: false,
@@ -323,7 +330,8 @@
 
   /**
    * Neighbourhood chart for one key (user's "chord file" view):
-   * diatonic core, V7→I, secondaries → targets, interchange orbit, I/IV/V gates.
+   * diatonic core, V7→I, secondaries → targets, interchange orbit, I/IV/V gates,
+   * plus in-key colours (sus, II maj, light 7ths) for "In this key".
    */
   function functionNeighborhood(tonic, modeKey, opts) {
     opts = opts || {};
@@ -331,6 +339,7 @@
     const mode = modeKey || 'minor';
     const preferFlat = keyPrefersFlat(t, mode);
     const fo = opts.functionOpts || opts || {};
+    const isMin = (MODES[mode] || MODES.minor).romanBase === 'minor';
     const diat = diatonicChords(t, mode, false).map((c) =>
       makeChord(c.root, c.quality, {
         region: 'diatonic',
@@ -352,6 +361,55 @@
       notes: (c.notes || []).slice(),
       canOrbitPeers: false,
     }));
+
+    // In-key colours: same scale degrees, different quality — not a new key.
+    // (e.g. Em → Asus4, Em → F# maj → G without leaving E minor as home.)
+    const colours = [];
+    const pushColour = (root, quality, roman, tag, region) => {
+      const ch = makeChord(root, quality, {
+        region: region || 'flavour',
+        roman: roman || '',
+        tag: tag || 'colour',
+        preferFlat,
+      });
+      ch.colourOf =
+        diat.find((d) => d.root === root) ||
+        { root: root, roman: roman };
+      colours.push(ch);
+    };
+    // IV/iv sus — rock hang (Asus4 in Em)
+    if (diat[3]) {
+      pushColour(diat[3].root, 'sus4', isMin ? 'iv sus' : 'IV sus', 'subdom sus', 'flavour');
+    }
+    // V sus / V triad colour when primary is V7 (already separate)
+    if (diat[4] && diat[4].quality !== 'sus4') {
+      pushColour(diat[4].root, 'sus4', isMin ? 'v sus' : 'V sus', 'dom sus', 'flavour');
+    }
+    if (isMin) {
+      // ii° stays diatonic; F#m = dorian colour; F# maj = bright II (chromatic in natural minor)
+      if (diat[1]) {
+        pushColour(diat[1].root, 'min', 'ii', 'dorian ii', 'flavour');
+        pushColour(diat[1].root, 'maj', 'II', 'bright II', 'chromatic');
+      }
+      // i add colour: i7 for soul/r&b motion back home
+      if (diat[0]) {
+        pushColour(diat[0].root, 'min7', 'i7', 'tonic colour', 'flavour');
+      }
+    } else {
+      // Major: ii7, IVsus already; IVmaj7; vi colour; II as secondary-ish colour without V7 chain
+      if (diat[1]) pushColour(diat[1].root, 'min7', 'ii7', 'supertonic 7', 'flavour');
+      if (diat[3]) pushColour(diat[3].root, 'maj7', 'IVmaj7', 'subdom colour', 'flavour');
+      if (diat[5]) pushColour(diat[5].root, 'min7', 'vi7', 'submed colour', 'flavour');
+      // Chromatic II maj (secondary dominant colour without full V/x package)
+      if (diat[1]) pushColour((t + 2) % 12, 'maj', 'II', 'bright II', 'chromatic');
+    }
+
+    // Strand generators (Keithson pack) — available on neighborhood for UI chips
+    const iiVs = secondaryIiVs(t, mode, { preferFlat: preferFlat });
+    const tritones = tritoneSubs(t, mode, { preferFlat: preferFlat });
+    const dimStrand = diminishedStrand(t, mode, { preferFlat: preferFlat });
+    const vAlt = vAlternatives(t, mode, { preferFlat: preferFlat });
+
     return {
       tonic: t,
       mode: mode,
@@ -359,8 +417,13 @@
       diatonic: diat,
       primaryDominant: primary,
       secondary: secondary,
+      secondaryIiVs: iiVs,
       interchange: interchange,
+      colours: colours,
       gates: gates,
+      tritone: tritones,
+      diminished: dimStrand,
+      vAlternatives: vAlt,
     };
   }
 
@@ -378,19 +441,408 @@
     return dedupeChords(out);
   }
 
-  /** Tritone substitution of V7 */
-  function tritoneSubs(tonic, modeKey) {
+  /**
+   * Tritone substitution of a dominant: root + 6, same dom7 colour.
+   * Resolves to the same target the original dominant would (down a 5th from dom).
+   */
+  function tritoneSubOfDominant(domRoot, opts) {
+    opts = opts || {};
+    const d = pc(domRoot);
+    const target = (d + 5) % 12;
+    const subRoot = (d + 6) % 12;
+    const preferFlat = opts.preferFlat != null ? opts.preferFlat : true;
+    const ofRoman = opts.ofRoman || '';
+    const ch = makeChord(subRoot, opts.quality || 'dom7', {
+      region: 'tritone',
+      tag: opts.tag || 'tritone sub',
+      roman: ofRoman ? '♭II7/' + ofRoman : opts.roman || '♭II7',
+      preferFlat: preferFlat,
+    });
+    ch.substitutesFor = { root: d, quality: 'dom7', roman: opts.domRoman || 'V7' };
+    ch.resolveTarget = {
+      root: target,
+      quality: opts.targetQuality || 'maj',
+      roman: opts.targetRoman || '',
+      name: opts.targetName || '',
+    };
+    ch.canOrbitPeers = false;
+    return ch;
+  }
+
+  /**
+   * Tritone subs for primary V and every secondary dominant (not just V of I).
+   */
+  function tritoneSubs(tonic, modeKey, opts) {
+    opts = opts || {};
+    const preferFlat =
+      opts.preferFlat != null ? opts.preferFlat : keyPrefersFlat(tonic, modeKey);
     const diat = diatonicChords(tonic, modeKey, false);
+    const out = [];
     const v = diat[4];
-    if (!v) return [];
-    const subRoot = (v.root + 6) % 12;
-    return [
-      makeChord(subRoot, 'dom7', {
-        region: 'tritone',
-        tag: 'tritone sub',
-        roman: '♭II7',
+    if (v) {
+      out.push(
+        tritoneSubOfDominant(v.root, {
+          preferFlat: true,
+          roman: '♭II7',
+          tag: 'tritone sub of V',
+          domRoman: 'V7',
+          targetQuality: diat[0] ? diat[0].quality : 'maj',
+          targetRoman: diat[0] ? diat[0].roman : '',
+          targetName: diat[0] ? diat[0].name : '',
+        })
+      );
+    }
+    secondaryDominants(tonic, modeKey, { preferFlat: preferFlat }).forEach(function (v7) {
+      const rt = v7.resolveTarget || {};
+      out.push(
+        tritoneSubOfDominant(v7.root, {
+          preferFlat: true,
+          ofRoman: rt.roman || '',
+          tag: 'tritone sub of secondary',
+          domRoman: v7.roman || 'V7/x',
+          targetQuality: rt.quality || 'maj',
+          targetRoman: rt.roman || '',
+          targetName: rt.name || '',
+        })
+      );
+    });
+    return dedupeChords(out);
+  }
+
+  /**
+   * Secondary ii–V of each non-tonic diatonic target:
+   *   ii/X → V7/X → X
+   * Major targets get m7 on ii; minor/dim targets get m7b5 (halfdim).
+   * Returns [{ target, ii, v7, chords: [ii, v7, target] }, ...]
+   */
+  function secondaryIiVs(tonic, modeKey, opts) {
+    opts = opts || {};
+    const preferFlat =
+      opts.preferFlat != null ? opts.preferFlat : keyPrefersFlat(tonic, modeKey);
+    const diat = diatonicChords(tonic, modeKey, false);
+    const out = [];
+    diat.forEach(function (ch, i) {
+      if (i === 0) return; // skip tonic; use primary ii–V via waysBackHome / vAlternatives
+      const fam = qualityFamily(ch.quality);
+      const targetIsMin =
+        fam === 'min' || fam === 'dim' || fam === 'halfdim';
+      const iiRoot = (ch.root + 2) % 12;
+      const vRoot = (ch.root + 7) % 12;
+      const iiQ = targetIsMin ? 'halfdim' : 'min7';
+      const ii = makeChord(iiRoot, iiQ, {
+        region: 'secondary',
+        roman: 'ii/' + (ch.roman || noteName(ch.root, preferFlat)),
+        tag: 'secondary ii',
+        preferFlat: preferFlat,
+      });
+      const v7 = makeChord(vRoot, 'dom7', {
+        region: 'secondary',
+        roman: 'V7/' + (ch.roman || noteName(ch.root, preferFlat)),
+        tag: 'secondary dominant',
+        preferFlat: preferFlat,
+      });
+      const target = makeChord(ch.root, ch.quality, {
+        region: 'diatonic',
+        roman: ch.roman || '',
+        tag: 'secondary target',
+        preferFlat: preferFlat,
+      });
+      ii.resolveTarget = {
+        root: vRoot,
+        quality: 'dom7',
+        roman: v7.roman,
+        name: v7.name,
+      };
+      v7.resolveTarget = {
+        root: ch.root,
+        quality: ch.quality,
+        roman: ch.roman || '',
+        name: ch.name,
+      };
+      ii.canOrbitPeers = false;
+      v7.canOrbitPeers = false;
+      out.push({
+        targetRoman: ch.roman || '',
+        target: target,
+        ii: ii,
+        v7: v7,
+        chords: [ii, v7, target],
+      });
+    });
+    return out;
+  }
+
+  /** Flat list of secondary ii + V7 chords (no repeated targets). */
+  function secondaryIiVChords(tonic, modeKey, opts) {
+    const packs = secondaryIiVs(tonic, modeKey, opts);
+    const list = [];
+    packs.forEach(function (p) {
+      list.push(p.ii, p.v7);
+    });
+    return dedupeChords(list);
+  }
+
+  /**
+   * Diminished strand from a key centre:
+   *  - leading-tone °7 of each diatonic target (vii°7/X)
+   *  - common-tone °7 on the tonic
+   *  - passing dim triads (½-step below each target)
+   *  - °7 as rootless V7♭9 (iii°7 of V)
+   *  - symmetrical °7 chain (minor-3rd roots, same pitch set)
+   */
+  function diminishedStrand(tonic, modeKey, opts) {
+    opts = opts || {};
+    const t = pc(tonic);
+    const preferFlat =
+      opts.preferFlat != null ? opts.preferFlat : keyPrefersFlat(tonic, modeKey);
+    const isMin = (MODES[modeKey] || MODES.minor).romanBase === 'minor';
+    const diat = diatonicChords(tonic, modeKey, false);
+    const leading = [];
+    const passing = [];
+    diat.forEach(function (ch) {
+      const lt = (ch.root + 11) % 12;
+      const d7 = makeChord(lt, 'dim7', {
+        region: 'diminished',
+        roman: 'vii°7/' + (ch.roman || noteName(ch.root, preferFlat)),
+        tag: 'leading dim7',
+        preferFlat: preferFlat,
+      });
+      d7.resolveTarget = {
+        root: ch.root,
+        quality: ch.quality,
+        roman: ch.roman || '',
+        name: ch.name,
+      };
+      d7.canOrbitPeers = true;
+      leading.push(d7);
+
+      const passRoot = (ch.root + 11) % 12;
+      const pd = makeChord(passRoot, 'dim', {
+        region: 'diminished',
+        roman: '°→' + (ch.roman || noteName(ch.root, preferFlat)),
+        tag: 'passing dim',
+        preferFlat: preferFlat,
+      });
+      pd.resolveTarget = {
+        root: ch.root,
+        quality: ch.quality,
+        roman: ch.roman || '',
+        name: ch.name,
+      };
+      passing.push(pd);
+    });
+
+    const commonTone = [
+      makeChord(t, 'dim7', {
+        region: 'diminished',
+        roman: isMin ? 'i°7' : 'I°7',
+        tag: 'common-tone dim7',
+        preferFlat: preferFlat,
       }),
     ];
+
+    // Rootless V7♭9: dim7 built on the 3rd of V (shares chord tones with V7♭9)
+    const vRoot = (t + 7) % 12;
+    const thirdOfV = (vRoot + 4) % 12;
+    const asV7b9 = makeChord(thirdOfV, 'dim7', {
+      region: 'diminished',
+      roman: 'vii°7',
+      tag: 'dim7 as V7b9',
+      preferFlat: preferFlat,
+    });
+    asV7b9.resolveTarget = {
+      root: t,
+      quality: isMin ? 'min' : 'maj',
+      roman: isMin ? 'i' : 'I',
+    };
+    asV7b9.equivalentDominant = { root: vRoot, quality: 'dom7b9' };
+
+    const chains = [0, 3, 6, 9].map(function (d) {
+      return makeChord((t + d) % 12, 'dim7', {
+        region: 'diminished',
+        roman: '°7',
+        tag: 'symmetrical dim7',
+        preferFlat: preferFlat,
+      });
+    });
+
+    return {
+      leading: leading,
+      commonTone: commonTone,
+      passing: passing,
+      asV7b9: [asV7b9],
+      chains: chains,
+    };
+  }
+
+  function diminishedStrandChords(tonic, modeKey, opts) {
+    const s = diminishedStrand(tonic, modeKey, opts);
+    return dedupeChords(
+      [].concat(s.leading, s.commonTone, s.passing, s.asV7b9, s.chains)
+    );
+  }
+
+  /**
+   * V-chord alternatives pack: triads/7ths/alts of V, tritone, backdoor, delayed ii–V of V.
+   * Returns { chords, routes } where routes are labeled progressions into I/i.
+   */
+  function vAlternatives(tonic, modeKey, opts) {
+    opts = opts || {};
+    const t = pc(tonic);
+    const preferFlat =
+      opts.preferFlat != null ? opts.preferFlat : keyPrefersFlat(tonic, modeKey);
+    const isMin = (MODES[modeKey] || MODES.minor).romanBase === 'minor';
+    const homeQ = isMin ? 'min' : 'maj';
+    const homeRoman = isMin ? 'i' : 'I';
+    const vRoot = (t + 7) % 12;
+    const I = makeChord(t, homeQ, {
+      region: 'diatonic',
+      roman: homeRoman,
+      tag: 'home',
+      preferFlat: preferFlat,
+    });
+
+    function vQ(quality, roman, tag, region) {
+      return makeChord(vRoot, quality, {
+        region: region || 'diatonic',
+        roman: roman,
+        tag: tag,
+        preferFlat: preferFlat,
+      });
+    }
+
+    const V = vQ('maj', 'V', 'V triad', 'diatonic');
+    const V7 = vQ('dom7', 'V7', 'primary dominant', 'diatonic');
+    V7.isPrimaryDominant = true;
+    V7.resolveTarget = {
+      root: t,
+      quality: homeQ,
+      roman: homeRoman,
+      name: I.name,
+    };
+    const Vsus = vQ('sus4', 'Vsus', 'V sus', 'flavour');
+    const V7b9 = vQ('dom7b9', 'V7♭9', 'altered dominant', 'flavour');
+    const V7s9 = vQ('dom7s9', 'V7♯9', 'altered dominant', 'flavour');
+    const V7s11 = vQ('dom7s11', 'V7♯11', 'lydian dominant colour', 'flavour');
+    const V7b13 = vQ('dom7b13', 'V7♭13', 'altered dominant', 'flavour');
+    const V7alt = vQ('dom7alt', 'V7alt', 'fully altered V', 'flavour');
+    [V7b9, V7s9, V7s11, V7b13, V7alt].forEach(function (c) {
+      c.resolveTarget = V7.resolveTarget;
+    });
+
+    const bII7 = tritoneSubOfDominant(vRoot, {
+      preferFlat: true,
+      roman: '♭II7',
+      tag: 'tritone sub of V',
+      domRoman: 'V7',
+      targetQuality: homeQ,
+      targetRoman: homeRoman,
+      targetName: I.name,
+    });
+
+    // Backdoor: ♭VII7 (and iv prep) → I
+    const bVII7 = makeChord((t + 10) % 12, 'dom7', {
+      region: 'interchange',
+      roman: '♭VII7',
+      tag: 'backdoor dominant',
+      preferFlat: true,
+    });
+    bVII7.resolveTarget = {
+      root: t,
+      quality: homeQ,
+      roman: homeRoman,
+      name: I.name,
+    };
+    const ivm = makeChord((t + 5) % 12, 'min', {
+      region: 'interchange',
+      roman: 'iv',
+      tag: 'backdoor prep',
+      preferFlat: true,
+    });
+
+    // Delayed cadence: ii/V → V7/V → V7 → I
+    const ofV = vRoot;
+    const iiOfV = makeChord((ofV + 2) % 12, 'min7', {
+      region: 'secondary',
+      roman: 'ii/V',
+      tag: 'delayed cadence',
+      preferFlat: preferFlat,
+    });
+    const vOfV = makeChord((ofV + 7) % 12, 'dom7', {
+      region: 'secondary',
+      roman: 'V7/V',
+      tag: 'delayed cadence',
+      preferFlat: preferFlat,
+    });
+    vOfV.resolveTarget = {
+      root: ofV,
+      quality: 'dom7',
+      roman: 'V7',
+      name: V7.name,
+    };
+    iiOfV.resolveTarget = {
+      root: vOfV.root,
+      quality: 'dom7',
+      roman: 'V7/V',
+      name: vOfV.name,
+    };
+
+    // Soft iii / ♭III as “V-ish” colour (not a real dominant)
+    const iii = makeChord((t + (isMin ? 3 : 4)) % 12, isMin ? 'maj' : 'min', {
+      region: isMin ? 'diatonic' : 'diatonic',
+      roman: isMin ? '♭III' : 'iii',
+      tag: 'soft V alternative',
+      preferFlat: preferFlat,
+    });
+    const IV = makeChord((t + 5) % 12, isMin ? 'min' : 'maj', {
+      region: 'diatonic',
+      roman: isMin ? 'iv' : 'IV',
+      tag: 'plagal',
+      preferFlat: preferFlat,
+    });
+
+    const chords = dedupeChords([
+      V,
+      V7,
+      Vsus,
+      V7b9,
+      V7s9,
+      V7s11,
+      V7b13,
+      V7alt,
+      bII7,
+      bVII7,
+      ivm,
+      iiOfV,
+      vOfV,
+      iii,
+      IV,
+    ]);
+
+    const routes = [
+      { name: 'Authentic V–I', character: 'strong', chords: [V, I] },
+      { name: 'Authentic V7–I', character: 'strong / classical', chords: [V7, I] },
+      { name: 'Vsus–V7–I', character: 'rock hang', chords: [Vsus, V7, I] },
+      { name: 'V7♭9–I', character: 'dark classical', chords: [V7b9, I] },
+      { name: 'V7♯9–I', character: 'blues / soul', chords: [V7s9, I] },
+      { name: 'V7alt–I', character: 'jazz altered', chords: [V7alt, I] },
+      { name: 'Tritone ♭II7–I', character: 'dark / surprising', chords: [bII7, I] },
+      { name: 'Backdoor ♭VII7–I', character: 'gospel / soul', chords: [bVII7, I] },
+      {
+        name: 'Backdoor iv–♭VII7–I',
+        character: 'gospel full',
+        chords: [ivm, bVII7, I],
+      },
+      {
+        name: 'Delayed ii/V–V7/V–V7–I',
+        character: 'jazz turnaround',
+        chords: [iiOfV, vOfV, V7, I],
+      },
+      { name: 'Plagal IV–I', character: 'soft / amen', chords: [IV, I] },
+      { name: 'Soft iii–I', character: 'gentle', chords: [iii, I] },
+    ];
+
+    return { chords: chords, routes: routes, home: I };
   }
 
   /** Parallel mode chords (shift to parallel major/minor tonic chord colour) */
@@ -424,13 +876,22 @@
   }
 
   function fullPalette(tonic, modeKey, sevenths = true) {
+    const iiVs = secondaryIiVs(tonic, modeKey);
+    const dim = diminishedStrand(tonic, modeKey);
+    const vAlt = vAlternatives(tonic, modeKey);
     return {
       diatonic: diatonicChords(tonic, modeKey, sevenths),
       secondary: secondaryDominants(tonic, modeKey),
+      secondaryIiVs: iiVs,
+      secondaryIiVChords: secondaryIiVChords(tonic, modeKey),
       interchange: modalInterchange(tonic, modeKey),
       chromatic: chromaticMediants(tonic, modeKey),
       tritone: tritoneSubs(tonic, modeKey),
       parallel: parallelModeChords(tonic, modeKey),
+      diminished: diminishedStrandChords(tonic, modeKey),
+      diminishedStrand: dim,
+      vAlternatives: vAlt.chords,
+      vAlternativeRoutes: vAlt.routes,
     };
   }
 
@@ -439,11 +900,66 @@
     return dedupeChords([
       ...p.diatonic,
       ...p.secondary,
+      ...p.secondaryIiVChords,
       ...p.interchange,
       ...p.chromatic,
       ...p.tritone,
       ...p.parallel,
+      ...p.diminished,
+      ...p.vAlternatives,
     ]);
+  }
+
+  /**
+   * Keithson-style “strands from a key centre” pack (for UI / teaching).
+   * Mirrors: diatonic · secondary · modal interchange · ii–Vs · tritone · dim · V alts.
+   */
+  function progressionStrands(tonic, modeKey, opts) {
+    opts = opts || {};
+    const t = pc(tonic);
+    const mode = modeKey || 'minor';
+    const p = fullPalette(t, mode, opts.sevenths !== false);
+    const vAlt = vAlternatives(t, mode, opts);
+    const home = vAlt.home;
+    // Primary ii–V–I as a strand pack (not only secondary)
+    const diat = p.diatonic;
+    const ii = diat[1]
+      ? makeChord(
+          diat[1].root,
+          qualityFamily(diat[1].quality) === 'dim' ||
+            qualityFamily(diat[1].quality) === 'halfdim'
+            ? 'halfdim'
+            : 'min7',
+          {
+            region: 'diatonic',
+            roman: diat[1].roman || 'ii',
+            tag: 'primary ii',
+          }
+        )
+      : null;
+    const V7 = primaryDominant(t, mode);
+    const primaryIiV = ii
+      ? {
+          name: 'ii–V–I',
+          character: 'primary jazz cadence',
+          chords: [ii, V7, home],
+        }
+      : null;
+    return {
+      tonic: t,
+      mode: mode,
+      diatonic: p.diatonic,
+      secondaryDominants: p.secondary,
+      secondaryIiVs: p.secondaryIiVs,
+      modalInterchange: p.interchange,
+      tritoneSubs: p.tritone,
+      diminished: p.diminishedStrand,
+      vAlternatives: vAlt,
+      primaryIiV: primaryIiV,
+      chromaticMediants: p.chromatic,
+      parallel: p.parallel,
+      allChords: allPaletteChords(t, mode, opts.sevenths !== false),
+    };
   }
 
   /**
@@ -467,6 +983,8 @@
       chromatic: 2.4,
       tritone: 2.6,
       parallel: 1.6,
+      diminished: 2.2,
+      flavour: 1.1,
     };
     base += regionWeight[chord.region] || 1.5;
 
@@ -514,13 +1032,15 @@
           { d: 7, qualities: ['dom7', 'maj', 'maj7'], roman: 'V', role: 'dom' },
         ]
       : [
+          // Default quality first = what seats play on hover (triads so V ≠ vii°)
           { d: 0, qualities: ['maj', 'maj7', 'add9', 'maj9'], roman: 'I', role: 'tonic' },
           { d: 5, qualities: ['maj', 'maj7'], roman: 'IV', role: 'subdom' },
           { d: 11, qualities: ['dim', 'halfdim'], roman: 'vii°', role: 'leading' },
           { d: 4, qualities: ['min', 'min7'], roman: 'iii', role: 'mediant' },
           { d: 9, qualities: ['min', 'min7'], roman: 'vi', role: 'submed' },
           { d: 2, qualities: ['min', 'min7'], roman: 'ii', role: 'supertonic' },
-          { d: 7, qualities: ['dom7', 'maj', 'maj7'], roman: 'V', role: 'dom' },
+          // maj triad first (G), then V7 — forcing dom7 made V share B–D–F with vii°
+          { d: 7, qualities: ['maj', 'dom7', 'maj7'], roman: 'V', role: 'dom' },
         ];
     const n = specs.length;
     return specs.map((s, i) => ({
@@ -538,7 +1058,14 @@
   function qualityFamily(q) {
     q = String(q || '');
     if (q === 'custom') return 'custom';
-    if (q.indexOf('dom') === 0 || q === '7') return 'dom';
+    // All dom7* / 7alt / 7b9 etc. count as dominant family for seating
+    if (
+      q.indexOf('dom') === 0 ||
+      q === '7' ||
+      /^7(b9|#9|#11|b13|alt)/i.test(q)
+    ) {
+      return 'dom';
+    }
     if (q.indexOf('halfdim') >= 0 || q === 'm7b5') return 'halfdim';
     if (q.indexOf('dim') >= 0) return 'dim';
     if (q.indexOf('min') === 0 || q === 'm') return 'min';
@@ -591,8 +1118,12 @@
     disk = disk || { cx: 0, cy: 0, R: 120 };
     const hit = seatForChord(chord, tonic, modeKey);
     const ang = hit.seat.angle;
+    const fam = qualityFamily(chord && chord.quality);
     let radius = disk.R * 0.74;
     if (hit.seat.role === 'tonic' && hit.onScale && !hit.shell) radius = disk.R * 0.4;
+    // V triad vs V7: same seat angle, different ring so F → F7 is visible on the map
+    else if (hit.seat.role === 'dom' && fam === 'dom' && hit.onScale) radius = disk.R * 0.92;
+    else if (hit.seat.role === 'dom' && fam === 'maj' && hit.onScale) radius = disk.R * 0.72;
     else if (hit.shell === 'secondary') radius = disk.R * 0.92;
     else if (hit.shell === 'variant') radius = disk.R * 0.82;
     else if (hit.shell === true) radius = disk.R * 1.18;
@@ -625,6 +1156,89 @@
       }
     }
     return best;
+  }
+
+  /**
+   * Default quality for a Chase scale seat (what you hear on hover).
+   * Uses true diatonic triads so C major is I ii iii IV V vi vii° — not V7 for V.
+   * (V7 and half-dim are still available as colour / inspector options.)
+   */
+  function seatDefaultQuality(seat, modeKey) {
+    if (!seat) return 'maj';
+    const mode = MODES[modeKey] || MODES.major;
+    const isMin = mode.romanBase === 'minor';
+    // Match seat interval → mode degree → DIATONIC_QUALITIES
+    if (seat.d != null && mode.degrees) {
+      const idx = mode.degrees.indexOf(((seat.d % 12) + 12) % 12);
+      if (idx >= 0) {
+        const table = DIATONIC_QUALITIES[modeKey] || DIATONIC_QUALITIES.major;
+        if (table && table[idx]) {
+          // Minor: keep dominant as major/dom7 so V doesn't sound like v
+          if (isMin && idx === 4) return 'maj';
+          return table[idx];
+        }
+      }
+    }
+    if (seat.role === 'leading') return (seat.qualities && seat.qualities[0]) || 'dim';
+    if (seat.role === 'supertonic' && /°/.test(String(seat.roman || ''))) {
+      return (seat.qualities && seat.qualities[0]) || 'dim';
+    }
+    if (seat.role === 'dom') return isMin ? 'maj' : 'maj';
+    if (seat.role === 'tonic') return isMin ? 'min' : 'maj';
+    return (seat.qualities && seat.qualities[0]) || (isMin ? 'min' : 'maj');
+  }
+
+  /**
+   * Root-forward closed/open-enough voicing for map hover — chord identity first.
+   * Jazz spread voicings made V7 and vii° (shared B–D–F) sound almost the same.
+   */
+  function identityVoicing(chord) {
+    if (!chord) return [];
+    const root = pc(chord.root);
+    const bassPc = chord.bassPc != null ? pc(chord.bassPc) : root;
+    const q = QUALITIES[chord.quality] || QUALITIES.maj;
+    const ivs = (chord.intervals && chord.intervals.length
+      ? chord.intervals
+      : q.intervals
+    ).slice();
+    // Clear bass in low-mid (around E2–C3)
+    let bass = 36 + bassPc;
+    if (bass < 40) bass += 12;
+    if (bass > 52) bass -= 12;
+    // Chord tones in order, mid register (~C4 area) so 3rd/5th colour is obvious
+    const pcs = ivs.map((iv) => (root + iv) % 12);
+    const unique = [];
+    pcs.forEach((p) => {
+      if (unique.indexOf(p) < 0) unique.push(p);
+    });
+    const out = [bass];
+    let last = bass + 8;
+    unique.forEach((p, i) => {
+      // Stack from ~G3 upward in close-ish position (ear-friendly)
+      let m = Math.floor(55 / 12) * 12 + p;
+      while (m <= last) m += 12;
+      // First upper: not muddy with bass, not a huge gap
+      if (i === 0) {
+        while (m - bass < 7) m += 12;
+        while (m - bass > 16 && m - 12 > bass + 6) m -= 12;
+      } else {
+        while (m - last < 2) m += 12;
+        // Keep relatively close for triad clarity
+        if (m - last > 8 && m - 12 > last) m -= 12;
+      }
+      out.push(m);
+      last = m;
+    });
+    // Dim / half-dim: make sure b5 is present and not lost under bass
+    if (chord.quality === 'dim' || chord.quality === 'halfdim' || chord.quality === 'dim7') {
+      const b5 = (root + 6) % 12;
+      if (!out.some((m) => m % 12 === b5)) {
+        let m = Math.floor(last / 12) * 12 + b5;
+        while (m <= last) m += 12;
+        out.push(m);
+      }
+    }
+    return normalizeVoicing(out);
   }
 
   /**
@@ -949,6 +1563,32 @@
     const iv = diat[3];
     const VI = diat[5];
 
+    const dimAsV = makeChord((t + 11) % 12, 'dim7', {
+      region: 'diminished',
+      roman: 'vii°7',
+      tag: 'dim7 as V7b9',
+    });
+    const bVII7 = makeChord((t + 10) % 12, 'dom7', {
+      region: 'interchange',
+      roman: '♭VII7',
+      tag: 'backdoor dominant',
+    });
+    const vOfV = makeChord((t + 2) % 12, 'dom7', {
+      region: 'secondary',
+      roman: 'V7/V',
+      tag: 'secondary dominant',
+    });
+    const iiOfV = makeChord((t + 9) % 12, 'min7', {
+      region: 'secondary',
+      roman: 'ii/V',
+      tag: 'secondary ii',
+    });
+    const V7alt = makeChord((t + 7) % 12, 'dom7alt', {
+      region: 'flavour',
+      roman: 'V7alt',
+      tag: 'altered dominant',
+    });
+
     const routes = [
       {
         name: 'Authentic cadence',
@@ -1000,6 +1640,26 @@
           dominant,
           tonicChord,
         ],
+      },
+      {
+        name: 'Backdoor ♭VII7–I',
+        character: 'gospel / soul',
+        chords: [bVII7, tonicChord],
+      },
+      {
+        name: 'Delayed ii/V–V7/V–V7–I',
+        character: 'jazz turnaround',
+        chords: [iiOfV, vOfV, dominant, tonicChord],
+      },
+      {
+        name: 'Dim7 (as V7♭9) → I',
+        character: 'classical dim approach',
+        chords: [dimAsV, tonicChord],
+      },
+      {
+        name: 'V7alt–I',
+        character: 'jazz altered',
+        chords: [V7alt, tonicChord],
       },
     ];
 
@@ -1109,17 +1769,26 @@
     functionNeighborhood,
     keyPrefersFlat,
     chromaticMediants,
+    tritoneSubOfDominant,
     tritoneSubs,
+    secondaryIiVs,
+    secondaryIiVChords,
+    diminishedStrand,
+    diminishedStrandChords,
+    vAlternatives,
     parallelModeChords,
     fullPalette,
     allPaletteChords,
+    progressionStrands,
     harmonicDistance,
     harmonicAngle,
     circularHarmonicScale,
+    seatDefaultQuality,
     seatForChord,
     chaseChordPos,
     fifthsDistance,
     qualityFamily,
+    identityVoicing,
     voiceLead,
     voiceLeadingQuality,
     waysBackHome,

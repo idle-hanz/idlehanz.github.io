@@ -1121,7 +1121,203 @@
     if (q === 'min7' || q === 'min9' || q === 'minmaj7') return 'min';
     if (q === 'dom7') return 'dom';
     if (q === 'halfdim' || q === 'dim7') return 'dim';
+    if (q === 'sus2' || q === 'sus4') return 'sus';
     return q;
+  }
+
+  function qualityFamiliesMatch(a, b) {
+    const ra = roughQuality(a);
+    const rb = roughQuality(b);
+    if (ra === rb) return true;
+    // Dom can pivot as major triad V in a major key
+    if ((ra === 'dom' && rb === 'maj') || (ra === 'maj' && rb === 'dom')) return true;
+    // Sus often stands in for maj/min on the same degree
+    if (ra === 'sus' || rb === 'sus') return true;
+    return false;
+  }
+
+  /**
+   * Parallel minor-mode family on one root (video framing):
+   * Aeolian (natural minor) · Dorian · Phrygian — same tonic, three minor flavours.
+   */
+  function parallelMinorFamily(tonicPc) {
+    const music = M();
+    const t = music.pc(tonicPc);
+    const rootName = music.noteName(t);
+    return [
+      {
+        tonic: t,
+        mode: 'minor',
+        name: rootName + ' minor (Aeolian)',
+        shortName: rootName + 'm Aeolian',
+        relation: 'Parallel minor family',
+        character: 'Natural minor — classic dark home',
+        family: 'parallel-minor',
+        modeLabel: 'Aeolian',
+      },
+      {
+        tonic: t,
+        mode: 'dorian',
+        name: rootName + ' Dorian',
+        shortName: rootName + ' Dorian',
+        relation: 'Parallel minor family',
+        character: 'Minor with raised 6th — softer / folk',
+        family: 'parallel-minor',
+        modeLabel: 'Dorian',
+      },
+      {
+        tonic: t,
+        mode: 'phrygian',
+        name: rootName + ' Phrygian',
+        shortName: rootName + ' Phrygian',
+        relation: 'Parallel minor family',
+        character: 'Minor with ♭2 — Spanish / dark modal',
+        family: 'parallel-minor',
+        modeLabel: 'Phrygian',
+      },
+    ];
+  }
+
+  /**
+   * Keys that treat `chord` as a diatonic (or quality-compatible) pivot.
+   * Ranked: tonic function first, then closely related to current write home.
+   *
+   * @returns [{ tonic, mode, name, romanInKey, roleInKey, relation, character, score, establish }]
+   */
+  function keysForPivotChord(chord, fromTonic, fromMode, opts) {
+    opts = opts || {};
+    if (!chord || chord.root == null) return [];
+    const music = M();
+    const fromT = music.pc(fromTonic != null ? fromTonic : 0);
+    const fromM = fromMode || 'minor';
+    const root = music.pc(chord.root);
+    const q = chord.quality || 'maj';
+    const modes =
+      opts.modes ||
+      ['major', 'minor', 'dorian', 'phrygian', 'mixolydian', 'lydian', 'harmonic'];
+    const limit = opts.limit != null ? opts.limit : 12;
+    const out = [];
+    const seen = new Set();
+
+    function fifthsDist(a, b) {
+      // circle-of-fifths steps between tonics
+      const ai = (a * 7) % 12;
+      const bi = (b * 7) % 12;
+      return Math.min((ai - bi + 12) % 12, (bi - ai + 12) % 12);
+    }
+
+    function relationLabel(tonic, mode, roman) {
+      const fd = fifthsDist(fromT, tonic);
+      if (tonic === fromT && mode !== fromM) {
+        if (
+          (fromM === 'major' && (mode === 'minor' || mode === 'dorian' || mode === 'phrygian')) ||
+          ((fromM === 'minor' || fromM === 'dorian' || fromM === 'phrygian') && mode === 'major')
+        ) {
+          return 'Parallel / same root';
+        }
+        return 'Same tonic · mode change';
+      }
+      const isFromMin = (music.MODES[fromM] || {}).romanBase === 'minor';
+      const isToMin = (music.MODES[mode] || {}).romanBase === 'minor';
+      if (!isFromMin && isToMin && tonic === (fromT + 9) % 12) return 'Relative minor';
+      if (isFromMin && !isToMin && tonic === (fromT + 3) % 12) return 'Relative major';
+      if (fd === 1 && mode === fromM) {
+        return tonic === (fromT + 7) % 12 ? 'Dominant key' : 'Subdominant key';
+      }
+      if (fd <= 2) return 'Closely related';
+      if (fd <= 4) return 'Related';
+      return 'Distant';
+    }
+
+    for (let tonic = 0; tonic < 12; tonic++) {
+      for (let mi = 0; mi < modes.length; mi++) {
+        const mode = modes[mi];
+        if (tonic === fromT && mode === fromM) continue;
+        const id = tonic + ':' + mode;
+        if (seen.has(id)) continue;
+        const diat = music.diatonicChords(tonic, mode, false);
+        let match = null;
+        for (let i = 0; i < diat.length; i++) {
+          const d = diat[i];
+          if (d.root === root && qualityFamiliesMatch(q, d.quality)) {
+            match = d;
+            break;
+          }
+        }
+        // Also allow exact extended match via sevenths set
+        if (!match) {
+          const diat7 = music.diatonicChords(tonic, mode, true);
+          for (let i = 0; i < diat7.length; i++) {
+            const d = diat7[i];
+            if (d.root === root && qualityFamiliesMatch(q, d.quality)) {
+              match = d;
+              break;
+            }
+          }
+        }
+        if (!match) continue;
+        seen.add(id);
+
+        const roman = match.roman || '';
+        const roleBoost =
+          roman === 'I' || roman === 'i'
+            ? 40
+            : roman === 'V' || roman === 'v' || roman === 'V7'
+              ? 28
+              : roman === 'IV' || roman === 'iv'
+                ? 24
+                : roman === 'vi' || roman === 'VI' || roman === 'iii' || roman === 'III'
+                  ? 18
+                  : roman === 'ii' || roman === 'ii°'
+                    ? 16
+                    : 10;
+        const fd = fifthsDist(fromT, tonic);
+        const closeBoost = Math.max(0, 12 - fd * 3);
+        const modeName = (music.MODES[mode] || {}).name || mode;
+        const name = music.noteName(tonic) + ' ' + modeName;
+        let score = roleBoost + closeBoost;
+        // Prefer destinations where pivot is tonic (true re-home)
+        if (roman === 'I' || roman === 'i') score += 8;
+        // Slight boost for parallel minor family of this chord's root
+        if (
+          tonic === root &&
+          (mode === 'minor' || mode === 'dorian' || mode === 'phrygian') &&
+          roughQuality(q) === 'min'
+        ) {
+          score += 15;
+        }
+
+        const establish = establishHomeOptions(tonic, mode);
+        out.push({
+          tonic: tonic,
+          mode: mode,
+          name: name,
+          shortName: music.noteName(tonic) + (mode === 'minor' ? 'm' : ' ' + mode),
+          romanInKey: roman,
+          roleInKey: match.role || '',
+          qualityInKey: match.quality,
+          relation: relationLabel(tonic, mode, roman),
+          character:
+            (chord.name || music.noteName(root)) +
+            ' as ' +
+            roman +
+            ' in ' +
+            name,
+          score: score,
+          establish: establish,
+          family:
+            tonic === root &&
+            (mode === 'minor' || mode === 'dorian' || mode === 'phrygian')
+              ? 'parallel-minor'
+              : '',
+        });
+      }
+    }
+
+    out.sort(function (a, b) {
+      return b.score - a.score || a.name.localeCompare(b.name);
+    });
+    return out.slice(0, limit);
   }
 
   /**
@@ -1340,6 +1536,8 @@
     adjacentKeys,
     establishHomeOptions,
     pivotChords,
+    keysForPivotChord,
+    parallelMinorFamily,
     waysIntoKey,
     closeAlternates,
   };

@@ -20,6 +20,30 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
 
     let writeAt = Math.max(0, sel + 1);
 
+    // Explicit append: grow the path with full step lengths (no steal)
+    if (mode === 'append') {
+      const fitted = pieces.map((p) => H.M().withDuration(p, step));
+      if (!H.state.chords.length) {
+        H.state.chords = fitted;
+        return {
+          writeAt: 0,
+          pieces: fitted,
+          mode: 'seed',
+          totalBefore,
+          totalAfter: H.beatSum(H.state.chords),
+        };
+      }
+      writeAt = H.state.chords.length;
+      H.state.chords.push(...fitted);
+      return {
+        writeAt,
+        pieces: fitted,
+        mode: 'append',
+        totalBefore,
+        totalAfter: H.beatSum(H.state.chords),
+      };
+    }
+
     if (mode === 'insert') {
       // Steal budget from prev (sel) and next (sel+1), like H.map-edge insert
       const needHint = Math.min(step * n, Math.max(step, n * 1.5));
@@ -120,10 +144,26 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
    */
   H.commitHorizon = function (item, opts) {
     opts = opts || {};
-    H.pushUndo();
+    try {
+      return H._commitHorizonInner(item, opts);
+    } catch (err) {
+      console.error('commitHorizon failed', err);
+      if (H.setSyncStatus) {
+        H.setSyncStatus('Add failed · ' + (err && err.message ? err.message : 'error'));
+      }
+      return null;
+    }
+  };
+
+  H._commitHorizonInner = function (item, opts) {
+    opts = opts || {};
+    if (!opts.skipUndo) H.pushUndo();
 
     const rawPieces = H.horizonPieces(item);
-    if (!rawPieces.length) return;
+    if (!rawPieces.length) {
+      if (H.setSyncStatus) H.setSyncStatus('Nothing to add');
+      return null;
+    }
 
     const sel =
       H.state.selected >= 0 && H.state.selected < H.state.chords.length
@@ -133,8 +173,23 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
 
     let mode = opts.mode;
     if (!mode || mode === 'auto') {
-      mode = opts.insert ? 'insert' : 'replace';
+      // Safer defaults: add after (insert/append). Shift+click passes replace:true.
+      if (opts.replace) mode = 'replace';
+      else if (opts.insert) mode = hasNext ? 'insert' : 'append';
+      else if (item.modulateTo) mode = hasNext ? 'insert' : 'append';
+      else if (!hasNext) mode = 'append';
+      else mode = 'insert'; // mid-path click no longer destroys the rest
     }
+    // Leaving home: never replace the journey unless user Shift-clicked
+    if (item.modulateTo && mode === 'replace' && !opts.replace) {
+      mode = hasNext ? 'insert' : 'append';
+    }
+    // At end of path: grow the sequence (don't steal from last chord)
+    if ((mode === 'insert' || mode === 'replace') && !hasNext && H.state.chords.length) {
+      mode = mode === 'replace' && opts.replace ? 'replace' : 'append';
+    }
+    // replace with no next still appends (nothing to overwrite)
+    if (mode === 'replace' && !hasNext) mode = 'append';
 
     const beforeChord =
       sel >= 0 && H.state.chords[sel] ? H.M().cloneChord(H.state.chords[sel]) : null;
@@ -143,46 +198,42 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
     let afterChordPre = null;
     if (mode === 'insert' && H.state.chords[sel + 1]) {
       afterChordPre = H.M().cloneChord(H.state.chords[sel + 1]);
-    } else if (mode !== 'insert' && hasNext) {
+    } else if (mode !== 'insert' && mode !== 'append' && hasNext) {
       const peek = sel + 1 + rawPieces.length;
       if (H.state.chords[peek]) afterChordPre = H.M().cloneChord(H.state.chords[peek]);
       else if (H.state.chords[sel + 1 + 1]) afterChordPre = H.M().cloneChord(H.state.chords[sel + 2]);
     }
 
     const fit = H.fitHorizonIntoSequence(sel, rawPieces, mode);
-    if (!fit) return;
+    if (!fit) {
+      if (H.setSyncStatus) H.setSyncStatus('Could not place chord · try Add button or + Home');
+      return null;
+    }
 
+    // Modulate always opens the new Chase disk (no confirm gate — Cancel felt like "blocked")
     if (item.modulateTo) {
-      const dest =
+      const destLabel =
         H.M().noteName(item.modulateTo.tonic) +
         ' ' +
         (item.modulateTo.mode || 'minor');
-      const ok = confirm(
-        'Open a new Chase disk in ' +
-          dest +
-          '?\n\nOK = new write home (old key pattern stays on its disk)\nCancel = write chords only, keep current home'
-      );
-      if (ok) {
-        // Don't retag whole path — only gravity + new chords; package just written uses new key below
-        // setWritingHome auto-flips Function → Chase when the key changes
-        H.setWritingHome(item.modulateTo.tonic, item.modulateTo.mode || H.state.mode, {
-          transpose: false,
-          skipEdit: true,
-        });
-        // Tag the package we just wrote onto the new disk
-        const start = fit.writeAt;
-        const end = start + (fit.pieces ? fit.pieces.length : 0);
-        for (let i = start; i < end; i++) {
-          if (H.state.chords[i]) H.stampKey(H.state.chords[i], H.writeKey());
-        }
-        if (H.map && H.map.mapView === 'chase') {
-          H.setSyncStatus(
-            'Modulated → ' +
-              dest +
-              ' · Chase multi-disk · old key stays on its wheel'
-          );
+      H.setWritingHome(item.modulateTo.tonic, item.modulateTo.mode || H.state.mode, {
+        transpose: false,
+        skipEdit: true,
+      });
+      // Tag the package we just wrote onto the new disk
+      const start = fit.writeAt;
+      const end = start + (fit.pieces ? fit.pieces.length : 0);
+      for (let i = start; i < end; i++) {
+        if (H.state.chords[i]) {
+          H.stampKey(H.state.chords[i], {
+            tonic: item.modulateTo.tonic,
+            mode: item.modulateTo.mode || H.state.mode,
+          });
         }
       }
+      H.setSyncStatus(
+        'Modulated → ' + destLabel + ' · multi-disk · earlier steps stay on their wheels'
+      );
     }
 
     // New path steps inherit current write home unless already owned (seat on other disk)
@@ -209,14 +260,20 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
     }
 
     H.afterEdit(); // refreshAll → refreshMap + time strip (no second setPath)
-    H.updateMapStatus();
+    if (H.updateMapStatus) H.updateMapStatus();
 
     const afterIdx = fit.writeAt + fit.pieces.length;
     const afterChord =
       afterChordPre ||
       (afterIdx < H.state.chords.length ? H.state.chords[afterIdx] : null);
-    H.A().ensure();
-    H.auditionJoin(beforeChord, fit.pieces, afterChord);
+    try {
+      if (H.A()) {
+        H.A().ensure();
+        if (H.auditionJoin) H.auditionJoin(beforeChord, fit.pieces, afterChord);
+      }
+    } catch (audErr) {
+      console.warn('auditionJoin', audErr);
+    }
 
     const labels = fit.pieces.map((p) => p.name).join(' → ');
     const durs = fit.pieces.map((p) => (p.duration || 0) + 'b').join('+');
@@ -272,9 +329,13 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
   H.regionFromKind = function (kind) {
     if (kind === 'home' || kind === 'gate' || kind === 'diatonic') return 'diatonic';
     if (kind === 'cadence') return 'diatonic';
-    if (kind === 'secondary') return 'secondary';
+    if (kind === 'secondary' || kind === 'secondaryii') return 'secondary';
     if (kind === 'interchange' || kind === 'flavour') return 'interchange';
+    if (kind === 'tritone') return 'tritone';
+    if (kind === 'diminished' || kind === 'dim') return 'diminished';
+    if (kind === 'valt' || kind === 'valts') return 'flavour';
     if (kind === 'modulate') return 'chromatic';
+    if (kind === 'recipe') return 'cadence';
     return 'diatonic';
   }
 
@@ -284,22 +345,36 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
    */
   H.functionOpts = function () {
     const raw = H.state.functionOpts || {};
-    // Home ring is always on; only Dominants + Borrow are toggled
+    // Home ring always on; Dom / Borrow / Tritone / Dim / V alts / Colours toggled
     const dominants = raw.dominants !== false;
     const borrow = raw.borrow !== false;
+    const tritone = raw.tritone === true;
+    const dim = raw.dim === true;
+    const valts = raw.valts === true;
+    const colours = raw.colours === true;
     return {
       dominants: dominants,
       borrow: borrow,
+      tritone: tritone,
+      dim: dim,
+      valts: valts,
+      colours: colours,
       showDiatonic: true,
       showSkeleton: true,
       showPath: true,
       showPrimaryV7: dominants,
       showSecondaries: dominants,
-      showChains: false,
+      showSecondaryIiVs: dominants,
+      showChains: dominants,
       showInterchange: borrow,
-      sparseBorrow: true,
+      // Full borrow set when Colours on — sparse only if colours hidden
+      sparseBorrow: !colours,
       showOrbit: borrow,
       showGates: borrow,
+      showTritone: tritone,
+      showDim: dim,
+      showValts: valts,
+      showColours: colours,
       hoverBothWays: true,
     };
   };
@@ -359,30 +434,47 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       });
     }
 
-    // Light diatonic skeleton: I–IV–V–vi (and v/VI in minor-ish)
+    // Diatonic skeleton: common moves (incl. iii→vi stronger than iii→vii°)
     if (fo.showSkeleton !== false && fo.showDiatonic !== false && nb.diatonic && nb.diatonic.length >= 6) {
       const d = nb.diatonic;
-      const link = (a, b) => {
+      const link = (a, b, label) => {
         if (!a || !b) return;
         edges.push({
           kind: 'skeleton',
           fromId: idOf(a),
           toId: idOf(b),
-          label: 'prog',
+          label: label || 'prog',
         });
       };
-      // Common core progressions (bidirectional for “who can go where”)
-      link(d[0], d[3]); // I–IV
+      // Core loop
+      link(d[0], d[3], 'I–IV');
       link(d[3], d[0]);
-      link(d[0], d[4]); // I–V
-      link(d[4], d[0]);
-      link(d[0], d[5]); // I–vi
+      link(d[0], d[4], 'I–V');
+      link(d[4], d[0], 'V–I');
+      link(d[0], d[5], 'I–vi');
       link(d[5], d[0]);
-      link(d[5], d[3]); // vi–IV
-      link(d[3], d[4]); // IV–V
-      link(d[5], d[1]); // vi–ii
-      link(d[1], d[4]); // ii–V
-      link(d[3], d[1]); // IV–ii
+      link(d[5], d[3], 'vi–IV');
+      link(d[3], d[4], 'IV–V');
+      link(d[5], d[1], 'vi–ii');
+      link(d[1], d[4], 'ii–V');
+      link(d[3], d[1], 'IV–ii');
+      // Stronger degree shifts (user: iii→vi > iii→vii)
+      if (d[2]) {
+        link(d[2], d[5], 'iii–vi'); // strongest from iii
+        link(d[2], d[3], 'iii–IV');
+        link(d[2], d[0], 'iii–I');
+        // Weak: iii→vii only if both exist — omit so the map teaches strength
+      }
+      if (d[6]) {
+        link(d[6], d[0], 'vii–I'); // leading resolves home
+        link(d[4], d[5], 'V–vi'); // deceptive
+      }
+      // Minor: i–III–VII, i–VII, walk ii°–III
+      if (d[2] && d[0] && d[0].quality && String(d[0].quality).indexOf('min') === 0) {
+        link(d[0], d[2], 'i–III');
+        if (d[6]) link(d[0], d[6], 'i–VII');
+        if (d[1] && d[2]) link(d[1], d[2], 'ii–III'); // F#° → G in Em
+      }
     }
 
     // Primary V7 → I
@@ -444,6 +536,220 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       }
     }
 
+    // Secondary ii–Vs: ii/X → V7/X → X (when Dom layer on)
+    if (fo.showSecondaryIiVs !== false) {
+      const packs =
+        nb.secondaryIiVs ||
+        (music.secondaryIiVs
+          ? music.secondaryIiVs(H.state.tonic, H.state.mode, { preferFlat: preferFlat })
+          : []);
+      packs.forEach(function (pack) {
+        if (!pack || !pack.ii || !pack.v7) return;
+        const ii = stamp(pack.ii);
+        const v7 = stamp(pack.v7);
+        const v7id = idOf(v7);
+        // Prefer existing secondary V7 node when already drawn
+        let v7Node = nodes.find(function (n) {
+          return n.id === v7id;
+        });
+        if (!v7Node) {
+          const tid = pack.target
+            ? pack.target.root + ':' + pack.target.quality
+            : pack.v7.resolveTarget
+              ? pack.v7.resolveTarget.root + ':' + pack.v7.resolveTarget.quality
+              : null;
+          v7Node = {
+            id: v7id,
+            chord: v7,
+            role: 'secondary',
+            label: v7.name,
+            roman: v7.roman || '',
+            resolvesToId: tid,
+            canOrbitPeers: false,
+          };
+          nodes.push(v7Node);
+          if (pack.target) ensureDiatonicTarget(pack.target);
+          else if (pack.v7.resolveTarget) ensureDiatonicTarget(pack.v7.resolveTarget);
+          if (tid) {
+            edges.push({ kind: 'resolve', fromId: v7id, toId: tid, label: '→' });
+          }
+        }
+        const iiid = idOf(ii);
+        if (!nodes.some(function (n) {
+          return n.id === iiid;
+        })) {
+          nodes.push({
+            id: iiid,
+            chord: ii,
+            role: 'secondaryii',
+            label: ii.name,
+            roman: ii.roman || '',
+            resolvesToId: v7Node.id,
+            routeTargetId: v7Node.resolvesToId || null,
+            canOrbitPeers: false,
+          });
+        }
+        edges.push({
+          kind: 'iiv',
+          fromId: iiid,
+          toId: v7Node.id,
+          label: 'ii–V',
+        });
+      });
+    }
+
+    // Tritone subs of primary V + every secondary V
+    if (fo.showTritone) {
+      const tritones =
+        nb.tritone ||
+        (music.tritoneSubs
+          ? music.tritoneSubs(H.state.tonic, H.state.mode, { preferFlat: preferFlat })
+          : []);
+      tritones.forEach(function (ch) {
+        const c = stamp(ch);
+        const cid = idOf(c);
+        if (nodes.some(function (n) {
+          return n.id === cid;
+        })) {
+          return;
+        }
+        const rt = ch.resolveTarget || {};
+        const tid =
+          rt.root != null
+            ? rt.root + ':' + (rt.quality || 'maj')
+            : null;
+        if (tid) ensureDiatonicTarget(rt);
+        nodes.push({
+          id: cid,
+          chord: c,
+          role: 'tritone',
+          label: c.name,
+          roman: c.roman || '♭II7',
+          resolvesToId: tid,
+          canOrbitPeers: false,
+        });
+        if (tid) {
+          edges.push({
+            kind: 'tritone',
+            fromId: cid,
+            toId: tid,
+            label: 'subV',
+          });
+        }
+      });
+    }
+
+    // Diminished strand (readable subset on map)
+    if (fo.showDim) {
+      const dim =
+        nb.diminished ||
+        (music.diminishedStrand
+          ? music.diminishedStrand(H.state.tonic, H.state.mode, { preferFlat: preferFlat })
+          : null);
+      if (dim) {
+        const dimList = []
+          .concat(dim.asV7b9 || [])
+          .concat(dim.commonTone || [])
+          .concat((dim.leading || []).slice(0, 7));
+        dimList.forEach(function (ch) {
+          const c = stamp(ch);
+          const cid = idOf(c);
+          if (nodes.some(function (n) {
+            return n.id === cid;
+          })) {
+            return;
+          }
+          const rt = ch.resolveTarget || null;
+          const tid = rt ? rt.root + ':' + (rt.quality || 'maj') : null;
+          if (rt) ensureDiatonicTarget(rt);
+          nodes.push({
+            id: cid,
+            chord: c,
+            role: 'diminished',
+            label: c.name,
+            roman: c.roman || '°',
+            resolvesToId: tid,
+            canOrbitPeers: !!ch.canOrbitPeers,
+            dimTag: c.tag || 'dim',
+          });
+          if (tid) {
+            edges.push({
+              kind: 'dim',
+              fromId: cid,
+              toId: tid,
+              label: '°→',
+            });
+          }
+        });
+      }
+    }
+
+    // V alternatives (alts / backdoor / delayed pieces)
+    if (fo.showValts) {
+      const vAlt =
+        nb.vAlternatives ||
+        (music.vAlternatives
+          ? music.vAlternatives(H.state.tonic, H.state.mode, { preferFlat: preferFlat })
+          : null);
+      const valtChords = (vAlt && vAlt.chords) || [];
+      // Prefer distinctive alts; skip plain V triad if already diatonic
+      const preferTags = /alt|♭9|b9|♯9|s9|#9|♯11|b13|♭13|backdoor|sus|♭II7|tritone|delayed|V7\/V|ii\/V/i;
+      valtChords.forEach(function (ch) {
+        const tag = String(ch.tag || '') + ' ' + String(ch.roman || '') + ' ' + String(ch.quality || '');
+        if (
+          ch.quality === 'maj' &&
+          (ch.roman === 'V' || ch.roman === 'v') &&
+          !/sus/i.test(tag)
+        ) {
+          return; // plain V is already diatonic
+        }
+        if (ch.quality === 'dom7' && ch.roman === 'V7' && !preferTags.test(tag)) {
+          // keep primary V7 only if not already drawn
+        }
+        const c = stamp(ch);
+        const cid = idOf(c);
+        if (nodes.some(function (n) {
+          return n.id === cid;
+        })) {
+          return;
+        }
+        const isBackdoor = /backdoor|♭VII7/i.test(tag);
+        const isTrit = /tritone|♭II7/i.test(tag) || c.region === 'tritone';
+        const rt = ch.resolveTarget || null;
+        let tid = rt
+          ? rt.root + ':' + (rt.quality || 'maj')
+          : null;
+        // Default resolve home for V-family alts
+        if (!tid && /dom|alt|sus|V/i.test(String(ch.quality || '') + (ch.roman || ''))) {
+          const home = nb.diatonic && nb.diatonic[0];
+          if (home) {
+            tid = home.root + ':' + home.quality;
+            ensureDiatonicTarget(home);
+          }
+        } else if (rt) {
+          ensureDiatonicTarget(rt);
+        }
+        nodes.push({
+          id: cid,
+          chord: c,
+          role: isTrit ? 'tritone' : isBackdoor ? 'valt' : 'valt',
+          label: c.name,
+          roman: c.roman || '',
+          resolvesToId: tid,
+          canOrbitPeers: false,
+          valtTag: c.tag || c.roman || 'valt',
+        });
+        if (tid) {
+          edges.push({
+            kind: 'valt',
+            fromId: cid,
+            toId: tid,
+            label: c.roman || 'V alt',
+          });
+        }
+      });
+    }
+
     const interNodes = [];
     if (fo.showInterchange !== false) {
       (nb.interchange || []).forEach((ch) => {
@@ -501,6 +807,59 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       });
     }
 
+    // In-key colours — optional on map (right-click owns full palette).
+    // When Colours layer is on: show style-weighted top paints only (not a full dump).
+    if (fo.showColours !== false) {
+      const seen = new Set(nodes.map((n) => n.id));
+      let colourPool = (nb.colours || []).slice();
+      // Style extras (Asus2, ♭II, Cmaj7, add9…) for current lens
+      if (H.styleExtraColours) {
+        colourPool = colourPool.concat(
+          H.styleExtraColours(H.state.tonic, H.state.mode) || []
+        );
+      }
+      // Rank by style weight; keep top few so the chart stays readable
+      colourPool = colourPool
+        .map((ch) => ({
+          ch: ch,
+          w: H.styleColourWeight ? H.styleColourWeight(ch.tag || ch.roman || '') : 0.4,
+        }))
+        .filter((x) => x.w >= 0.45)
+        .sort((a, b) => b.w - a.w)
+        .slice(0, 8)
+        .map((x) => x.ch);
+
+      colourPool.forEach((ch) => {
+        const c = stamp(ch);
+        const cid = idOf(c);
+        if (seen.has(cid)) return;
+        seen.add(cid);
+        const host =
+          (nb.diatonic || []).find((d) => d.root === c.root) || null;
+        nodes.push({
+          id: cid,
+          chord: c,
+          role: 'colour',
+          label: c.name,
+          roman: c.roman || '',
+          colourHostRoot: host ? host.root : c.root,
+          colourTag: c.tag || 'colour',
+          canOrbitPeers: false,
+        });
+        if (host) {
+          const hid = idOf(host);
+          if (nodes.some((n) => n.id === hid)) {
+            edges.push({
+              kind: 'colour',
+              fromId: hid,
+              toId: cid,
+              label: c.roman || 'colour',
+            });
+          }
+        }
+      });
+    }
+
     // Mark nodes that appear in the current path (for highlight)
     const pathIds = new Set(
       (H.state.chords || []).map((c) => c.root + ':' + c.quality)
@@ -551,21 +910,32 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
     );
   }
 
-  // ─── Horizon builders ────────────────────────────────────
+  // --- Horizon builders
   /**
    * opts.forMap — compact set for canvas constellation (no home satellite; capped)
    * opts.limit — max items when forMap
    */
   H.buildHorizon = function (opts) {
     opts = opts || {};
-    const forMap = !!opts.forMap;
+    const forMap = false; // permanent map dots retired — list + hover previews
     const limit = opts.limit != null ? opts.limit : forMap ? 14 : 22;
     const music = H.M();
     const compose = H.C();
     const t = H.state.tonic;
+    // fromIndex: build suggestions from a path step without changing selection
+    const fromIdx =
+      opts.fromIndex != null &&
+      opts.fromIndex >= 0 &&
+      opts.fromIndex < H.state.chords.length
+        ? opts.fromIndex
+        : H.state.selected >= 0 && H.state.selected < H.state.chords.length
+          ? H.state.selected
+          : H.state.chords.length
+            ? H.state.chords.length - 1
+            : -1;
     const from =
-      H.state.selected >= 0 && H.state.chords[H.state.selected]
-        ? H.state.chords[H.state.selected]
+      fromIdx >= 0 && H.state.chords[fromIdx]
+        ? H.state.chords[fromIdx]
         : H.state.chords[H.state.chords.length - 1] || null;
 
     const items = [];
@@ -588,7 +958,7 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       }
     }
 
-    // ── Function neighbourhood (same key as Write home) ──
+    // ---
     // Secondary dominants → target, modal interchange, I/IV/V gates
     if (music.functionNeighborhood && !forMap) {
       const nb = music.functionNeighborhood(t, H.state.mode);
@@ -663,6 +1033,100 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
           section: 'gate',
         });
       });
+
+      // Recipes — multi-chord packages from strands (ii–V/x, V alts, dim→I)
+      const stampRoute = function (chords) {
+        return (chords || []).map(function (c) {
+          const x = music.cloneChord ? music.cloneChord(c) : { ...c, notes: (c.notes || []).slice() };
+          H.stampKey(x, H.writeKey());
+          return x;
+        });
+      };
+      const pushRecipe = function (name, character, chords, kind) {
+        if (!chords || chords.length < 1) return;
+        const route = stampRoute(chords);
+        const labels = route.map(function (c) {
+          return c.name;
+        }).join(' → ');
+        items.push({
+          chord: route[0],
+          kind: kind || 'recipe',
+          label: labels,
+          job: (name || 'recipe') + (character ? ' · ' + character : ''),
+          route: route,
+          section: 'recipe',
+        });
+      };
+
+      // Primary ii–V–I
+      if (nb.diatonic && nb.diatonic[1] && nb.primaryDominant) {
+        const ii0 = nb.diatonic[1];
+        const iiQ =
+          String(ii0.quality || '').indexOf('dim') >= 0 ||
+          String(ii0.quality || '').indexOf('half') >= 0
+            ? 'halfdim'
+            : 'min7';
+        const iiCh = music.makeChord(ii0.root, iiQ, {
+          region: 'diatonic',
+          roman: ii0.roman || 'ii',
+          tag: 'primary ii',
+          preferFlat: nb.preferFlat,
+        });
+        const home = nb.diatonic[0];
+        pushRecipe(
+          'ii–V–I',
+          'primary jazz cadence',
+          [iiCh, nb.primaryDominant, home],
+          'recipe'
+        );
+      }
+
+      // A few secondary ii–Vs (cap so the list stays usable)
+      const iiVs =
+        nb.secondaryIiVs ||
+        (music.secondaryIiVs
+          ? music.secondaryIiVs(t, H.state.mode, { preferFlat: nb.preferFlat })
+          : []);
+      iiVs.slice(0, 4).forEach(function (pack) {
+        pushRecipe(
+          'ii–V/' + (pack.targetRoman || 'x'),
+          'secondary ii–V',
+          pack.chords,
+          'secondaryii'
+        );
+      });
+
+      // V-alternative routes
+      const vAlt =
+        nb.vAlternatives ||
+        (music.vAlternatives
+          ? music.vAlternatives(t, H.state.mode, { preferFlat: nb.preferFlat })
+          : null);
+      if (vAlt && vAlt.routes) {
+        vAlt.routes
+          .filter(function (r) {
+            return (
+              r &&
+              r.chords &&
+              r.chords.length >= 2 &&
+              /alt|♭9|backdoor|Tritone|Delayed|sus/i.test(r.name || '')
+            );
+          })
+          .slice(0, 6)
+          .forEach(function (r) {
+            pushRecipe(r.name, r.character || '', r.chords, 'recipe');
+          });
+      }
+
+      // Dim as V7♭9 → I
+      if (nb.diminished && nb.diminished.asV7b9 && nb.diminished.asV7b9[0] && nb.diatonic[0]) {
+        pushRecipe(
+          '°7 → I',
+          'dim as V7♭9',
+          [nb.diminished.asV7b9[0], nb.diatonic[0]],
+          'diminished'
+        );
+      }
     }
 
     // Flavours — same-key colour (Function atlas owns most of these).
@@ -670,17 +1134,17 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
     const flavourSeeds = forMap
       ? [
           // Exit / pivot colour — not the static borrow catalogue (that's Function)
-          { d: 1, q: 'dom7', label: '♭II7 noir', kind: 'flavour', job: 'tritone exit', exit: true },
-          { d: 6, q: 'dom7', label: '♭V7', kind: 'flavour', job: 'tritone exit', exit: true },
+          { d: 1, q: 'dom7', label: 'â™­II7 noir', kind: 'flavour', job: 'tritone exit', exit: true },
+          { d: 6, q: 'dom7', label: 'â™­V7', kind: 'flavour', job: 'tritone exit', exit: true },
           { d: 3, q: 'maj', label: 'III', kind: 'flavour', job: 'relative door', exit: true },
           { d: 4, q: 'maj', label: 'Mediant', kind: 'flavour', job: 'chromatic door', exit: true },
         ]
       : [
-          { d: 8, q: 'maj', label: '♭VI colour', kind: 'flavour', job: 'dark lift' },
-          { d: 10, q: 'maj', label: '♭VII modal', kind: 'flavour', job: 'epic' },
+          { d: 8, q: 'maj', label: 'â™­VI colour', kind: 'flavour', job: 'dark lift' },
+          { d: 10, q: 'maj', label: 'â™­VII modal', kind: 'flavour', job: 'epic' },
           { d: 5, q: 'min', label: 'iv soft', kind: 'flavour', job: 'pad' },
-          { d: 1, q: 'maj', label: '♭II gate', kind: 'flavour', job: 'phrygian' },
-          { d: 1, q: 'dom7', label: '♭II7 noir', kind: 'flavour', job: 'noir' },
+          { d: 1, q: 'maj', label: 'â™­II gate', kind: 'flavour', job: 'phrygian' },
+          { d: 1, q: 'dom7', label: 'â™­II7 noir', kind: 'flavour', job: 'noir' },
           { d: 4, q: 'maj', label: 'Mediant', kind: 'flavour', job: 'cinematic' },
           { d: 3, q: 'maj', label: 'III', kind: 'flavour', job: 'relative' },
           { d: 7, q: 'dom7', label: 'V7 push', kind: 'flavour', job: 'tension' },
@@ -821,21 +1285,34 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
     };
 
     // Dedupe + rank
-    // Chase map: journey / leave-home first. Function list: atlas first.
+    // Chase map: journey / leave-home first. List: modulate early so I–V–I–V can exit.
     const seen = new Set();
     let out = [];
+    const chaseList = !forMap && H.map && H.map.mapView === 'chase';
     const order = forMap
       ? { modulate: 0, direction: 1, cadence: 2, flavour: 3 }
-      : {
-          home: -1,
-          secondary: 0,
-          interchange: 1,
-          gate: 2,
-          direction: 3,
-          flavour: 4,
-          cadence: 5,
-          modulate: 6,
-        };
+      : chaseList
+        ? {
+            // Leave-home near top in Chase (user journey, not atlas)
+            modulate: 0,
+            cadence: 1,
+            direction: 2,
+            flavour: 3,
+            secondary: 4,
+            interchange: 5,
+            gate: 6,
+            home: 7,
+          }
+        : {
+            home: -1,
+            secondary: 0,
+            interchange: 1,
+            gate: 2,
+            direction: 3,
+            flavour: 4,
+            cadence: 5,
+            modulate: 6,
+          };
     items.sort(
       (a, b) =>
         (order[a.kind] != null ? order[a.kind] : 9) - (order[b.kind] != null ? order[b.kind] : 9)
@@ -868,7 +1345,202 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
     }
     if (forMap && out.length > limit) out = out.slice(0, limit);
     return out;
-  }
+  };
 
-  // ─── Playback / export ───────────────────────────────────
+  /**
+   * Hover “what next?” — weighted arrows from the path chord to available
+   * seats / leave-home targets (not floating suggestion dots).
+   */
+  H.previewNextFromStep = function (pathIndex, opts) {
+    opts = opts || {};
+    if (!H.map || pathIndex == null || pathIndex < 0 || pathIndex >= H.state.chords.length) {
+      if (H.map && H.map.clearHoverSuggests) H.map.clearHoverSuggests();
+      return;
+    }
+    // Never rebuild while dragging a path chord (caused "jump on click before release")
+    if (H.map._mode === 'node' || H.map._mode === 'edgePending') return;
+
+    const ch = H.state.chords[pathIndex];
+    if (!ch) return;
+
+    const node = H.map.nodes && H.map.nodes[pathIndex];
+    if (!node) {
+      if (H.map.clearHoverSuggests) H.map.clearHoverSuggests();
+      return;
+    }
+
+    // Re-root purple leave-home ghosts only when pivot changes (avoid rebuild thrash)
+    const pivotChanged = H.map.current !== pathIndex;
+    H.map.current = pathIndex;
+    if (pivotChanged && H.map._rebuildGhostHalo) H.map._rebuildGhostHalo();
+
+    const diskKey = H.keyOf ? H.keyOf(ch) : { tonic: H.state.tonic, mode: H.state.mode };
+    const home = H.makeHomeChord ? H.makeHomeChord({ duration: 1 }) : null;
+    const arrows = [];
+    const seen = new Set();
+
+    const pushArrow = (tx, ty, targetCh, meta) => {
+      if (tx == null || ty == null || !targetCh) return;
+      const k = targetCh.root + ':' + (targetCh.quality || '');
+      if (seen.has(k)) return;
+      // Skip self
+      if (targetCh.root === ch.root && targetCh.quality === ch.quality) return;
+      seen.add(k);
+      // Degree affinity is primary (iii→vi > iii→vii°); VL/cadence as support
+      let weight = meta.weight != null ? meta.weight : 0.45;
+      if (H.scoreDegreeProgression) {
+        const deg = H.scoreDegreeProgression(
+          ch,
+          targetCh,
+          diskKey.tonic,
+          diskKey.mode
+        );
+        if (typeof deg === 'number' && isFinite(deg)) {
+          weight = Math.max(0.08, Math.min(1, deg * 0.85 + weight * 0.15));
+        }
+      }
+      if (H.scoreAimContext) {
+        const sc = H.scoreAimContext(ch, targetCh, null, {
+          mode: 'building',
+          home: home,
+          tonic: diskKey.tonic,
+          modeKey: diskKey.mode,
+        });
+        if (typeof sc === 'number' && isFinite(sc)) {
+          // Blend with join score but keep degree spread
+          weight = Math.max(0.08, Math.min(1, weight * 0.55 + sc * 0.45));
+        }
+      }
+      arrows.push({
+        // Tip = destination seat / ghost (hit target)
+        x: tx,
+        y: ty,
+        fromX: node.x,
+        fromY: node.y,
+        r: 14,
+        weight: weight,
+        label: meta.label || targetCh.name || '?',
+        job: meta.job || meta.kind || '',
+        kind: meta.kind || 'direction',
+        item: meta.item || {
+          chord: targetCh,
+          kind: meta.kind || 'direction',
+          label: meta.label || targetCh.name,
+          job: meta.job || '',
+        },
+        pathIndex: pathIndex,
+      });
+    };
+
+    // 1) Active write-home scale seats ONLY (no other-disk spaghetti)
+    const seats = (H.map.scaleSeats || []).filter((s) => s.activeDisk === true);
+    seats.forEach((seat) => {
+      const target =
+        seat.chord ||
+        (H.chordFromChaseSeat
+          ? H.chordFromChaseSeat(seat, diskKey)
+          : null);
+      if (!target) return;
+      const label =
+        (seat.roman ? seat.roman + ' · ' : '') + (target.name || '');
+      // Seed weight from degree motion from the current path chord (not “destination fame”)
+      let kindW = 0.45;
+      if (H.scoreDegreeProgression) {
+        kindW = H.scoreDegreeProgression(ch, target, diskKey.tonic, diskKey.mode);
+      } else {
+        if (seat.role === 'tonic' || seat.roman === 'i' || seat.roman === 'I') kindW = 0.95;
+        else if (seat.role === 'dom' || seat.roman === 'V' || seat.roman === 'v') kindW = 0.9;
+        else if (
+          seat.roman === 'iv' ||
+          seat.roman === 'IV' ||
+          seat.roman === 'VI' ||
+          seat.roman === 'vi'
+        )
+          kindW = 0.75;
+      }
+      // Style lens: boost degrees this style cares about
+      if (H.styleNextBoost) kindW += H.styleNextBoost(seat.roman || '') || 0;
+      pushArrow(seat.x, seat.y, target, {
+        weight: kindW,
+        label: label,
+        job: seat.roman || seat.role || 'scale',
+        kind: 'direction',
+        item: {
+          chord: target,
+          kind: 'direction',
+          label: target.name,
+          job: seat.roman || 'scale seat',
+        },
+      });
+    });
+
+    // 2) Leave-home: only tips on purple ghost pads (not free-space _chordPos jumps)
+    // Keep them a bit weaker so same-key seats read as primary
+    (H.map.ghostOptions || []).forEach((g) => {
+      const route = g.route || [];
+      const first = route[0];
+      if (!first || g.x == null || g.y == null) return;
+      // One arrow per ghost disk (prefer tonic land over V7→I to reduce clutter)
+      if (g.id === 'cadence') return;
+      pushArrow(g.x, g.y, first, {
+        weight: 0.48,
+        label: g.label || first.name,
+        job: g.job || 'leave home',
+        kind: 'modulate',
+        item: {
+          chord: first,
+          route: route.length > 1 ? route : undefined,
+          kind: 'modulate',
+          label: g.label || first.name,
+          job: g.job || 'leave home',
+          modulateTo: g.ghostDisk
+            ? { tonic: g.ghostDisk.tonic, mode: g.ghostDisk.mode }
+            : undefined,
+        },
+      });
+    });
+
+    // Normalize keeping relative gaps (don't flatten weak moves up to "almost top")
+    let maxW = 0;
+    let minW = Infinity;
+    arrows.forEach((a) => {
+      if (a.weight > maxW) maxW = a.weight;
+      if (a.weight < minW) minW = a.weight;
+    });
+    if (maxW > 0) {
+      const span = Math.max(0.12, maxW - (isFinite(minW) ? minW : 0));
+      arrows.forEach((a) => {
+        // Map onto 0.15..1 with real spread: best≈1, weakest≈0.15–0.35
+        const rel = (a.weight - (isFinite(minW) ? minW : 0)) / span;
+        a.weight = Math.max(0.12, Math.min(1, 0.15 + rel * 0.85));
+      });
+    }
+    arrows.sort((a, b) => b.weight - a.weight);
+    // Keep strongest moves; drop very weak so the map stays readable
+    const maxN = opts.max != null ? opts.max : 9;
+    let top = arrows.filter((a) => a.weight >= 0.38).slice(0, maxN);
+    if (top.length < 3) top = arrows.slice(0, Math.min(5, arrows.length));
+
+    if (H.map.setHoverSuggests) H.map.setHoverSuggests(top, pathIndex);
+
+    if (!opts.silent) {
+      const names = top
+        .slice(0, 5)
+        .map((a) => a.label)
+        .join(' · ');
+      const isLast = pathIndex === H.state.chords.length - 1;
+      H.setSyncStatus(
+        (isLast ? 'Next from last · ' : 'Next from step ' + (pathIndex + 1) + ' · ') +
+          (ch.name || '?') +
+          (names ? ' → ' + names : '') +
+          ' · thicker = stronger function · click tip to add'
+      );
+    }
+  };
+
+  H.clearNextPreview = function () {
+    if (H.map && H.map.clearHoverSuggests) H.map.clearHoverSuggests();
+  };
+
+  // ---
 })(typeof window !== "undefined" ? window : globalThis);

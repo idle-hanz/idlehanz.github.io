@@ -208,16 +208,41 @@
     const c = ensure();
     const M = global.HLMusic;
     let midi = opts.midi;
+    const soft = !!opts.soft;
+    // Soft / map-hover: root-forward identity voicing so V and vii° don't blur
+    // (open jazz spreads made G7 ≈ B° when the G bass was dark/quiet).
     if (!midi && opts.chord && M) {
-      midi = M.voiceLead(opts.chord, opts.prevMidi || null, 3);
+      if (soft && opts.identify !== false && M.identityVoicing) {
+        midi = M.identityVoicing(opts.chord);
+      } else {
+        midi = M.voiceLead(opts.chord, opts.prevMidi || null, 3);
+      }
     }
     if (!midi || !midi.length) return null;
     midi = midi.slice().sort((a, b) => a - b);
 
-    if (!opts.layer) stopAll(opts.soft ? 0.04 : 0.06);
+    // Soft hover previews: throttle restarts so seat flicker doesn't re-trigger
+    // a full stopAll/re-attack many times a second.
+    const nowAudio = c.currentTime;
+    if (soft && !opts.layer) {
+      const id =
+        opts.chord && opts.chord.root != null
+          ? opts.chord.root + ':' + (opts.chord.quality || '')
+          : midi.join(',');
+      if (
+        playChord._lastSoftId === id &&
+        playChord._lastSoftAt != null &&
+        nowAudio - playChord._lastSoftAt < 0.28
+      ) {
+        return midi;
+      }
+      playChord._lastSoftId = id;
+      playChord._lastSoftAt = nowAudio;
+    }
 
-    const now = opts.when != null ? opts.when : c.currentTime;
-    const soft = !!opts.soft;
+    if (!opts.layer) stopAll(soft ? 0.04 : 0.06);
+
+    const now = opts.when != null ? opts.when : nowAudio;
     const dur = opts.duration != null ? opts.duration : soft ? 0.55 : 1.35;
     const voicing = midi;
     const n = voicing.length;
@@ -227,30 +252,33 @@
       const isBass = i === 0;
       const isTop = i === n - 1;
       // Stagger so the chord blooms open instead of a single hit
-      const stagger = soft ? i * 0.014 : i * 0.02;
+      const stagger = soft ? i * 0.012 : i * 0.02;
       const t0 = now + stagger;
       const noteDur = Math.max(0.12, dur - stagger * 0.5);
 
       const filter = c.createBiquadFilter();
       filter.type = 'lowpass';
+      // Soft previews need audible bass root (old 750Hz mud made V ≈ vii°)
       filter.frequency.value = isBass
         ? soft
-          ? 750
+          ? 1600
           : 950
         : isTop
           ? soft
             ? 4500
             : 5800
           : soft
-            ? 2600
+            ? 2800
             : 3400;
       filter.Q.value = 0.45;
 
       const gain = c.createGain();
       const peak =
-        (soft ? 0.1 : 0.13) * (isBass ? 1.2 : isTop ? 0.88 : 0.96) * (1 - i * 0.03);
-      const attack = soft ? 0.055 : isBass ? 0.028 : 0.02 + i * 0.005;
-      const release = soft ? 0.38 : 0.42;
+        (soft ? 0.12 : 0.13) *
+        (isBass ? (soft ? 1.9 : 1.2) : isTop ? 0.88 : 0.96) *
+        (1 - i * 0.03);
+      const attack = soft ? (isBass ? 0.02 : 0.04) : isBass ? 0.028 : 0.02 + i * 0.005;
+      const release = soft ? 0.42 : 0.42;
       gain.gain.setValueAtTime(0.0001, t0);
       gain.gain.linearRampToValueAtTime(peak, t0 + attack);
       const sustainEnd = Math.max(t0 + attack + 0.04, t0 + noteDur - release);
@@ -328,7 +356,8 @@
   /**
    * Play a sequence of chords (durations in beats @ bpm).
    * Overload: playSequence(chords, bpm, opts)
-   * opts: { loop, pulse, onStep, onEnd, onLoop }
+   * opts: { loop, pulse, onStep, onEnd, onLoop, startAt: { stepIndex, beatsIntoStep } }
+   * startAt — resume mid-sequence (used when resyncing after duration edits).
    */
   function playSequence(chords, bpm, onStep, onEnd, opts) {
     if (typeof onStep === 'object' && onStep !== null && onEnd == null) {
@@ -344,6 +373,9 @@
       return;
     }
 
+    // Live reference — loop boundaries re-read durations so length edits apply next pass
+    // (full place-preserving resync still needed mid-loop; see reschedule helpers in hl-playback).
+    const liveChords = chords;
     playing = true;
     loopMode = !!opts.loop;
     // Same rule as before: pulse if not disabled AND (looping or pulse requested)
@@ -351,13 +383,40 @@
     const bpmN = Number(bpm) || 120;
     let prevMidi = null;
 
-    const t0 = c.currentTime + 0.05;
+    let startIndex = 0;
+    let startBeatsInto = 0;
+    if (opts.startAt && liveChords.length) {
+      startIndex = Math.max(
+        0,
+        Math.min(liveChords.length - 1, opts.startAt.stepIndex | 0)
+      );
+      const stepB =
+        liveChords[startIndex].duration != null
+          ? Number(liveChords[startIndex].duration)
+          : 4;
+      startBeatsInto = Math.max(
+        0,
+        Math.min(Math.max(0.05, stepB - 0.05), Number(opts.startAt.beatsIntoStep) || 0)
+      );
+    }
+
+    // Logical t0 so getPlayhead.beatsElapsed matches absolute place in the loop
+    let beatsBefore = 0;
+    for (let i = 0; i < startIndex; i++) {
+      beatsBefore +=
+        liveChords[i].duration != null ? Number(liveChords[i].duration) : 4;
+    }
+    beatsBefore += startBeatsInto;
+    const now = c.currentTime + 0.03;
+    const logicalT0 = now - beatsToSeconds(beatsBefore, bpmN);
+
     transport = {
       bpm: bpmN,
       loop: loopMode,
-      t0: t0,
-      steps: buildSteps(chords, t0, bpmN),
-      len: chords.length,
+      t0: logicalT0,
+      steps: buildSteps(liveChords, logicalT0, bpmN),
+      len: liveChords.length,
+      chords: liveChords,
     };
 
     function endOnce() {
@@ -373,39 +432,53 @@
       });
     }
 
-    function scheduleStep(index, when) {
+    function scheduleStep(index, when, beatsAlreadyInto) {
       if (!playing) return;
+      const seq = (transport && transport.chords) || liveChords;
 
-      if (index >= chords.length) {
+      if (index >= seq.length) {
         if (loopMode) {
           if (opts.onLoop) opts.onLoop();
           prevMidi = null;
           const nextT0 = Math.max(when, ensure().currentTime + 0.02);
+          // Rebuild from latest chord list (durations may have changed)
+          const nextSeq = (transport && transport.chords) || liveChords;
           transport = {
             bpm: bpmN,
             loop: true,
             t0: nextT0,
-            steps: buildSteps(chords, nextT0, bpmN),
-            len: chords.length,
+            steps: buildSteps(nextSeq, nextT0, bpmN),
+            len: nextSeq.length,
+            chords: nextSeq,
           };
-          scheduleStep(0, nextT0);
+          scheduleStep(0, nextT0, 0);
           return;
         }
         endOnce();
         return;
       }
 
-      const ch = chords[index];
-      const beats = ch.duration != null ? Number(ch.duration) : 4;
-      const sec = beatsToSeconds(beats, bpmN);
+      const ch = seq[index];
+      const fullBeats = ch.duration != null ? Number(ch.duration) : 4;
+      const into =
+        beatsAlreadyInto > 0
+          ? Math.min(beatsAlreadyInto, Math.max(0, fullBeats - 0.05))
+          : 0;
+      const remainBeats = Math.max(0.05, fullBeats - into);
+      const sec = beatsToSeconds(remainBeats, bpmN);
 
       scheduleUi(when, () => {
         if (onStep) onStep(index, ch);
       });
-      if (pulseOn) schedulePulses(beats, bpmN, when);
+      if (pulseOn) schedulePulses(remainBeats, bpmN, when);
 
-      // Crossfade out previous voices just before this attack
-      if (index > 0 || (loopMode && transport && when > transport.t0 + 0.01)) {
+      // Crossfade: mid-step resume or step > 0, or loop wrap
+      const midResume = into > 0.01;
+      if (
+        index > 0 ||
+        midResume ||
+        (loopMode && transport && when > transport.t0 + 0.01)
+      ) {
         stopAllAt(when - 0.012, 0.03);
       }
 
@@ -423,13 +496,13 @@
       const wakeMs = Math.max(0, (nextWhen - 0.06 - ensure().currentTime) * 1000);
       playTimer = setTimeout(() => {
         if (!playing) return;
-        scheduleStep(index + 1, nextWhen);
+        scheduleStep(index + 1, nextWhen, 0);
       }, wakeMs);
     }
 
     // Clear anything still ringing from previews
     stopAll(0.04);
-    scheduleStep(0, t0);
+    scheduleStep(startIndex, now, startBeatsInto);
   }
 
   function stopPlayback() {

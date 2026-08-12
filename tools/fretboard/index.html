@@ -362,7 +362,7 @@
             <div class="center-panel lg:col-span-8 space-y-2 order-2 min-w-0">
                 <div id="coach-bar" class="coach-bar">
                     <i class="fa-solid fa-lightbulb text-amber-500"></i>
-                    <span><strong>Tips:</strong> <strong>Shift+click</strong> = shape capture (one pin per string) · DETECT = chord name · Next eye ⇄ morph · <kbd class="text-[10px]">?</kbd> help</span>
+                    <span><strong>Tips:</strong> <strong>Shift+click</strong> = chord shape · <strong>Shift+right-click</strong> = scale extras · DETECT applies separately · <kbd class="text-[10px]">?</kbd> help</span>
                     <button type="button" class="coach-dismiss chip" onclick="dismissCoachBar()" title="Hide tips">Got it</button>
                 </div>
                 <div id="help-panel" class="help-panel">
@@ -372,8 +372,9 @@
                         <li><strong>Current eye:</strong> show → mono morph (grey) → hide</li>
                         <li><strong>Shared tones</strong> stay lit during morph; exclusives pulse</li>
                         <li><strong>Path:</strong> Set path → click A then B · drag ends · Play path run</li>
-                        <li><strong>Shift+click</strong> = shape capture (white ring). One fretted note per string; click another fret on that string to move the pin. Detective follows frets.</li>
-                        <li><strong>DETECT panel</strong> chips = free detective; editing a chip unlinks from shape</li>
+                        <li><strong>Shift+click</strong> = chord shape (white ring). One fretted note per string.</li>
+                        <li><strong>Shift+right-click</strong> = scale extras (cyan ring). Any frets — melody / colour notes for scale detect.</li>
+                        <li><strong>DETECT</strong> Chord = shape only · Scale = shape + extras · chips = freehand</li>
                         <li><strong>Neck zoom:</strong> scroll = pan · Ctrl+scroll = zoom · drag fret numbers · double-click a note to centre · Reset in Display</li>
                         <li><strong>Keys:</strong> <kbd>←</kbd><kbd>→</kbd> step · <kbd>Space</kbd> play prog · <kbd>M</kbd> toggle pair morph · <kbd>P</kbd> set/clear path · <kbd>Esc</kbd> exit focus · <kbd>?</kbd> this help</li>
                     </ul>
@@ -392,7 +393,8 @@
                         <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full border-2" style="border-color:#EAB308"></span>Root ring</span>
                         <span class="flex items-center gap-1" title="Open string in both chords"><span class="inline-block w-5 h-0 border-t-2 border-dashed" style="border-image: repeating-linear-gradient(90deg,#EF4444 0 4px,#3B82F6 4px 8px) 1"></span>Open shared</span>
                         <span class="flex items-center gap-1"><span class="w-3.5 h-3.5 rounded-full text-[8px] font-bold text-white flex items-center justify-center leading-none" style="background:#F59E0B">1</span>Arp #</span>
-                        <span class="flex items-center gap-1" title="Shift+click frets to pin a shape"><span class="w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm bg-transparent" style="box-shadow:0 0 0 1px #94a3b8"></span> Shape pin</span>
+                        <span class="flex items-center gap-1" title="Shift+click · chord grip"><span class="w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm bg-transparent" style="box-shadow:0 0 0 1px #94a3b8"></span> Shape</span>
+                        <span class="flex items-center gap-1" title="Shift+right-click · scale extras"><span class="w-2.5 h-2.5 rounded-full border-2 shadow-sm bg-transparent" style="border-color:#22d3ee;box-shadow:0 0 0 1px #0891b2"></span> Extra</span>
                         <span id="shape-status" class="font-medium" style="color:#64748b"></span>
                         <span class="flex items-center gap-1" title="Next eye: show → pair morph → hide"><i class="fa-solid fa-right-left text-[9px]" style="color:#6366f1"></i> Next pair</span>
                         <span class="flex items-center gap-1" title="Current eye: show → mono morph → hide"><i class="fa-solid fa-right-left text-[9px]" style="color:#64748b"></i> Cur mono</span>
@@ -540,12 +542,13 @@
                         <button type="button" id="detect-mode-chord" class="flex-1 text-[10px] px-2 py-1.5 rounded-xl border font-semibold" onclick="setDetectMode('chord')">Chord</button>
                         <button type="button" id="detect-mode-scale" class="flex-1 text-[10px] px-2 py-1.5 rounded-xl border font-semibold" onclick="setDetectMode('scale')">Scale</button>
                     </div>
-                    <div class="text-[10px] mb-1.5" style="color:var(--text-muted)" id="detect-hint">Panel chips = detective · Shift+click frets = shape capture</div>
+                    <div class="text-[10px] mb-1.5" style="color:var(--text-muted)" id="detect-hint">Shift+click = chord shape (1/string) · Shift+right-click = scale extras</div>
                     <div class="flex flex-wrap gap-1 mb-2">
-                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="seedDetectFromPair()" title="Notes from current + next chords (clears shape pins)">From pair</button>
-                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="seedDetectFromProgression()" title="Notes from all progression chords (clears shape pins)">From progression</button>
-                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="clearShapePins()" title="Clear white rings on the board">Clear shape</button>
-                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="clearDetectNotes()" title="Clear detective chips + shape pins">Clear all</button>
+                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="seedDetectFromPair()" title="Notes from current + next chords (clears shape + extras)">From pair</button>
+                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="seedDetectFromProgression()" title="Notes from all progression chords (clears shape + extras)">From progression</button>
+                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="clearShapePins()" title="Clear white shape rings">Clear shape</button>
+                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="clearExtraPins()" title="Clear cyan scale-extra frets">Clear extras</button>
+                        <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="clearDetectNotes()" title="Clear shape, extras, and chips">Clear all</button>
                     </div>
                     <div class="flex flex-wrap gap-1 mb-2" id="detect-note-chips"></div>
                     <div id="detect-root-pin-wrap" class="mb-2 hidden">
@@ -555,7 +558,11 @@
                         </select>
                     </div>
                     <div id="detect-results" class="text-[11px] space-y-1 min-h-[2rem] max-h-48 overflow-y-auto" style="color:var(--text-muted)"></div>
-                    <button type="button" id="detect-apply-btn" class="mt-2 w-full chip text-xs py-1.5 rounded-xl font-medium" onclick="applyBestDetect()">Apply best to focused chord</button>
+                    <div class="mt-2 flex flex-col gap-1.5">
+                        <button type="button" id="detect-apply-chord-btn" class="w-full chip text-xs py-1.5 rounded-xl font-medium" onclick="applyBestChordDetect()" title="Uses shape pins only (or freehand chips)">Apply as chord · focused slot</button>
+                        <button type="button" id="detect-apply-scale-btn" class="w-full chip text-xs py-1.5 rounded-xl font-medium" onclick="applyBestScaleDetect()" title="Uses shape + scale extras (or freehand chips)">Apply as scale / key</button>
+                        <button type="button" id="detect-apply-btn" class="w-full chip text-xs py-1.5 rounded-xl font-medium hidden" onclick="applyBestDetect()">Apply best</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -892,11 +899,14 @@
     let detectMode = 'chord'; // 'chord' | 'scale'
     let detectNotesDirty = false; // true after manual chip edits (unlinked from shape)
     let detectRootPin = null; // null = auto, or 0–11 to force that mode root
-    // Shape capture: fretted positions on the board (white rings); detective follows while linked
+    // Shape capture: fretted positions on the board (white rings); chord detective uses these
     // One pin per string (chord grip) — Map keyed by string index
     let shapePins = new Map(); // key string index s → { s, f, pc, n }
-    let shapeLinked = false;   // true → detectNotes rebuilt from pins
+    let shapeLinked = false;   // true → chips follow shape for display
     let shapePinSeq = 0;
+    // Scale extras: Shift+right-click frets (cyan rings). Any string/fret; multiple per string OK.
+    // Key `${s}:${f}` → { s, f, pc }
+    let extraPins = new Map();
     let audioVolume = 0.55, audioOctaveShift = 1;
     let audioPattern = 'strum';
     let audioTempo = 90;
@@ -1096,40 +1106,57 @@
      * Drops pins if the string no longer exists or that PC is unreachable (shouldn't happen in 0–24).
      */
     function relocateShapePinsAfterTuningChange(prevOpenMidi) {
-        if (!shapePins.size) return;
-        const next = new Map();
-        shapePins.forEach((p, sKey) => {
-            const s = p.s != null ? p.s : +sKey;
-            if (s < 0 || s >= numStrings()) return;
-            // Note the player captured under the previous tuning
-            let wantPc = p.pc;
-            if (prevOpenMidi && prevOpenMidi[s] != null && p.f != null) {
-                wantPc = ((((prevOpenMidi[s] + p.f) % 12) + 12) % 12);
-            }
-            wantPc = ((wantPc % 12) + 12) % 12;
-            const nf = findFretForPcOnString(s, wantPc, p.f);
-            if (nf == null) return;
-            const npc = ((((openMidi[s] + nf) % 12) + 12) % 12);
-            next.set(s, { s, f: nf, pc: npc, n: p.n });
-        });
-        shapePins = next;
         if (shapePins.size) {
-            // Rebuild detective from new frets if still following shape (or re-link when pins remain)
+            const next = new Map();
+            shapePins.forEach((p, sKey) => {
+                const s = p.s != null ? p.s : +sKey;
+                if (s < 0 || s >= numStrings()) return;
+                let wantPc = p.pc;
+                if (prevOpenMidi && prevOpenMidi[s] != null && p.f != null) {
+                    wantPc = ((((prevOpenMidi[s] + p.f) % 12) + 12) % 12);
+                }
+                wantPc = ((wantPc % 12) + 12) % 12;
+                const nf = findFretForPcOnString(s, wantPc, p.f);
+                if (nf == null) return;
+                const npc = ((((openMidi[s] + nf) % 12) + 12) % 12);
+                next.set(s, { s, f: nf, pc: npc, n: p.n });
+            });
+            shapePins = next;
+        }
+        if (extraPins.size) {
+            const nextE = new Map();
+            extraPins.forEach((p) => {
+                const s = p.s;
+                if (s < 0 || s >= numStrings()) return;
+                let wantPc = p.pc;
+                if (prevOpenMidi && prevOpenMidi[s] != null && p.f != null) {
+                    wantPc = ((((prevOpenMidi[s] + p.f) % 12) + 12) % 12);
+                }
+                wantPc = ((wantPc % 12) + 12) % 12;
+                const nf = findFretForPcOnString(s, wantPc, p.f);
+                if (nf == null) return;
+                const npc = ((((openMidi[s] + nf) % 12) + 12) % 12);
+                nextE.set(s + ':' + nf, { s, f: nf, pc: npc });
+            });
+            extraPins = nextE;
+        }
+        if (shapePins.size) {
             if (shapeLinked || !detectNotesDirty) syncDetectFromShapePins();
-            else {
-                // Unlinked: still update stored pc on pins for drawing consistency
-                updateShapeStatus();
-            }
+            else refreshDetectUI();
         } else {
             shapeLinked = false;
-            updateShapeStatus();
-            updateDetectLinkUI();
+            refreshDetectUI();
         }
     }
 
-    /** Don't overwrite detective while shape pins exist or user edited freehand */
+    /** Don't auto-seed while shape/extras exist or user edited freehand */
     function canAutoSeedDetect() {
-        return !detectNotesDirty && !shapeLinked && shapePins.size === 0;
+        return (
+            !detectNotesDirty &&
+            !shapeLinked &&
+            shapePins.size === 0 &&
+            extraPins.size === 0
+        );
     }
 
     function clearShapePinsOnly() {
@@ -1140,12 +1167,68 @@
         updateDetectLinkUI();
     }
 
-    function syncDetectFromShapePins() {
+    function clearExtraPinsOnly() {
+        extraPins.clear();
+        updateShapeStatus();
+        updateDetectLinkUI();
+    }
+
+    /** Pitch classes from chord shape pins only */
+    function pcsFromShape() {
         const notes = new Set();
-        shapePins.forEach(p => notes.add(p.pc));
+        shapePins.forEach((p) => notes.add(((p.pc % 12) + 12) % 12));
+        return notes;
+    }
+
+    /** Pitch classes from scale extras only */
+    function pcsFromExtras() {
+        const notes = new Set();
+        extraPins.forEach((p) => notes.add(((p.pc % 12) + 12) % 12));
+        return notes;
+    }
+
+    /**
+     * Chord detective set: shape grip if any, else freehand chips.
+     * Never includes scale extras (keeps chord finder pure).
+     */
+    function getChordDetectPcs() {
+        if (shapePins.size) return pcsFromShape();
+        return new Set(
+            [...detectNotes].map((n) => ((n % 12) + 12) % 12)
+        );
+    }
+
+    /**
+     * Scale detective set: shape ∪ extras; freehand chips if no pins.
+     */
+    function getScaleDetectPcs() {
+        const notes = new Set();
+        pcsFromShape().forEach((n) => notes.add(n));
+        pcsFromExtras().forEach((n) => notes.add(n));
+        if (notes.size === 0) {
+            detectNotes.forEach((n) => notes.add(((n % 12) + 12) % 12));
+        } else if (detectNotesDirty && !shapeLinked) {
+            // Freehand chip edits can add colour on top of frets
+            detectNotes.forEach((n) => notes.add(((n % 12) + 12) % 12));
+        }
+        return notes;
+    }
+
+    /** Chip UI highlight set for current mode */
+    function getChipDisplayPcs() {
+        return detectMode === 'scale' ? getScaleDetectPcs() : getChordDetectPcs();
+    }
+
+    function syncDetectFromShapePins() {
+        // Chips mirror shape for display while linked; chord/scale engines read pins directly
+        const notes = pcsFromShape();
         detectNotes = notes;
         detectNotesDirty = false;
         shapeLinked = shapePins.size > 0;
+        refreshDetectUI();
+    }
+
+    function refreshDetectUI() {
         updateShapeStatus();
         updateDetectLinkUI();
         renderDetectChips();
@@ -1161,10 +1244,8 @@
     function toggleShapePin(s, f) {
         const existing = shapePins.get(s);
         if (existing && existing.f === f) {
-            // Toggle off this fretted spot
             shapePins.delete(s);
         } else if (existing) {
-            // Move pin along the same string (replaces impossible multi-fret grip)
             const pc = ((tuning[s] + f) % 12 + 12) % 12;
             shapePins.set(s, { s, f, pc, n: existing.n });
         } else {
@@ -1172,20 +1253,60 @@
             shapePinSeq++;
             shapePins.set(s, { s, f, pc, n: shapePinSeq });
         }
-        // Detective rebuilds from pins only (resets free-hand set while linked)
+        // Remove overlapping extra on same fret (shape owns the grip)
+        const ek = s + ':' + f;
+        if (extraPins.has(ek)) extraPins.delete(ek);
         syncDetectFromShapePins();
+        if (ctx && layout && layout.stringYs) drawFretboard();
+    }
+
+    /**
+     * Shift+right-click: scale extra frets (any string, multi frets OK).
+     * Toggles cyan ring; feeds scale detect only (not chord).
+     */
+    function toggleExtraPin(s, f) {
+        const key = s + ':' + f;
+        if (extraPins.has(key)) {
+            extraPins.delete(key);
+        } else {
+            // Don't double-stack on an existing shape pin — promote clarity
+            const shape = shapePins.get(s);
+            if (shape && shape.f === f) {
+                // Already in shape; keep as shape only
+                refreshDetectUI();
+                if (ctx && layout && layout.stringYs) drawFretboard();
+                return;
+            }
+            const pc = ((tuning[s] + f) % 12 + 12) % 12;
+            extraPins.set(key, { s, f, pc });
+        }
+        // Show scale results when extras appear
+        if (extraPins.size && detectMode !== 'scale') {
+            // Soft hint — stay on chord mode if user wants, but refresh scale status
+        }
+        refreshDetectUI();
         if (ctx && layout && layout.stringYs) drawFretboard();
     }
 
     function clearShapePins() {
         clearShapePinsOnly();
-        // If we were linked, clear detective too; free-hand chips stay if already unlinked empty pins
-        detectNotes = new Set();
-        detectNotesDirty = true;
-        detectRootPin = null;
-        renderDetectChips();
-        renderDetectRootPin();
-        renderDetectResults();
+        // Keep extras; only clear freehand if it was following shape
+        if (!extraPins.size) {
+            detectNotes = new Set();
+            detectNotesDirty = true;
+            detectRootPin = null;
+        } else {
+            detectNotes = pcsFromExtras();
+            detectNotesDirty = false;
+            shapeLinked = false;
+        }
+        refreshDetectUI();
+        if (ctx && layout && layout.stringYs) drawFretboard();
+    }
+
+    function clearExtraPins() {
+        clearExtraPinsOnly();
+        refreshDetectUI();
         if (ctx && layout && layout.stringYs) drawFretboard();
     }
 
@@ -1201,11 +1322,11 @@
         const badge = document.getElementById('detect-link-badge');
         const hint = document.getElementById('detect-hint');
         if (badge) {
-            if (shapeLinked && shapePins.size) {
-                badge.textContent = 'Following shape';
-                badge.classList.remove('hidden');
-            } else if (shapePins.size && !shapeLinked) {
-                badge.textContent = 'Shape unlinked';
+            const parts = [];
+            if (shapePins.size) parts.push(shapeLinked ? 'Shape' : 'Shape unlinked');
+            if (extraPins.size) parts.push('+' + extraPins.size + ' extras');
+            if (parts.length) {
+                badge.textContent = parts.join(' · ');
                 badge.classList.remove('hidden');
             } else {
                 badge.textContent = '';
@@ -1213,14 +1334,15 @@
             }
         }
         if (hint) {
-            if (shapeLinked && shapePins.size) {
-                hint.textContent = detectMode === 'scale'
-                    ? 'Shape capture → scale matches from fretted notes. Pin a root optional.'
-                    : 'Shape capture → detective follows white rings on the board.';
+            if (shapePins.size || extraPins.size) {
+                hint.textContent =
+                    'Shift+click = chord shape · Shift+right-click = scale extras · Apply chord / scale separately';
             } else if (detectMode === 'scale') {
-                hint.textContent = 'Notes → each matching mode is listed. Pin a root to force e.g. B major.';
+                hint.textContent =
+                    'Shift+right-click frets (or chips) for scale · pin mode root optional';
             } else {
-                hint.textContent = 'Panel chips = detective · Shift+click frets = shape capture';
+                hint.textContent =
+                    'Shift+click frets for chord shape · chips = freehand · Shift+right-click adds scale extras';
             }
         }
     }
@@ -1228,54 +1350,82 @@
     function updateShapeStatus() {
         const el = document.getElementById('shape-status');
         if (!el) return;
-        if (!shapePins.size) {
+        if (!shapePins.size && !extraPins.size) {
             el.textContent = '';
             return;
         }
-        const pcs = [...new Set([...shapePins.values()].map(p => p.pc))];
-        const names = pcs.map(pc => getNoteName(pc)).join(' ');
-        let guess = '';
-        if (detectMode === 'chord' && pcs.length >= 2) {
-            const hits = analyzePitchSet(new Set(pcs));
-            if (hits[0]) guess = ' → ' + getNoteName(hits[0].root) + ' ' + hits[0].name;
-        } else if (detectMode === 'scale' && pcs.length >= 3) {
-            const hits = analyzeScaleSet(new Set(pcs));
-            if (hits[0]) guess = ' → ' + getNoteName(hits[0].root) + ' ' + hits[0].scaleName;
+        const shapePcs = [...pcsFromShape()];
+        const names = shapePcs.map((pc) => getNoteName(pc)).join(' ');
+        let chordGuess = '';
+        if (shapePcs.length >= 2) {
+            const hits = analyzePitchSet(new Set(shapePcs));
+            if (hits[0]) {
+                chordGuess =
+                    ' → ' + getNoteName(hits[0].root) + ' ' + hits[0].name;
+            }
         }
-        const link = shapeLinked ? 'linked' : 'unlinked';
-        el.textContent = `Shape ${shapePins.size} frets · ${names}${guess} · ${link}`;
+        let scaleGuess = '';
+        const scalePcs = getScaleDetectPcs();
+        if (scalePcs.size >= 3) {
+            const hits = analyzeScaleSet(scalePcs);
+            if (hits[0]) {
+                scaleGuess =
+                    ' · scale ' +
+                    getNoteName(hits[0].root) +
+                    ' ' +
+                    hits[0].scaleName;
+            }
+        }
+        const ex =
+            extraPins.size > 0 ? ' · +' + extraPins.size + ' extras' : '';
+        el.textContent =
+            (shapePins.size
+                ? 'Shape ' + shapePins.size + ' · ' + names + chordGuess
+                : 'No shape') +
+            ex +
+            scaleGuess;
     }
 
     function drawShapePins(ctx, isDark) {
         if (!shapePins.size || !layout.stringYs) return;
-        shapePins.forEach(p => {
-            const x = p.f === 0 && layout.startFret === 0 ? layout.nutX - 16 : getXForFret(p.f);
+        shapePins.forEach((p) => {
+            const x =
+                p.f === 0 && layout.startFret === 0
+                    ? layout.nutX - 16
+                    : getXForFret(p.f);
             const y = getYForString(p.s);
-            if (x == null || x < 0 || y == null || !isFinite(x) || !isFinite(y)) return;
+            if (x == null || x < 0 || y == null || !isFinite(x) || !isFinite(y))
+                return;
             const r = 16;
-            // Soft outer halo
             ctx.beginPath();
             ctx.arc(x, y, r + 2, 0, Math.PI * 2);
-            ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.55)';
+            ctx.strokeStyle = isDark
+                ? 'rgba(255,255,255,0.2)'
+                : 'rgba(255,255,255,0.55)';
             ctx.lineWidth = 4;
             ctx.stroke();
-            // White hollow ring — shape fingerprint
             ctx.beginPath();
             ctx.arc(x, y, r, 0, Math.PI * 2);
-            ctx.strokeStyle = isDark ? 'rgba(248,250,252,0.95)' : 'rgba(255,255,255,0.98)';
+            ctx.strokeStyle = isDark
+                ? 'rgba(248,250,252,0.95)'
+                : 'rgba(255,255,255,0.98)';
             ctx.lineWidth = 2.75;
             ctx.stroke();
             ctx.beginPath();
             ctx.arc(x, y, r, 0, Math.PI * 2);
-            ctx.strokeStyle = isDark ? 'rgba(15,23,42,0.65)' : 'rgba(15,23,42,0.35)';
+            ctx.strokeStyle = isDark
+                ? 'rgba(15,23,42,0.65)'
+                : 'rgba(15,23,42,0.35)';
             ctx.lineWidth = 1;
             ctx.stroke();
-            // Small order number
             if (p.n != null) {
-                const bx = x + 11, by = y + 11;
+                const bx = x + 11,
+                    by = y + 11;
                 ctx.beginPath();
                 ctx.arc(bx, by, 7, 0, Math.PI * 2);
-                ctx.fillStyle = isDark ? 'rgba(248,250,252,0.95)' : 'rgba(255,255,255,0.95)';
+                ctx.fillStyle = isDark
+                    ? 'rgba(248,250,252,0.95)'
+                    : 'rgba(255,255,255,0.95)';
                 ctx.fill();
                 ctx.strokeStyle = isDark ? '#64748b' : '#94a3b8';
                 ctx.lineWidth = 1;
@@ -1289,49 +1439,77 @@
         });
     }
 
+    /** Cyan rings for scale-extra frets (Shift+right-click) */
+    function drawExtraPins(ctx, isDark) {
+        if (!extraPins.size || !layout.stringYs) return;
+        extraPins.forEach((p) => {
+            const x =
+                p.f === 0 && layout.startFret === 0
+                    ? layout.nutX - 16
+                    : getXForFret(p.f);
+            const y = getYForString(p.s);
+            if (x == null || x < 0 || y == null || !isFinite(x) || !isFinite(y))
+                return;
+            const r = 13;
+            ctx.beginPath();
+            ctx.arc(x, y, r + 2, 0, Math.PI * 2);
+            ctx.strokeStyle = isDark
+                ? 'rgba(34,211,238,0.25)'
+                : 'rgba(6,182,212,0.3)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.strokeStyle = isDark
+                ? 'rgba(34,211,238,0.95)'
+                : 'rgba(8,145,178,0.95)';
+            ctx.lineWidth = 2.4;
+            ctx.setLineDash([3.5, 2.5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        });
+    }
+
     function seedDetectFromPair() {
         clearShapePinsOnly();
+        clearExtraPinsOnly();
         const notes = new Set();
-        pitchSetFromSlot(currentSlot()).forEach(n => notes.add(n));
+        pitchSetFromSlot(currentSlot()).forEach((n) => notes.add(n));
         if (progression.length > 1) {
-            pitchSetFromSlot(nextSlot()).forEach(n => notes.add(n));
+            pitchSetFromSlot(nextSlot()).forEach((n) => notes.add(n));
         }
         detectNotes = notes;
         detectNotesDirty = false;
-        renderDetectChips();
-        renderDetectRootPin();
-        renderDetectResults();
-        updateDetectLinkUI();
+        refreshDetectUI();
         if (ctx && layout && layout.stringYs) drawFretboard();
     }
 
     function seedDetectFromProgression() {
         clearShapePinsOnly();
+        clearExtraPinsOnly();
         const notes = new Set();
-        progression.forEach(slot => {
+        progression.forEach((slot) => {
             if (slot.visible === false) return;
-            pitchSetFromSlot(slot).forEach(n => notes.add(n));
+            pitchSetFromSlot(slot).forEach((n) => notes.add(n));
         });
         if (!notes.size) {
-            progression.forEach(slot => pitchSetFromSlot(slot).forEach(n => notes.add(n)));
+            progression.forEach((slot) =>
+                pitchSetFromSlot(slot).forEach((n) => notes.add(n))
+            );
         }
         detectNotes = notes;
         detectNotesDirty = false;
-        renderDetectChips();
-        renderDetectRootPin();
-        renderDetectResults();
-        updateDetectLinkUI();
+        refreshDetectUI();
         if (ctx && layout && layout.stringYs) drawFretboard();
     }
 
     function clearDetectNotes() {
         clearShapePinsOnly();
+        clearExtraPinsOnly();
         detectNotes = new Set();
         detectNotesDirty = true;
         detectRootPin = null;
-        renderDetectChips();
-        renderDetectRootPin();
-        renderDetectResults();
+        refreshDetectUI();
         if (ctx && layout && layout.stringYs) drawFretboard();
     }
 
@@ -1339,28 +1517,23 @@
         detectMode = mode === 'scale' ? 'scale' : 'chord';
         const chordBtn = document.getElementById('detect-mode-chord');
         const scaleBtn = document.getElementById('detect-mode-scale');
-        const applyBtn = document.getElementById('detect-apply-btn');
         const on = 'bg-indigo-100 text-indigo-800 border-indigo-400';
         const off = 'chip';
         if (chordBtn && scaleBtn) {
             chordBtn.className = `flex-1 text-[10px] px-2 py-1.5 rounded-xl border font-semibold ${detectMode === 'chord' ? on : off}`;
             scaleBtn.className = `flex-1 text-[10px] px-2 py-1.5 rounded-xl border font-semibold ${detectMode === 'scale' ? on : off}`;
         }
-        if (applyBtn) {
-            applyBtn.textContent = detectMode === 'scale'
-                ? 'Apply best as Scale / Key'
-                : 'Apply best to focused chord';
-        }
         const pinWrap = document.getElementById('detect-root-pin-wrap');
         if (pinWrap) pinWrap.classList.toggle('hidden', detectMode !== 'scale');
-        // Scale mode seeds from the active pair unless user already edited or shape-linked
-        if (detectMode === 'scale' && !detectNotesDirty && !shapeLinked) seedDetectFromPair();
-        else {
-            renderDetectChips();
-            renderDetectRootPin();
-            renderDetectResults();
-            updateDetectLinkUI();
-            updateShapeStatus();
+        // Don't wipe frets when switching modes
+        if (
+            detectMode === 'scale' &&
+            canAutoSeedDetect() &&
+            getScaleDetectPcs().size < 3
+        ) {
+            seedDetectFromPair();
+        } else {
+            refreshDetectUI();
         }
     }
 
@@ -1376,7 +1549,7 @@
         if (!sel) return;
         const prev = detectRootPin;
         sel.innerHTML = '<option value="">Auto (prefer major / minor)</option>';
-        const notes = [...detectNotes].sort((a, b) => a - b);
+        const notes = [...getScaleDetectPcs()].sort((a, b) => a - b);
         notes.forEach(n => {
             const o = document.createElement('option');
             o.value = n;
@@ -2946,23 +3119,38 @@
         const c = document.getElementById('detect-note-chips');
         if (!c) return;
         c.innerHTML = '';
+        const onSet = getChipDisplayPcs();
+        const shapeSet = pcsFromShape();
+        const extraSet = pcsFromExtras();
         for (let i = 0; i < 12; i++) {
             const chip = document.createElement('button');
             chip.type = 'button';
-            chip.className = `note-chip ${detectNotes.has(i) ? 'on' : ''}`;
+            let cls = 'note-chip';
+            if (onSet.has(i)) cls += ' on';
+            if (shapeSet.has(i)) cls += ' root-pick'; // reuse yellow outline for shape tones
+            chip.className = cls;
             chip.textContent = getNoteName(i);
-            chip.title = shapeLinked
-                ? 'Edit unlinks detective from shape pins (white rings stay)'
-                : 'Toggle pitch in detective';
+            const tags = [];
+            if (shapeSet.has(i)) tags.push('shape');
+            if (extraSet.has(i)) tags.push('extra');
+            chip.title = tags.length
+                ? tags.join('+') + ' · click to freehand-edit (unlinks shape follow)'
+                : 'Toggle freehand pitch';
             chip.onclick = () => {
-                // Manual chip edit = free detective; pins remain as unlinked ghosts
                 if (shapeLinked) unlinkShapeFromDetective();
-                if (detectNotes.has(i)) detectNotes.delete(i); else detectNotes.add(i);
+                if (detectNotes.has(i)) detectNotes.delete(i);
+                else detectNotes.add(i);
                 detectNotesDirty = true;
-                renderDetectChips();
-                renderDetectRootPin();
-                renderDetectResults();
-                updateShapeStatus();
+                // Seed freehand from current sets if empty
+                if (!detectNotes.size) {
+                    getChordDetectPcs().forEach((n) => detectNotes.add(n));
+                    if (detectMode === 'scale') {
+                        getScaleDetectPcs().forEach((n) => detectNotes.add(n));
+                    }
+                    if (detectNotes.has(i)) detectNotes.delete(i);
+                    else detectNotes.add(i);
+                }
+                refreshDetectUI();
             };
             c.appendChild(chip);
         }
@@ -2973,52 +3161,74 @@
         const box = document.getElementById('detect-results');
         if (!box) return;
 
-        if (detectMode === 'scale') {
-            const hits = analyzeScaleSet(detectNotes);
-            if (detectNotes.size < 3) {
-                box.innerHTML = '<span>Select 3+ notes (or From pair)</span>';
-                return;
-            }
-            if (!hits.length) {
-                box.innerHTML = '<span class="text-amber-600 font-medium">No scale match — add/remove notes or clear root pin</span>';
-                return;
-            }
-            // Each mode is its own clickable row (no buried “also”)
-            box.innerHTML = hits.map((h, i) => {
-                const tag = h.exact ? 'exact' : (h.subset ? 'covers picks' : 'fuzzy');
-                const home = h.namePref >= 95 ? ' · home' : '';
-                return `<button type="button" class="block w-full text-left px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 ${i===0?'font-semibold text-indigo-600':''}" data-i="${i}">
+        // Always show both engines when enough data (scale section secondary if in chord mode)
+        const chordPcs = getChordDetectPcs();
+        const scalePcs = getScaleDetectPcs();
+        const chordHits = chordPcs.size >= 2 ? analyzePitchSet(chordPcs) : [];
+        const scaleHits = scalePcs.size >= 3 ? analyzeScaleSet(scalePcs) : [];
+
+        let html = '';
+
+        // Chord block
+        html +=
+            '<div class="text-[9px] font-semibold uppercase tracking-wide mb-0.5 opacity-70">Chord (shape only)</div>';
+        if (chordPcs.size < 2) {
+            html +=
+                '<div class="mb-2 opacity-80">Shift+click 2+ frets for a grip…</div>';
+        } else if (!chordHits.length) {
+            html +=
+                '<div class="mb-2 text-amber-600 font-medium">No standard chord match</div>';
+        } else {
+            html += chordHits
+                .slice(0, 4)
+                .map(
+                    (h, i) =>
+                        `<button type="button" class="block w-full text-left px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 ${i === 0 && detectMode === 'chord' ? 'font-semibold text-indigo-600' : ''}" data-kind="chord" data-i="${i}">
+                ${getNoteName(h.root)} ${h.name}${h.exact ? '' : ' · fuzzy'}
+            </button>`
+                )
+                .join('');
+            html += '<div class="mb-2"></div>';
+        }
+
+        // Scale block
+        html +=
+            '<div class="text-[9px] font-semibold uppercase tracking-wide mb-0.5 opacity-70">Scale (shape + extras)</div>';
+        if (scalePcs.size < 3) {
+            html +=
+                '<div class="opacity-80">Need 3+ pitch classes · Shift+right-click frets for extras</div>';
+        } else if (!scaleHits.length) {
+            html +=
+                '<div class="text-amber-600 font-medium">No scale match — add extras or pin a mode root</div>';
+        } else {
+            html += scaleHits
+                .slice(0, 6)
+                .map((h, i) => {
+                    const tag = h.exact
+                        ? 'exact'
+                        : h.subset
+                          ? 'covers picks'
+                          : 'fuzzy';
+                    const home = h.namePref >= 95 ? ' · home' : '';
+                    return `<button type="button" class="block w-full text-left px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 ${i === 0 && detectMode === 'scale' ? 'font-semibold text-indigo-600' : ''}" data-kind="scale" data-i="${i}">
                     ${getNoteName(h.root)} ${h.scaleName}
                     <span class="text-[9px] font-normal opacity-70"> · ${tag}${home}</span>
                 </button>`;
-            }).join('');
-            box.querySelectorAll('button').forEach(btn => {
-                btn.onclick = () => applyScaleDetect(hits[+btn.dataset.i]);
-            });
-            return;
+                })
+                .join('');
         }
 
-        // Chord mode
-        const hits = analyzePitchSet(detectNotes);
-        if (detectNotes.size < 2) {
-            box.innerHTML = '<span>Select 2+ notes (or From pair)</span>';
-            return;
-        }
-        if (!hits.length) {
-            box.innerHTML = '<span class="text-amber-600 font-medium">No standard match → use Custom</span>';
-            return;
-        }
-        box.innerHTML = hits.map((h, i) =>
-            `<button type="button" class="block w-full text-left px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 ${i===0?'font-semibold text-indigo-600':''}" data-i="${i}">
-                ${getNoteName(h.root)} ${h.name}${h.exact?'':' · fuzzy'}
-            </button>`
-        ).join('');
-        box.querySelectorAll('button').forEach(btn => {
-            btn.onclick = () => applyChordDetect(hits[+btn.dataset.i]);
+        box.innerHTML = html;
+        box.querySelectorAll('button[data-kind="chord"]').forEach((btn) => {
+            btn.onclick = () => applyChordDetect(chordHits[+btn.dataset.i]);
+        });
+        box.querySelectorAll('button[data-kind="scale"]').forEach((btn) => {
+            btn.onclick = () => applyScaleDetect(scaleHits[+btn.dataset.i]);
         });
     }
 
     function applyChordDetect(h) {
+        if (!h) return;
         const slot = currentSlot();
         slot.mode = 'named';
         slot.root = h.root;
@@ -3038,21 +3248,27 @@
         updateFretboard();
     }
 
-    function applyBestDetect() {
-        if (detectMode === 'scale') {
-            const hits = analyzeScaleSet(detectNotes);
-            if (hits[0]) applyScaleDetect(hits[0]);
-            return;
-        }
-        const hits = analyzePitchSet(detectNotes);
+    function applyBestChordDetect() {
+        const pcs = getChordDetectPcs();
+        const hits = analyzePitchSet(pcs);
         if (hits[0]) applyChordDetect(hits[0]);
-        else {
+        else if (pcs.size >= 2) {
             const slot = currentSlot();
             slot.mode = 'custom';
-            slot.customNotes = [...detectNotes];
-            slot.customRoot = [...detectNotes][0] ?? 0;
+            slot.customNotes = [...pcs];
+            slot.customRoot = [...pcs][0] ?? 0;
             updateFretboard();
         }
+    }
+
+    function applyBestScaleDetect() {
+        const hits = analyzeScaleSet(getScaleDetectPcs());
+        if (hits[0]) applyScaleDetect(hits[0]);
+    }
+
+    function applyBestDetect() {
+        if (detectMode === 'scale') applyBestScaleDetect();
+        else applyBestChordDetect();
     }
 
     // ——— Progression UI E ———
@@ -4102,8 +4318,9 @@
 
         // Spotlight dims off-path frets/notes; beam keeps corridor bright
         if (pathIsActive()) applyPathSpotlight(isDark);
-        // Shape capture rings stay bright on top of veil
+        // Shape (chord) + extra (scale) rings stay bright on top of veil
         drawShapePins(ctx, isDark);
+        drawExtraPins(ctx, isDark);
         // Arp order badges + A/B handles on top of the veil
         drawPathArpOrderNumbers(ctx, isDark);
         drawPathHandles(ctx, isDark);
@@ -4743,6 +4960,21 @@
                 playFret(hit.s, hit.f);
             }
         });
+        // Shift+right-click = scale extras (prevent browser menu)
+        canvas.addEventListener('contextmenu', (e) => {
+            if (!e.shiftKey) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (pathDragMoved) {
+                pathDragMoved = false;
+                return;
+            }
+            const rect = canvas.getBoundingClientRect();
+            const hit = hitTestFret(e.clientX - rect.left, e.clientY - rect.top);
+            if (!hit) return;
+            toggleExtraPin(hit.s, hit.f);
+            playFret(hit.s, hit.f);
+        });
 
         let resizeTimer = null;
         window.addEventListener('resize', () => {
@@ -4844,10 +5076,29 @@
     function applyChordsFromSession(chords, meta) {
         meta = meta || {};
         if (!window.IHSession || !chords || !chords.length) return false;
-        const slots = IHSession.chordsToFretboardSlots(chords, newSlot, chordTypes);
+        // Hard cap matches addSlot (max 8) — never inflate past the UI limit
+        let list = chords;
+        let clipNote = '';
+        if (IHSession.clipForFretboard) {
+            const clip = IHSession.clipForFretboard(chords, { focus: meta.focus });
+            list = clip.chords;
+            if (clip.truncated) {
+                clipNote = IHSession.fretboardClipMessage
+                    ? IHSession.fretboardClipMessage(clip)
+                    : 'Max 8 chords · truncated from ' + clip.total;
+            }
+        } else if (list.length > 8) {
+            list = list.slice(0, 8);
+            clipNote = 'Max 8 chords · truncated from ' + chords.length;
+        }
+        const slots = IHSession.chordsToFretboardSlots(list, newSlot, chordTypes);
         if (!slots.length) return false;
         progression = slots;
         progressionFocus = Math.max(0, Math.min(progression.length - 1, +(meta.focus || 0)));
+        if (clipNote) {
+            setIhSyncStatus(clipNote);
+            setInstanceStatus(clipNote, true);
+        }
         if (meta.key && meta.key.tonic != null) {
             scaleRoot = ((+meta.key.tonic % 12) + 12) % 12;
             const mode = meta.key.mode || 'minor';
@@ -5039,8 +5290,12 @@
     window.seedDetectFromProgression = seedDetectFromProgression;
     window.clearDetectNotes = clearDetectNotes;
     window.clearShapePins = clearShapePins;
+    window.clearExtraPins = clearExtraPins;
     window.toggleShapePin = toggleShapePin;
+    window.toggleExtraPin = toggleExtraPin;
     window.applyBestDetect = applyBestDetect;
+    window.applyBestChordDetect = applyBestChordDetect;
+    window.applyBestScaleDetect = applyBestScaleDetect;
     window.onDetectRootPinChange = onDetectRootPinChange;
     window.saveInstance = saveInstance;
     window.loadSelectedInstance = loadSelectedInstance;

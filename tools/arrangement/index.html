@@ -73,10 +73,139 @@
     .btn:hover { border-color: var(--gold); color: var(--gold2); }
     .btn.primary { background: linear-gradient(135deg, #3a2218, #241610); border-color: #8a4535; color: #f0cfc4; }
     .btn.ghost { background: transparent; font-weight: 500; }
-    main { display: grid; grid-template-columns: minmax(220px, 280px) 1fr; min-height: 0; overflow: hidden; }
-    @media (max-width: 800px) { main { grid-template-columns: 1fr; overflow: auto; } }
+    main { display: grid; grid-template-columns: minmax(240px, 300px) 1fr; min-height: 0; overflow: hidden; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; overflow: auto; } }
     .col { min-height: 0; overflow: auto; padding: 0.75rem; border-right: 1px solid var(--line); background: var(--panel); }
     .col:last-child { border-right: 0; }
+    .badge {
+      display: inline-block; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.03em;
+      padding: 0.1rem 0.35rem; border-radius: 99px; border: 1px solid var(--line); color: var(--muted);
+    }
+    .badge.ok { border-color: #3d6b4f; color: var(--ok); }
+    .badge.warn { border-color: #8a4535; color: #e8a090; }
+    .form-strip-wrap {
+      margin-top: 0.75rem; padding: 0.55rem; background: var(--elev); border: 1px solid var(--line); border-radius: 10px;
+    }
+    .form-strip {
+      display: flex; flex-wrap: nowrap; gap: 0.25rem; overflow-x: auto; padding-bottom: 0.25rem;
+      min-height: 2.6rem; align-items: stretch;
+    }
+    .strip-chip {
+      flex: 0 0 auto; min-width: 2.6rem; padding: 0.25rem 0.4rem; border-radius: 6px;
+      border: 1px solid var(--line); background: #0a0908; font-size: 0.68rem; font-weight: 600;
+      cursor: pointer; text-align: center; color: var(--text); line-height: 1.2;
+    }
+    .strip-chip:hover { border-color: var(--gold); color: var(--gold2); }
+    .strip-chip.playing { outline: 1px solid var(--gold2); background: rgba(196,165,116,0.15); }
+    .strip-chip .sc-sec { display: block; font-size: 0.55rem; color: var(--muted); font-weight: 500; max-width: 4.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .strip-chip.role-end { border-color: #8a6a3d; }
+    .strip-chip.role-into { border-color: #4a6a8a; }
+    .strip-chip.role-seam { border-color: #6a4a8a; border-style: dashed; }
+    .pipe-panel {
+      margin-top: 0.65rem; padding: 0.55rem 0.65rem; background: #0c0b0a; border: 1px dashed var(--line); border-radius: 9px;
+    }
+    .pipe-flow {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.45rem; font-size: 0.78rem;
+    }
+    .pipe-node {
+      padding: 0.25rem 0.5rem; border-radius: 6px; border: 1px solid var(--line); background: var(--elev);
+      color: var(--gold2); font-weight: 600;
+    }
+    .pipe-node.muted { color: var(--muted); font-weight: 500; }
+    .pipe-node.end { border-color: #8a6a3d; color: #e8c98a; }
+    .pipe-node.into { border-color: #4a6a8a; color: var(--blue); }
+    .pipe-node.seam { border-color: #6a4a8a; color: #c4a8e0; }
+    .pipe-arrow { color: var(--muted); font-size: 0.85rem; }
+    .pipe-meta { margin-top: 0.35rem; font-size: 0.72rem; color: var(--muted); }
+    .spiral-panel {
+      margin-top: 0.65rem; padding: 0.55rem 0.65rem; background: #0a0908;
+      border: 1px solid var(--line); border-radius: 10px;
+    }
+    .spiral-head {
+      display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 1rem; margin-bottom: 0.35rem;
+    }
+    .spiral-head h2 { margin: 0; }
+    .spiral-controls { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; align-items: center; margin-left: auto; }
+    .spiral-controls label { font-size: 0.68rem; color: var(--muted); display: flex; align-items: center; gap: 0.25rem; }
+    .spiral-zoom {
+      display: inline-flex; align-items: center; gap: 0.25rem;
+      margin-left: 0.35rem; padding-left: 0.5rem; border-left: 1px solid var(--line);
+    }
+    .spiral-zoom .btn {
+      padding: 0.15rem 0.45rem; min-width: 1.75rem; font-size: 0.85rem; line-height: 1.2;
+    }
+    .spiral-zoom #spiral-zoom-label {
+      font-size: 0.72rem; color: var(--gold); min-width: 2.6rem; text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .spiral-wrap {
+      position: relative; width: 100%; max-width: none; margin: 0;
+      min-height: min(62vh, 640px); height: min(62vh, 640px);
+      background:
+        radial-gradient(ellipse 80% 60% at 50% 50%, #1a1612 0%, #0a0908 55%, #060504 100%);
+      border-radius: 12px; border: 1px solid var(--line); overflow: hidden;
+    }
+    .spiral-wrap canvas {
+      display: block; width: 100%; height: 100%; cursor: grab;
+    }
+    .spiral-wrap canvas:active { cursor: grabbing; }
+    .spiral-legend {
+      display: flex; flex-wrap: wrap; gap: 0.35rem 0.65rem; margin-top: 0.45rem; font-size: 0.72rem;
+    }
+    .spiral-legend .leg {
+      display: inline-flex; align-items: center; gap: 0.3rem; color: var(--muted);
+    }
+    .spiral-legend .swatch {
+      width: 0.7rem; height: 0.7rem; border-radius: 99px; border: 1px solid rgba(255,255,255,0.2);
+    }
+    .spiral-meta { margin-top: 0.3rem; font-size: 0.72rem; color: var(--muted); }
+    /* Full-screen pipe view */
+    body.spiral-fs {
+      overflow: hidden;
+    }
+    .spiral-panel.spiral-fs {
+      position: fixed;
+      inset: 0;
+      z-index: 9000;
+      margin: 0;
+      border-radius: 0;
+      border: 0;
+      padding: 0.65rem 0.85rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      background: #060504;
+      box-shadow: none;
+    }
+    .spiral-panel.spiral-fs .spiral-head {
+      flex-shrink: 0;
+    }
+    .spiral-panel.spiral-fs .hint {
+      flex-shrink: 0;
+      margin-bottom: 0.4rem !important;
+    }
+    .spiral-panel.spiral-fs .spiral-wrap {
+      flex: 1 1 auto;
+      min-height: 0;
+      height: auto;
+      max-height: none;
+    }
+    .spiral-panel.spiral-fs .spiral-legend,
+    .spiral-panel.spiral-fs .spiral-meta {
+      flex-shrink: 0;
+    }
+    .spiral-panel.spiral-fs #spiral-fs-btn {
+      border-color: var(--gold);
+      color: var(--gold2);
+    }
+    .key-row { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin-top: 0.4rem; }
+    .strip-chip.key-tinted { border-left-width: 3px; }
+    .song-notes {
+      width: 100%; min-height: 2.4rem; margin-top: 0.4rem; background: #0a0908; border: 1px solid var(--line);
+      color: var(--muted); border-radius: 6px; font: inherit; font-size: 0.78rem; padding: 0.35rem 0.45rem; resize: vertical;
+    }
+    .tl-seg { cursor: pointer; }
+    .tl-seg:hover { filter: brightness(1.08); }
+    .tl-seg.selected { outline: 1px solid #fff4d6; }
     h2 { margin: 0 0 0.45rem; font-family: var(--display); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); }
     .hint { font-family: var(--serif); font-style: italic; color: var(--muted); font-size: 0.88rem; margin: 0 0 0.5rem; line-height: 1.35; }
     .cell-wrap {
@@ -128,6 +257,15 @@
       display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 600;
       color: #0a0a0a; min-width: 2rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 0.25rem;
     }
+    .tl-pipe {
+      flex: 0 0 14px; display: flex; align-items: center; justify-content: center;
+      font-size: 0.7rem; color: var(--muted); background: #0a0908; border-left: 1px solid var(--line); border-right: 1px solid var(--line);
+    }
+    .tl-pipe.on { color: var(--blue); background: rgba(126,184,218,0.12); }
+    .tl-pipe.turn { color: #e8a87c; }
+    .cycle-row { display: flex; flex-wrap: wrap; gap: 0.35rem 0.6rem; margin-top: 0.3rem; }
+    .cycle-lab { font-size: 0.68rem; color: var(--muted); display: flex; align-items: center; gap: 0.25rem; }
+    .cycle-lab select { max-width: 7.5rem; font-size: 0.75rem; }
     .tl-meta { margin-top: 0.4rem; font-size: 0.78rem; color: var(--muted); }
     .focus-strip {
       border-top: 1px solid var(--line); padding: 0.55rem 1rem; background: #0c0b0a;
@@ -155,11 +293,30 @@
         <label class="ctl">BPM
           <input type="number" id="bpm" min="40" max="220" value="96">
         </label>
+        <label class="ctl">Key
+          <select id="song-tonic" title="Song tonic"></select>
+        </label>
+        <label class="ctl">Mode
+          <select id="song-mode">
+            <option value="minor">minor</option>
+            <option value="major">major</option>
+            <option value="dorian">dorian</option>
+            <option value="phrygian">phrygian</option>
+            <option value="mixolydian">mixolydian</option>
+            <option value="lydian">lydian</option>
+            <option value="harmonic">harmonic minor</option>
+          </select>
+        </label>
         <span class="status" id="key-label">B minor</span>
         <button type="button" class="btn" id="btn-landscape">Landscape</button>
-        <button type="button" class="btn" id="btn-fretboard">Fretboard</button>
-        <button type="button" class="btn primary" id="btn-midi">Export MIDI</button>
+        <button type="button" class="btn" id="btn-fretboard" title="Opens cell on Fretboard (max 8 chords)">Fretboard</button>
+        <button type="button" class="btn" id="btn-save-song" title="Download full song package (.song.json)">Save song</button>
+        <button type="button" class="btn" id="btn-load-song" title="Load .song.json package">Load song</button>
+        <input type="file" id="song-file-input" accept=".json,application/json,text/json,*/*" hidden>
+        <input type="file" id="hl-file-input" accept=".json,.hl.json,application/json" hidden>
+        <button type="button" class="btn primary" id="btn-midi" title="Full flattened song as MIDI chords">Export MIDI</button>
         <button type="button" class="btn" id="btn-text">Export text</button>
+        <button type="button" class="btn" id="btn-export-flat" title="Flattened chord list JSON (DAW prep)">Export flat JSON</button>
       </div>
     </header>
 
@@ -187,25 +344,29 @@
     <main>
       <aside class="col">
         <h2>Cells</h2>
-        <p class="hint">Rename in the name field. Click the chords (or Edit) to open Landscape. Delete removes the cell and sections that use it.</p>
+        <p class="hint">Rename · Edit in Landscape · 🎸 Fretboard (≤8) · Vary / Dup. Badge shows frettable vs long.</p>
         <div id="cell-list"></div>
         <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-top:0.5rem">
           <button type="button" class="btn primary" id="btn-new-cell">+ New cell</button>
+          <button type="button" class="btn" id="btn-import-hl" title="Import a .hl.json Landscape project as a new cell">Import .hl.json</button>
           <button type="button" class="btn ghost" id="btn-refresh">Refresh</button>
         </div>
+        <label class="ctl" style="margin-top:0.55rem;display:block">Song notes
+          <textarea class="song-notes" id="song-notes" placeholder="Form notes, tempo feel, DAW track…" maxlength="2000"></textarea>
+        </label>
         <p class="status" id="sync-status" style="margin-top:0.6rem"></p>
       </aside>
 
       <section class="col">
         <h2>Form</h2>
-        <p class="hint">Drag ⋮⋮ to reorder. Check version boxes to play v1→v2 in one section (e.g. 4+4). Seams control flow into the next section.</p>
+        <p class="hint">Drag ⋮⋮ to reorder. <strong>End</strong> = last rep (cycle exit). <strong>Into</strong> = bridge after reps. <strong>Seam</strong> = flow into next. Timeline / strip click selects or plays from there.</p>
         <table>
           <thead>
             <tr>
               <th></th>
               <th>#</th>
               <th>Section</th>
-              <th>Cell / versions</th>
+              <th>Cell / cycle / versions</th>
               <th>Reps</th>
               <th>Bars</th>
               <th></th>
@@ -215,7 +376,49 @@
         </table>
         <div style="margin-top:0.55rem;display:flex;gap:0.35rem;flex-wrap:wrap">
           <button type="button" class="btn primary" id="btn-add-sec">+ Section</button>
-          <button type="button" class="btn" id="btn-chain-family" title="Selected section: play all family versions in order">Chain family (v1→v2…)</button>
+          <button type="button" class="btn" id="btn-dup-sec" title="Duplicate selected section">Dup section</button>
+          <button type="button" class="btn" id="btn-chain-family" title="Selected section: play all family versions in order">Chain family</button>
+          <button type="button" class="btn ghost" id="btn-sop-demo" title="Load full The Speed of Pain song form (Em)">Load SoP full</button>
+          <button type="button" class="btn ghost" id="btn-multikey-demo" title="Em → G → C → Em multi-disk spiral test">Load multi-key demo</button>
+        </div>
+
+        <div class="pipe-panel" id="pipe-panel">
+          <h2>Pipes · selected section</h2>
+          <div class="pipe-flow" id="pipe-flow"></div>
+          <div class="pipe-meta" id="pipe-meta">Select a section to see body → end → into → seam → next</div>
+        </div>
+
+        <div class="spiral-panel" id="spiral-panel">
+          <div class="spiral-head">
+            <h2>Key pipe · Journey wheel × time</h2>
+            <div class="spiral-controls">
+              <label title="3D spiral tube — Journey seats on the rim, time along the axis">
+                <input type="radio" name="spiral-mode" id="spiral-mode-side" value="side" checked>
+                3D spiral
+              </label>
+              <label title="Looking down the tube: seats on the rim, time = depth rings">
+                <input type="radio" name="spiral-mode" id="spiral-mode-end" value="end">
+                Down the tube
+              </label>
+              <label>
+                <input type="checkbox" id="spiral-section-only" title="Only selected section’s flatten slice">
+                Section only
+              </label>
+              <div class="spiral-zoom" title="Zoom / pan the pipe (scroll to zoom, drag to pan, double-click reset)">
+                <button type="button" class="btn ghost" id="spiral-zoom-out" aria-label="Zoom out">−</button>
+                <span id="spiral-zoom-label">100%</span>
+                <button type="button" class="btn ghost" id="spiral-zoom-in" aria-label="Zoom in">+</button>
+                <button type="button" class="btn ghost" id="spiral-zoom-reset" title="Reset zoom and pan">1:1</button>
+                <button type="button" class="btn ghost" id="spiral-fs-btn" title="Full screen pipe view (Esc to exit)">⛶ Full</button>
+              </div>
+            </div>
+          </div>
+          <p class="hint" style="margin-bottom:0.35rem"><strong>Scroll</strong> zoom · <strong>drag</strong> pan · <strong>Full</strong> screen · <strong>Esc</strong> exit full. Wheel rides the pipe while playing. <em>Load multi-key demo</em> / <em>Load SoP full</em>.</p>
+          <div class="spiral-wrap" id="spiral-wrap">
+            <canvas id="key-spiral" width="1200" height="640" aria-label="3D Journey key spiral"></canvas>
+          </div>
+          <div class="spiral-legend" id="spiral-legend"></div>
+          <div class="spiral-meta" id="spiral-meta">Load a song with multi-key cells to see the pipe.</div>
         </div>
 
         <div class="timeline">
@@ -223,6 +426,13 @@
           <div class="tl-bar" id="tl-bar"></div>
           <div class="tl-playhead-wrap"><div class="tl-playhead" id="tl-playhead"></div></div>
           <div class="tl-meta" id="tl-meta">0 bars</div>
+        </div>
+
+        <div class="form-strip-wrap">
+          <h2>Form strip · flattened song</h2>
+          <p class="hint" style="margin-bottom:0.35rem">Click a chord to play from there. Left edge = key colour · role tint = end / into / seam.</p>
+          <div class="form-strip" id="form-strip"></div>
+          <div class="status" id="strip-meta" style="margin-top:0.35rem"></div>
         </div>
 
         <div style="margin-top:0.75rem">
@@ -246,6 +456,9 @@
   <script src="../harmonic-landscape/js/music.js"></script>
   <script src="../harmonic-landscape/js/compose.js"></script>
   <script src="../harmonic-landscape/js/audio.js"></script>
+  <!-- Embedded packages: load under file:// without fetch (Chromium blocks local JSON fetch) -->
+  <script src="the-speed-of-pain.song.js"></script>
+  <script src="multi-key-cylinders.song.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

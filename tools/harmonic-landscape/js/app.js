@@ -8,14 +8,108 @@
   if (!H) throw new Error("HLApp missing - load hl-core.js first");
 
   H.init = function () {
+    if (H.initStyleFromStorage) H.initStyleFromStorage();
     H.map = new HLSpatial.SpatialMap(H.$('#map'));
     H.map.setOrigin(H.state.tonic, H.state.mode);
+    // Right-click → colour / next / packs palette
+    H.map.onContextMenu = (hit, e) => {
+      if (!H.openContextMenu) return;
+      const base = { clientX: e.clientX, clientY: e.clientY };
+      if (hit && hit.type === 'path' && hit.item) {
+        H.openContextMenu(
+          Object.assign(
+            {
+              kind: 'path',
+              pathIndex: hit.item.i,
+              chord: hit.item.chord,
+            },
+            base
+          )
+        );
+        return;
+      }
+      if (hit && hit.type === 'seat' && hit.item) {
+        H.openContextMenu(
+          Object.assign(
+            {
+              kind: 'seat',
+              seatInfo: hit.item,
+              chord: hit.item.chord,
+              root: hit.item.root,
+              roman: hit.item.roman,
+            },
+            base
+          )
+        );
+        return;
+      }
+      if (hit && hit.type === 'functionNode' && hit.item) {
+        H.openContextMenu(
+          Object.assign(
+            {
+              kind: 'function',
+              chord: hit.item.chord,
+              root: hit.item.chord && hit.item.chord.root,
+              label: hit.item.label,
+              job: hit.item.job,
+              horizonKind: hit.item.kind,
+              route: hit.item.route,
+            },
+            base
+          )
+        );
+        return;
+      }
+      if (hit && hit.type === 'home') {
+        const home = H.makeHomeChord ? H.makeHomeChord() : null;
+        H.openContextMenu(
+          Object.assign(
+            {
+              kind: 'function',
+              chord: home,
+              root: home && home.root,
+              label: home && home.name,
+              job: 'home',
+              horizonKind: 'home',
+            },
+            base
+          )
+        );
+        return;
+      }
+      // Empty space: still open palette on selected step or write-home tonic
+      const sel =
+        H.state.selected >= 0 && H.state.chords[H.state.selected]
+          ? H.state.chords[H.state.selected]
+          : H.makeHomeChord
+            ? H.makeHomeChord()
+            : null;
+      if (sel) {
+        H.openContextMenu(
+          Object.assign(
+            {
+              kind: H.state.chords[H.state.selected] ? 'path' : 'function',
+              pathIndex: H.state.chords[H.state.selected] ? H.state.selected : undefined,
+              chord: sel,
+              root: sel.root,
+              label: sel.name,
+              job: 'background',
+            },
+            base
+          )
+        );
+      } else {
+        H.openContextMenu(Object.assign({ kind: 'empty' }, base));
+      }
+    };
     H.map.onSelectPath = (i, ch, opts) => {
       // Light select — full refreshUI on every map click wrecked long sequences
+      // deferUI = pointer-down or post-drag click; never re-home the camera
       if (opts && opts.deferUI) {
         H.state.selected = i;
         if (H.map) H.map.current = i;
         H.updateMapStatus();
+        if (H.renderPlaceReadout) H.renderPlaceReadout();
         return;
       }
       if (H.selectStep) H.selectStep(i, { play: true });
@@ -25,26 +119,148 @@
         H.A().playChord({ chord: ch });
         H.refreshUI();
       }
+      if (H.previewNextFromStep) H.previewNextFromStep(i, { silent: true });
     };
-    H.map.onSelectHorizon = (item) => H.commitHorizon(item);
+    // Plain map click (no drag): soft play + arrows without full layout thrash
+    H.map.onSelectPathClick = (i, ch) => {
+      H.state.selected = i;
+      if (H.map) H.map.current = i;
+      if (ch && H.A()) {
+        H.A().ensure();
+        H.A().playChord({ chord: ch, soft: true, duration: 0.35 });
+      }
+      // Light chrome only — selectStep would also rebuild arrows (ok, silent)
+      if (H.selectStep) H.selectStep(i, { play: false });
+      else {
+        H.renderSlots();
+        H.renderInspector();
+        H.updateMapStatus();
+      }
+    };
+    // Hover a path chord → weighted arrows to seats (debounced so it doesn't thrash)
+    let _hoverPathTimer = null;
+    let _hoverPathLast = -1;
+    H.cancelHoverPreview = function () {
+      if (_hoverPathTimer) {
+        clearTimeout(_hoverPathTimer);
+        _hoverPathTimer = null;
+      }
+      _hoverPathLast = -1;
+      if (H.clearNextPreview) H.clearNextPreview();
+    };
+    H.map.onHoverPath = (pathIndex, chord) => {
+      // Never rebuild during drag / aim — causes instant "jump" on click
+      if (H.map && H.map._mode === 'node') return;
+      if (pathIndex == null || pathIndex < 0) {
+        H.cancelHoverPreview();
+        return;
+      }
+      // Soft preview only when entering a new step
+      if (chord && pathIndex !== _hoverPathLast && H.A()) {
+        H.A().ensure();
+        H.A().playChord({ chord: chord, soft: true, duration: 0.32 });
+      }
+      _hoverPathLast = pathIndex;
+      if (_hoverPathTimer) clearTimeout(_hoverPathTimer);
+      _hoverPathTimer = setTimeout(() => {
+        _hoverPathTimer = null;
+        if (H.map && H.map._mode === 'node') return;
+        if (H.previewNextFromStep) H.previewNextFromStep(pathIndex);
+      }, 90);
+    };
+    H.map.onSelectHoverSuggest = (pad) => {
+      if (!pad || !pad.item) return;
+      // Commit from the hovered step (usually the last chord you entered)
+      if (pad.pathIndex != null && pad.pathIndex >= 0) {
+        H.state.selected = pad.pathIndex;
+      }
+      if (H.clearNextPreview) H.clearNextPreview();
+      // Leave-home packages use establish path when modulateTo is set
+      if (pad.item.modulateTo && pad.item.route && H.leaveHomeToKey) {
+        H.leaveHomeToKey(
+          pad.item.modulateTo,
+          pad.item.route,
+          pad.pathIndex != null ? pad.pathIndex : H.state.selected
+        );
+        return;
+      }
+      H.commitHorizon(pad.item, { insert: true });
+    };
+    // In-this-key node click: same rules as seats (edit mid-path, append at end).
+    // Shift = insert after · Alt = force append.
+    H.map.onSelectHorizon = (item, clickOpts) => {
+      clickOpts = clickOpts || {};
+      if (!item) return;
+      let intent = 'auto';
+      if (clickOpts.altKey) intent = 'append';
+      else if (clickOpts.shiftKey) intent = 'insert';
+      if (item.route && item.route.length > 1) {
+        // Multi-step packages (V7→I): still commit as package after selection
+        H.state.selected =
+          H.state.selected >= 0 ? H.state.selected : H.state.chords.length - 1;
+        H.commitHorizon(item, {
+          mode: intent === 'append' ? 'append' : intent === 'insert' ? 'insert' : 'auto',
+        });
+        return;
+      }
+      if (item.chord && H.writeChordToPath) {
+        H.writeChordToPath(item.chord, {
+          intent: intent,
+          kind: item.kind || 'direction',
+          label: item.label || item.chord.name,
+          job: item.job || item.kind || '',
+        });
+      } else {
+        H.commitHorizon(item, { mode: intent === 'edit' ? 'replace' : 'append' });
+      }
+    };
+    let _hoverFnKey = '';
+    let _hoverFnAt = 0;
     H.map.onHoverHorizon = (item) => {
-      H.A().ensure();
-      H.A().playChord({ chord: item.chord, soft: true, duration: 0.45 });
+      if (!item || !item.chord) return;
+      const key =
+        item.chord.root + ':' + item.chord.quality + ':' + (item.functionNodeId || '');
+      const now = Date.now();
+      if (key === _hoverFnKey) return;
+      if (now - _hoverFnAt < 220) return;
+      _hoverFnKey = key;
+      _hoverFnAt = now;
+      if (H.A()) {
+        H.A().ensure();
+        H.A().playChord({
+          chord: item.chord,
+          soft: true,
+          duration: 0.4,
+          identify: true,
+        });
+      }
     };
     // Click the gold home disc to start (or land) on the tonic
     H.map.onSelectHome = () => H.startAtHome();
+    let _hoverHomeAt = 0;
     H.map.onHoverHome = () => {
-      H.A().ensure();
-      H.A().playChord({ chord: H.makeHomeChord(), soft: true, duration: 0.4 });
+      const now = Date.now();
+      if (now - _hoverHomeAt < 450) return;
+      _hoverHomeAt = now;
+      if (H.A() && H.makeHomeChord) {
+        H.A().ensure();
+        H.A().playChord({
+          chord: H.makeHomeChord(),
+          soft: true,
+          duration: 0.4,
+          identify: true,
+        });
+      }
     };
     // Click centre of an older Chase disk → switch write home back (path ownership stays)
     H.map.onSelectDiskHome = (disk) => {
       if (!disk) return;
+      H.pushUndo();
       H.setWritingHome(disk.tonic, disk.mode || H.state.mode, { transpose: false });
       H.setSyncStatus(
         'Write home → ' +
           H.keyLabel() +
-          ' · older disk reactivated · path steps keep their disks · Land here retags from selection'
+          ' · older disk reactivated · path steps keep their disks · new steps use this gravity'
       );
     };
     // Ghost adjacent-key wheel: establish home (V7→I or tonic)
@@ -73,16 +289,31 @@
     };
     H.map.onRequestAlts = (pathIndex, chord) => H.buildAimTargets(pathIndex, chord);
     H.map.onSwapChord = (pathIndex, newChord) => {
-      H.applyChordAtIndex(pathIndex, newChord, { pullNeighbors: false });
+      H.applyChordAtIndex(pathIndex, newChord, {});
     };
-    // Only called when user released on a locked aim target (swap in place — never append)
+    // Release on aim target: same-key swap, or leave-home establish (append package)
     H.map.onPullChord = (pathIndex, chord, meta) => {
-      H.applyChordAtIndex(pathIndex, chord, {
-        pullNeighbors: !!(meta && meta.pullNeighbors),
-        pullStrength: 0.5,
-      });
+      const snap = H.map && H.map.snapAlt;
+      const establish =
+        (meta && meta.establish) ||
+        (snap && snap.establish) ||
+        (chord && chord.tag === 'establish' && snap && snap.modulateTo);
+      const dest =
+        (meta && meta.modulateTo) ||
+        (snap && snap.modulateTo) ||
+        null;
+      const route =
+        (meta && meta.establishRoute) ||
+        (snap && snap.establishRoute) ||
+        (chord ? [chord] : null);
+      if (establish && dest && route && route.length && H.leaveHomeToKey) {
+        H.state.selected = pathIndex;
+        H.leaveHomeToKey(dest, route, pathIndex);
+        return;
+      }
+      H.applyChordAtIndex(pathIndex, chord, {});
       const where =
-        H.map && H.map.mapView === 'function' ? ' on Function chart' : ' on Chase chart';
+        H.map && H.map.mapView === 'function' ? ' on In-this-key chart' : ' on Journey map';
       H.setSyncStatus(
         'Moved to ' +
           (chord.name || '') +
@@ -91,7 +322,7 @@
       );
     };
     // Click empty scale seat → add that chord
-    H.map.onSelectSeat = (seatInfo) => H.selectChaseSeat(seatInfo);
+    H.map.onSelectSeat = (seatInfo, clickOpts) => H.selectChaseSeat(seatInfo, clickOpts);
     // Blue compare node: audition + explain (does not edit the gold path)
     H.map.onSelectAltNode = (item) => {
       if (!item || !item.chord) return;
@@ -111,10 +342,54 @@
         'Blue compare · ' + (item.chord.name || '?') + bit + ' · Alt-click a version chip to change'
       );
     };
+    // Seat hover: play once per degree (not on every pointer-move / rebuild flicker)
+    let _hoverSeatKey = '';
+    let _hoverSeatAt = 0;
+    H._clearHoverSeatKey = function () {
+      _hoverSeatKey = '';
+      _hoverFnKey = '';
+    };
     H.map.onHoverSeat = (seatInfo) => {
       if (!seatInfo || !seatInfo.chord) return;
-      H.A().ensure();
-      H.A().playChord({ chord: seatInfo.chord, soft: true, duration: 0.35 });
+      const key =
+        (seatInfo.root != null ? seatInfo.root : seatInfo.chord.root) +
+        ':' +
+        (seatInfo.chord.quality || '') +
+        ':' +
+        (seatInfo.disk && seatInfo.disk.tonic) +
+        ':' +
+        (seatInfo.disk && seatInfo.disk.mode);
+      const now = Date.now();
+      // Same seat: ignore. Different seat within 220ms: ignore (edge flicker).
+      if (key === _hoverSeatKey) return;
+      if (now - _hoverSeatAt < 220) return;
+      _hoverSeatKey = key;
+      _hoverSeatAt = now;
+      if (H.A()) {
+        H.A().ensure();
+        H.A().playChord({
+          chord: seatInfo.chord,
+          soft: true,
+          duration: 0.45,
+          identify: true,
+        });
+      }
+      // Don't touch #sync-status on hover — DOM writes can reflow the map stage
+      // and look like camera jumps. Status line only for commits.
+      if (H.map && H.map.setMapStatusLine) {
+        const label =
+          (seatInfo.roman ? seatInfo.roman + ' · ' : '') +
+          (seatInfo.chord.name || '?');
+        H.map.setMapStatusLine('Seat · ' + label);
+      } else {
+        const ms = H.$('#map-status');
+        if (ms) {
+          ms.textContent =
+            'Seat · ' +
+            (seatInfo.roman ? seatInfo.roman + ' · ' : '') +
+            (seatInfo.chord.name || '?');
+        }
+      }
     };
     let aimTimer = null;
     H.map.onAimChange = (pathIndex, target, meta) => {
@@ -122,14 +397,19 @@
         clearTimeout(aimTimer);
         aimTimer = null;
       }
-      // Stop any previous context audition so targets don't stack
-      if (H.A().stopPlayback) H.A().stopPlayback();
+      // Don't kill the main loop — only stop a previous aim audition (external transport)
+      const mainPlaying =
+        H.A().isPlaying &&
+        H.A().isPlaying() &&
+        H._transportMeta &&
+        !H._transportMeta.external;
+      if (!mainPlaying && H.A().stopPlayback) H.A().stopPlayback();
       if (!target) {
         H.setSyncStatus('Aim cancelled — nothing changed');
         return;
       }
       H.A().ensure();
-      // Immediate soft hit of the aimed chord
+      // Immediate soft hit of the aimed chord (layer-friendly; does not stop transport)
       H.A().playChord({ chord: target.chord, soft: true, duration: 0.5 });
       const roleBit = target.role ? ' · ' + target.role : '';
       const aimMode = (meta && meta.aimMode) || target.aimMode || '';
@@ -166,14 +446,24 @@
           modeBit +
           ' — hold to hear context, release to set'
       );
-      // After a short hold, audition prev → target → next (or loop first)
+      // After a short hold, audition prev → target → next (skip if main sequence is playing)
       aimTimer = setTimeout(() => {
         if (!H.map.snapAlt || H.map.snapAlt !== target) return;
+        if (
+          H.A().isPlaying &&
+          H.A().isPlaying() &&
+          H._transportMeta &&
+          !H._transportMeta.external
+        ) {
+          return; // keep the loop; soft hit already played
+        }
         const seq = [];
         if (meta && meta.prevChord) seq.push(meta.prevChord);
         seq.push(target.chord);
         if (meta && meta.nextChord) seq.push(meta.nextChord);
         if (seq.length >= 2) {
+          // Mark external so resync/stop UI treat this as a throwaway audition
+          H._transportMeta = { fromIndex: 0, loop: false, external: true };
           H.A().playSequence(
             seq.map((c) => {
               const x = H.M().cloneChord(c);
@@ -181,7 +471,15 @@
               return x;
             }),
             Math.max(H.state.bpm, 110),
-            { pulse: false, loop: false }
+            {
+              pulse: false,
+              loop: false,
+              onEnd: () => {
+                if (H._transportMeta && H._transportMeta.external) {
+                  H._transportMeta = null;
+                }
+              },
+            }
           );
           const loopNote =
             aimMode === 'loop' ? ' (loop)' : aimMode === 'building' ? ' (open end)' : '';
@@ -206,8 +504,7 @@
     H.map.onTrajectory = (info) => {
       const el = H.$('#traj-caption');
       if (el && info) el.textContent = info.caption || '';
-      // Force strip so a stuck resize flag can't freeze the timeline
-      H.renderTimeStrip({ force: true });
+      // Caption only — full strip rebuild here fought the playhead on long paths
     };
     H.map.setCameraMode('home');
     H.map.start();
@@ -293,13 +590,21 @@
       // Strip tooltips show seconds @ BPM — refresh labels
       H.renderTimeStrip();
       H.setSyncStatus('Tempo · ' + H.state.bpm + ' BPM · 1 beat = ' + (60 / H.state.bpm).toFixed(3) + 's');
+      if (H.resyncPlaybackPreservingPlace) H.resyncPlaybackPreservingPlace();
     });
     H.$('#loop').addEventListener('change', (e) => {
       H.state.loop = e.target.checked;
       H.updatePlayBtn();
+      // Apply to a running transport without restarting from zero
+      if (H.A() && H.A().isPlaying && H.A().isPlaying() && H.resyncPlaybackPreservingPlace) {
+        H.resyncPlaybackPreservingPlace({ loop: H.state.loop });
+      }
     });
     H.$('#pulse').addEventListener('change', (e) => {
       H.state.pulse = e.target.checked;
+      if (H.A() && H.A().isPlaying && H.A().isPlaying() && H.resyncPlaybackPreservingPlace) {
+        H.resyncPlaybackPreservingPlace();
+      }
     });
     H.$('#feel-filter').addEventListener('change', H.renderPacks);
     const titleInput = H.$('#seq-title');
@@ -324,10 +629,65 @@
     if (H.$('#btn-add')) H.$('#btn-add').addEventListener('click', () => H.addChordFromPicker('end'));
     if (H.$('#btn-insert')) H.$('#btn-insert').addEventListener('click', () => H.addChordFromPicker('after'));
     if (H.$('#btn-dup')) H.$('#btn-dup').addEventListener('click', H.duplicateSelected);
-    if (H.$('#btn-smooth')) H.$('#btn-smooth').addEventListener('click', H.smoothVoicings);
-    if (H.$('#btn-H.undo-edit')) H.$('#btn-H.undo-edit').addEventListener('click', H.undo);
-    if (H.$('#btn-H.redo-edit')) H.$('#btn-H.redo-edit').addEventListener('click', H.redo);
-    if (H.$('#btn-H.undo')) H.$('#btn-H.undo').addEventListener('click', H.undo);
+    if (H.$('#btn-undo')) H.$('#btn-undo').addEventListener('click', H.undo);
+    if (H.$('#btn-redo-edit')) H.$('#btn-redo-edit').addEventListener('click', H.redo);
+    if (H.updateUndoButtons) H.updateUndoButtons();
+
+    // Quick build I / V and empty-path starters
+    if (H.$('#btn-quick-i')) H.$('#btn-quick-i').addEventListener('click', H.quickAddTonic);
+    if (H.$('#btn-quick-v')) H.$('#btn-quick-v').addEventListener('click', H.quickAddDominant);
+    if (H.$('#btn-empty-home'))
+      H.$('#btn-empty-home').addEventListener('click', () => {
+        if (H.startAtHome) H.startAtHome();
+        else if (H.quickAddTonic) H.quickAddTonic();
+      });
+    if (H.$('#btn-empty-v')) H.$('#btn-empty-v').addEventListener('click', H.quickAddDominant);
+    if (H.$('#btn-empty-feel')) {
+      H.$('#btn-empty-feel').addEventListener('click', () => {
+        const fold = H.$('#fold-feels');
+        if (fold) fold.open = true;
+        fold && fold.scrollIntoView && fold.scrollIntoView({ block: 'nearest' });
+      });
+    }
+    if (H.$('#coach-start-i')) {
+      H.$('#coach-start-i').addEventListener('click', () => {
+        if (H.startAtHome) H.startAtHome();
+        H.dismissCoach && H.dismissCoach();
+      });
+    }
+    if (H.$('#coach-dismiss')) {
+      H.$('#coach-dismiss').addEventListener('click', () => H.dismissCoach && H.dismissCoach());
+    }
+    if (H.$('#follow-playhead')) {
+      H.$('#follow-playhead').checked = !!H.state.followPlayhead;
+      H.$('#follow-playhead').addEventListener('change', (e) => {
+        H.state.followPlayhead = !!e.target.checked;
+        H.setSyncStatus(
+          H.state.followPlayhead
+            ? 'Follow selection on · inspector tracks the playhead'
+            : 'Follow selection off · gold selected stays put while purple plays'
+        );
+      });
+    }
+    // Keyboard help
+    const showHelp = (on) => {
+      const ov = H.$('#help-overlay');
+      if (ov) ov.hidden = !on;
+    };
+    if (H.$('#btn-keys-help')) {
+      H.$('#btn-keys-help').addEventListener('click', () => showHelp(true));
+    }
+    if (H.$('#help-close')) {
+      H.$('#help-close').addEventListener('click', () => showHelp(false));
+    }
+    if (H.$('#help-overlay')) {
+      H.$('#help-overlay').addEventListener('click', (e) => {
+        if (e.target === H.$('#help-overlay')) showHelp(false);
+      });
+    }
+    H.updateEmptyStart && H.updateEmptyStart();
+    H.updateCoach && H.updateCoach();
+    H.updateLandButton && H.updateLandButton();
     if (H.$('#btn-clear')) {
       H.$('#btn-clear').addEventListener('click', () => {
         // Empty path only (keeps versions / write home)
@@ -358,6 +718,21 @@
     }
     if (H.$('#btn-export-txt')) H.$('#btn-export-txt').addEventListener('click', H.exportText);
     if (H.$('#btn-export-mid')) H.$('#btn-export-mid').addEventListener('click', H.exportMidi);
+    if (H.$('#btn-save-project')) {
+      H.$('#btn-save-project').addEventListener('click', () => {
+        if (H.saveProjectFile) H.saveProjectFile();
+      });
+    }
+    if (H.$('#btn-load-project') && H.$('#project-file-input')) {
+      H.$('#btn-load-project').addEventListener('click', () => {
+        H.$('#project-file-input').value = '';
+        H.$('#project-file-input').click();
+      });
+      H.$('#project-file-input').addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f && H.loadProjectFile) H.loadProjectFile(f);
+      });
+    }
     if (H.$('#btn-fret')) H.$('#btn-fret').addEventListener('click', H.sendToFretboard);
     if (H.$('#btn-pull-fb')) H.$('#btn-pull-fb').addEventListener('click', H.pullFromSharedSession);
     if (H.$('#btn-arrange')) {
@@ -368,11 +743,14 @@
         else window.location.href = url;
       });
     }
-    H.$('#btn-home').addEventListener('click', () => {
-      H.map.setCameraMode('home');
-      H.map.focusHome();
-      H.syncCamButtons();
-    });
+    if (H.$('#btn-home')) {
+      H.$('#btn-home').addEventListener('click', () => {
+        if (!H.map) return;
+        H.map.setCameraMode('home');
+        if (H.map.focusHome) H.map.focusHome();
+        H.syncCamButtons();
+      });
+    }
     if (H.$('#cam-home')) {
       H.$('#cam-home').addEventListener('click', () => {
         H.map.setCameraMode('home');
@@ -393,13 +771,43 @@
     }
     if (H.$('#btn-start-home')) H.$('#btn-start-home').addEventListener('click', H.startAtHome);
     if (H.$('#step-dur')) {
+      // Chips: multi-select → set duration on those steps; else set default for new chords
       H.$('#step-dur').querySelectorAll('[data-step-dur]').forEach((btn) => {
-        btn.addEventListener('click', () => H.setDefaultDuration(parseFloat(btn.dataset.stepDur)));
+        btn.addEventListener('click', () => {
+          const beats = parseFloat(btn.dataset.stepDur);
+          const multi = H.getSelectedIndices ? H.getSelectedIndices() : [];
+          if (multi.length > 1) {
+            // Batch edit selected timeline steps
+            H.setDurationForIndices(multi, beats);
+          } else if (multi.length === 1) {
+            // Edit that step + remember as default for new chords
+            H.setDurationForIndices(multi, beats, { silent: true });
+            H.setDefaultDuration(beats, { silent: true });
+            H.setSyncStatus(
+              'Step ' +
+                (multi[0] + 1) +
+                ' · ' +
+                H.snapBeats(beats) +
+                'b · default for new too'
+            );
+          } else {
+            H.setDefaultDuration(beats);
+          }
+          if (H.syncDurationBar) H.syncDurationBar();
+        });
       });
       const stepNum = H.$('#step-dur-num');
       if (stepNum) {
         const applyStep = () => {
-          H.setDefaultDuration(parseFloat(stepNum.value) || 4);
+          const beats = parseFloat(stepNum.value);
+          if (!(beats > 0)) return;
+          const multi = H.getSelectedIndices ? H.getSelectedIndices() : [];
+          if (multi.length >= 1) {
+            H.setDurationForIndices(multi, beats);
+            if (multi.length === 1) H.setDefaultDuration(beats, { silent: true });
+          } else {
+            H.setDefaultDuration(beats);
+          }
         };
         stepNum.addEventListener('change', applyStep);
         stepNum.addEventListener('keydown', (e) => {
@@ -410,7 +818,24 @@
         });
       }
       H.setDefaultDuration(H.state.defaultDuration, { silent: true });
+      if (H.syncDurationBar) H.syncDurationBar();
     }
+    // Path tools (reharm / darker / rhythm…)
+    const toolMap = {
+      'btn-tool-darker': 'darker',
+      'btn-tool-reharm': 'reharm',
+      'btn-tool-rhythm': 'rhythm',
+      'btn-tool-bass': 'bass-colour',
+    };
+    Object.keys(toolMap).forEach((id) => {
+      const el = H.$('#' + id);
+      if (el) {
+        el.addEventListener('click', () => {
+          if (H.applyPathVariation) H.applyPathVariation(toolMap[id]);
+        });
+      }
+    });
+    if (H.$('#btn-smooth')) H.$('#btn-smooth').addEventListener('click', H.smoothVoicings);
     if (H.$('#btn-swing')) H.$('#btn-swing').addEventListener('click', H.suggestSwingNext);
     if (H.$('#btn-arch')) H.$('#btn-arch').addEventListener('click', H.suggestArchHome);
     if (H.$('#view-chase')) {
@@ -419,10 +844,14 @@
     if (H.$('#view-function')) {
       H.$('#view-function').addEventListener('click', () => H.setMapView('function'));
     }
-    // Function layers: Dominants + Borrow (home ring always on)
+    // Function layers: Dom + Borrow + Tritone + Dim + V alts + Colours
     const foMap = {
       'fo-dominants': 'dominants',
       'fo-borrow': 'borrow',
+      'fo-tritone': 'tritone',
+      'fo-dim': 'dim',
+      'fo-valts': 'valts',
+      'fo-colours': 'colours',
     };
     Object.keys(foMap).forEach((id) => {
       const el = H.$('#' + id);
@@ -433,12 +862,76 @@
     });
     if (H.syncFunctionOptsUI) H.syncFunctionOptsUI();
     if (H.$('#function-opts')) H.$('#function-opts').hidden = true;
-    if (H.$('#tog-horizon')) {
-      H.$('#tog-horizon').addEventListener('change', (e) => {
-        H.map.setShowHorizon(e.target.checked);
+
+    // Style lens + demos
+    if (H.$('#style-select')) {
+      // Populate once
+      if (H.STYLES) {
+        const sel = H.$('#style-select');
+        sel.innerHTML = '';
+        Object.keys(H.STYLES).forEach((id) => {
+          const st = H.STYLES[id];
+          const o = document.createElement('option');
+          o.value = id;
+          o.textContent = st.label;
+          o.title = st.blurb || '';
+          sel.appendChild(o);
+        });
+      }
+      H.$('#style-select').addEventListener('change', (e) => {
+        if (H.setStyle) H.setStyle(e.target.value);
       });
-      H.map.setShowHorizon(H.$('#tog-horizon').checked);
     }
+    if (H.syncStyleUI) H.syncStyleUI();
+    if (H.$('#btn-demo-sop')) {
+      H.$('#btn-demo-sop').addEventListener('click', () => {
+        if (H.loadStyleDemo) H.loadStyleDemo('speed-of-pain');
+      });
+    }
+
+    // Collapse right “From here” rail — more width for In this key / Journey map
+    H.setHorizonCollapsed = function (collapsed, opts) {
+      opts = opts || {};
+      const main = document.querySelector('main');
+      const btn = H.$('#btn-toggle-horizon');
+      const on = !!collapsed;
+      if (main) main.classList.toggle('horizon-collapsed', on);
+      if (btn) {
+        btn.setAttribute('aria-expanded', on ? 'false' : 'true');
+        btn.title = on
+          ? 'Expand From here panel'
+          : 'Collapse From here panel (more map space)';
+        btn.textContent = on ? 'From here' : '›';
+      }
+      try {
+        localStorage.setItem('hl-horizon-collapsed', on ? '1' : '0');
+      } catch (_) {
+        /* ignore */
+      }
+      // Canvas must remeasure after grid change
+      requestAnimationFrame(() => {
+        if (H.map && H.map.resize) H.map.resize();
+      });
+      if (!opts.silent && H.setSyncStatus) {
+        H.setSyncStatus(on ? 'From here collapsed · map wider' : 'From here open');
+      }
+    };
+    if (H.$('#btn-toggle-horizon')) {
+      let collapsed = false;
+      try {
+        collapsed = localStorage.getItem('hl-horizon-collapsed') === '1';
+      } catch (_) {
+        /* ignore */
+      }
+      H.$('#btn-toggle-horizon').addEventListener('click', () => {
+        const main = document.querySelector('main');
+        const now = !(main && main.classList.contains('horizon-collapsed'));
+        H.setHorizonCollapsed(now);
+      });
+      if (collapsed) H.setHorizonCollapsed(true, { silent: true });
+    }
+    // Next-move map dots retired — seats + ghosts only
+    if (H.map && H.map.setShowHorizon) H.map.setShowHorizon(false);
     if (H.$('#tog-alt')) {
       H.$('#tog-alt').addEventListener('change', (e) => {
         H.map.setShowAlt(e.target.checked);
@@ -496,18 +989,34 @@
         H.moveSelected(1);
       } else if (e.key === 'ArrowLeft' && H.state.chords.length) {
         e.preventDefault();
-        H.state.selected = Math.max(0, H.state.selected - 1);
-        H.refreshUI();
-        H.A().ensure();
-        H.A().playChord({ chord: H.state.chords[H.state.selected] });
+        const i = Math.max(0, (H.state.selected >= 0 ? H.state.selected : 0) - 1);
+        if (H.selectStep) H.selectStep(i, { play: true });
+        else {
+          H.state.selected = i;
+          H.refreshUI();
+        }
       } else if (e.key === 'ArrowRight' && H.state.chords.length) {
         e.preventDefault();
-        H.state.selected = Math.min(H.state.chords.length - 1, H.state.selected + 1);
-        H.refreshUI();
-        H.A().ensure();
-        H.A().playChord({ chord: H.state.chords[H.state.selected] });
+        const i = Math.min(
+          H.state.chords.length - 1,
+          (H.state.selected >= 0 ? H.state.selected : 0) + 1
+        );
+        if (H.selectStep) H.selectStep(i, { play: true });
+        else {
+          H.state.selected = i;
+          H.refreshUI();
+        }
       } else if (e.key === 'Escape') {
+        const help = H.$('#help-overlay');
+        if (help && !help.hidden) {
+          help.hidden = true;
+          return;
+        }
         H.stopPlaybackUI();
+      } else if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+        e.preventDefault();
+        const help = H.$('#help-overlay');
+        if (help) help.hidden = !help.hidden;
       }
     });
   };

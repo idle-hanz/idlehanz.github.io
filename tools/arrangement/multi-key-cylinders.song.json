@@ -1,0 +1,171 @@
+{
+  "format": "idlehanz-song-package",
+  "version": 1,
+  "savedAt": "2026-08-06T20:30:00.000Z",
+  "title": "multi-key cylinders",
+  "bpm": 80,
+  "key": { "tonic": 4, "mode": "minor" },
+  "style": "goth",
+  "notes": "Em (gold) → G major (green) → C major (blue) → Em. Varied beat lengths so the spiral stretches on holds and tightens on tags. Spiral is shape-first; strip shows chords.",
+  "cells": {
+    "cell-mk-em-loop": {
+      "id": "cell-mk-em-loop",
+      "name": "Em Loop (home disk)",
+      "familyId": "fam-mk-em",
+      "versionIndex": 1,
+      "chords": [
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 9, "quality": "min", "duration": 4, "bass": 9, "roman": "iv", "localTonic": 4, "localMode": "minor", "name": "Am", "notes": [9, 0, 4] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 11, "quality": "dom7", "duration": 2, "bass": 11, "roman": "V", "localTonic": 4, "localMode": "minor", "name": "B7", "notes": [11, 3, 6, 9] },
+        { "root": 4, "quality": "min", "duration": 2, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] }
+      ]
+    },
+    "cell-mk-em-end": {
+      "id": "cell-mk-em-end",
+      "name": "Em End → G",
+      "familyId": "fam-mk-em",
+      "versionIndex": 2,
+      "chords": [
+        { "root": 4, "quality": "min", "duration": 2, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 0, "quality": "maj", "duration": 2, "bass": 0, "roman": "bVI", "localTonic": 4, "localMode": "minor", "name": "C", "notes": [0, 4, 7] },
+        { "root": 7, "quality": "maj", "duration": 4, "bass": 7, "roman": "bIII", "localTonic": 4, "localMode": "minor", "name": "G", "notes": [7, 11, 2] },
+        { "root": 2, "quality": "dom7", "duration": 4, "bass": 2, "roman": "V/G", "localTonic": 4, "localMode": "minor", "name": "D7", "notes": [2, 6, 9, 0] }
+      ]
+    },
+    "cell-mk-g-bridge": {
+      "id": "cell-mk-g-bridge",
+      "name": "G major Bridge",
+      "familyId": "fam-mk-g",
+      "versionIndex": 1,
+      "chords": [
+        { "root": 7, "quality": "maj", "duration": 4, "bass": 7, "roman": "I", "localTonic": 7, "localMode": "major", "name": "G", "notes": [7, 11, 2] },
+        { "root": 0, "quality": "maj", "duration": 4, "bass": 0, "roman": "IV", "localTonic": 7, "localMode": "major", "name": "C", "notes": [0, 4, 7] },
+        { "root": 2, "quality": "maj", "duration": 2, "bass": 2, "roman": "V", "localTonic": 7, "localMode": "major", "name": "D", "notes": [2, 6, 9] },
+        { "root": 7, "quality": "maj", "duration": 2, "bass": 7, "roman": "I", "localTonic": 7, "localMode": "major", "name": "G", "notes": [7, 11, 2] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "vi", "localTonic": 7, "localMode": "major", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 0, "quality": "maj", "duration": 2, "bass": 0, "roman": "IV", "localTonic": 7, "localMode": "major", "name": "C", "notes": [0, 4, 7] },
+        { "root": 2, "quality": "dom7", "duration": 2, "bass": 2, "roman": "V", "localTonic": 7, "localMode": "major", "name": "D7", "notes": [2, 6, 9, 0] },
+        { "root": 7, "quality": "maj", "duration": 4, "bass": 7, "roman": "I", "localTonic": 7, "localMode": "major", "name": "G", "notes": [7, 11, 2] }
+      ]
+    },
+    "cell-mk-into-c": {
+      "id": "cell-mk-into-c",
+      "name": "Into C",
+      "familyId": "fam-mk-g",
+      "versionIndex": 2,
+      "chords": [
+        { "root": 7, "quality": "maj", "duration": 2, "bass": 7, "roman": "I", "localTonic": 7, "localMode": "major", "name": "G", "notes": [7, 11, 2] },
+        { "root": 4, "quality": "min", "duration": 2, "bass": 4, "roman": "vi", "localTonic": 7, "localMode": "major", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 5, "quality": "dom7", "duration": 4, "bass": 5, "roman": "V/C", "localTonic": 7, "localMode": "major", "name": "F7", "notes": [5, 9, 0, 3] },
+        { "root": 0, "quality": "maj", "duration": 4, "bass": 0, "roman": "I", "localTonic": 0, "localMode": "major", "name": "C", "notes": [0, 4, 7] }
+      ]
+    },
+    "cell-mk-c-colour": {
+      "id": "cell-mk-c-colour",
+      "name": "C major Colour",
+      "familyId": "fam-mk-c",
+      "versionIndex": 1,
+      "chords": [
+        { "root": 0, "quality": "maj", "duration": 4, "bass": 0, "roman": "I", "localTonic": 0, "localMode": "major", "name": "C", "notes": [0, 4, 7] },
+        { "root": 5, "quality": "maj", "duration": 4, "bass": 5, "roman": "IV", "localTonic": 0, "localMode": "major", "name": "F", "notes": [5, 9, 0] },
+        { "root": 0, "quality": "add9", "duration": 4, "bass": 0, "roman": "I", "localTonic": 0, "localMode": "major", "name": "Cadd9", "notes": [0, 4, 7, 2] },
+        { "root": 7, "quality": "maj", "duration": 2, "bass": 7, "roman": "V", "localTonic": 0, "localMode": "major", "name": "G", "notes": [7, 11, 2] },
+        { "root": 9, "quality": "min", "duration": 2, "bass": 9, "roman": "vi", "localTonic": 0, "localMode": "major", "name": "Am", "notes": [9, 0, 4] },
+        { "root": 5, "quality": "maj", "duration": 4, "bass": 5, "roman": "IV", "localTonic": 0, "localMode": "major", "name": "F", "notes": [5, 9, 0] },
+        { "root": 7, "quality": "dom7", "duration": 4, "bass": 7, "roman": "V", "localTonic": 0, "localMode": "major", "name": "G7", "notes": [7, 11, 2, 5] },
+        { "root": 0, "quality": "maj", "duration": 4, "bass": 0, "roman": "I", "localTonic": 0, "localMode": "major", "name": "C", "notes": [0, 4, 7] }
+      ]
+    },
+    "cell-mk-into-em": {
+      "id": "cell-mk-into-em",
+      "name": "Into Em home",
+      "familyId": "fam-mk-c",
+      "versionIndex": 2,
+      "chords": [
+        { "root": 0, "quality": "maj", "duration": 2, "bass": 0, "roman": "I", "localTonic": 0, "localMode": "major", "name": "C", "notes": [0, 4, 7] },
+        { "root": 7, "quality": "maj", "duration": 2, "bass": 7, "roman": "V", "localTonic": 0, "localMode": "major", "name": "G", "notes": [7, 11, 2] },
+        { "root": 11, "quality": "dom7", "duration": 4, "bass": 11, "roman": "V/Em", "localTonic": 0, "localMode": "major", "name": "B7", "notes": [11, 3, 6, 9] },
+        { "root": 4, "quality": "min", "duration": 8, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] }
+      ]
+    },
+    "cell-mk-em-outro": {
+      "id": "cell-mk-em-outro",
+      "name": "Em Outro",
+      "familyId": "fam-mk-em",
+      "versionIndex": 3,
+      "chords": [
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 0, "quality": "maj", "duration": 4, "bass": 0, "roman": "bVI", "localTonic": 4, "localMode": "minor", "name": "C", "notes": [0, 4, 7] },
+        { "root": 7, "quality": "maj", "duration": 2, "bass": 7, "roman": "bIII", "localTonic": 4, "localMode": "minor", "name": "G", "notes": [7, 11, 2] },
+        { "root": 11, "quality": "dom7", "duration": 2, "bass": 11, "roman": "V", "localTonic": 4, "localMode": "minor", "name": "B7", "notes": [11, 3, 6, 9] },
+        { "root": 4, "quality": "min", "duration": 8, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 4, "quality": "min", "duration": 16, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] }
+      ]
+    }
+  },
+  "families": {
+    "fam-mk-em": {
+      "id": "fam-mk-em",
+      "name": "Em home",
+      "versionIds": ["cell-mk-em-loop", "cell-mk-em-end", "cell-mk-em-outro"]
+    },
+    "fam-mk-g": {
+      "id": "fam-mk-g",
+      "name": "G major",
+      "versionIds": ["cell-mk-g-bridge", "cell-mk-into-c"]
+    },
+    "fam-mk-c": {
+      "id": "fam-mk-c",
+      "name": "C major",
+      "versionIds": ["cell-mk-c-colour", "cell-mk-into-em"]
+    }
+  },
+  "arrangement": [
+    {
+      "id": "sec-em",
+      "name": "Em Home",
+      "cellId": "cell-mk-em-loop",
+      "chain": ["cell-mk-em-loop"],
+      "reps": 2,
+      "endCellId": "cell-mk-em-end",
+      "intoCellId": null,
+      "seam": { "type": "smooth", "chords": [] }
+    },
+    {
+      "id": "sec-g",
+      "name": "G Bridge",
+      "cellId": "cell-mk-g-bridge",
+      "chain": ["cell-mk-g-bridge"],
+      "reps": 1,
+      "endCellId": null,
+      "intoCellId": "cell-mk-into-c",
+      "seam": { "type": "none", "chords": [] }
+    },
+    {
+      "id": "sec-c",
+      "name": "C Colour",
+      "cellId": "cell-mk-c-colour",
+      "chain": ["cell-mk-c-colour"],
+      "reps": 1,
+      "endCellId": null,
+      "intoCellId": "cell-mk-into-em",
+      "seam": { "type": "smooth", "chords": [] }
+    },
+    {
+      "id": "sec-outro",
+      "name": "Em Outro",
+      "cellId": "cell-mk-em-outro",
+      "chain": ["cell-mk-em-outro"],
+      "reps": 1,
+      "endCellId": null,
+      "intoCellId": null,
+      "seam": { "type": "none", "chords": [] }
+    }
+  ],
+  "focus": {
+    "cellId": "cell-mk-em-loop",
+    "sectionId": "sec-em",
+    "chordIndex": 0
+  }
+}

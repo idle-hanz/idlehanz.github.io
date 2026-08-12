@@ -1,0 +1,304 @@
+{
+  "format": "idlehanz-song-package",
+  "version": 1,
+  "savedAt": "2026-08-06T20:30:00.000Z",
+  "title": "the speed of pain",
+  "bpm": 74,
+  "key": { "tonic": 4, "mode": "minor" },
+  "style": "goth",
+  "notes": "Half-time feel ~74 BPM (song often listed 148). Durations in beats: verse bars = 4, descent tags = 2, holds = 8. Em / C colour / G bridge multi-disk. Spiral axial spacing follows beat length.",
+  "cells": {
+    "cell-sop-intro": {
+      "id": "cell-sop-intro",
+      "name": "SoP Intro",
+      "packId": null,
+      "familyId": null,
+      "versionIndex": 1,
+      "chords": [
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "region": "diatonic", "tag": "intro", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 9, "quality": "sus4", "duration": 4, "bass": 9, "roman": "iv", "region": "flavour", "tag": "intro", "localTonic": 4, "localMode": "minor", "name": "Asus4", "notes": [9, 2, 4] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "region": "diatonic", "tag": "intro", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 9, "quality": "sus4", "duration": 4, "bass": 9, "roman": "iv", "region": "flavour", "tag": "intro", "localTonic": 4, "localMode": "minor", "name": "Asus4", "notes": [9, 2, 4] }
+      ]
+    },
+    "cell-sop-loop": {
+      "id": "cell-sop-loop",
+      "name": "SoP Loop",
+      "packId": null,
+      "familyId": "fam-sop-verse",
+      "versionIndex": 1,
+      "chords": [
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "region": "diatonic", "tag": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 9, "quality": "sus4", "duration": 4, "bass": 9, "roman": "iv", "region": "flavour", "tag": "subdom sus", "localTonic": 4, "localMode": "minor", "name": "Asus4", "notes": [9, 2, 4] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "region": "diatonic", "tag": "direction", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 9, "quality": "sus4", "duration": 4, "bass": 9, "roman": "iv", "region": "flavour", "tag": "subdom sus", "localTonic": 4, "localMode": "minor", "name": "Asus4", "notes": [9, 2, 4] }
+      ]
+    },
+    "cell-sop-end": {
+      "id": "cell-sop-end",
+      "name": "SoP End",
+      "packId": null,
+      "familyId": "fam-sop-verse",
+      "versionIndex": 2,
+      "chords": [
+        { "root": 4, "quality": "min", "duration": 2, "bass": 4, "roman": "i", "region": "diatonic", "tag": "pulled", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 7, "quality": "maj", "duration": 2, "bass": 7, "roman": "bIII", "region": "diatonic", "tag": "direction", "localTonic": 4, "localMode": "minor", "name": "G", "notes": [7, 11, 2] },
+        { "root": 6, "quality": "maj", "duration": 2, "bass": 6, "roman": "II", "region": "flavour", "tag": "colour", "localTonic": 4, "localMode": "minor", "name": "F#", "notes": [6, 10, 1] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "region": "diatonic", "tag": "land", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] }
+      ]
+    },
+    "cell-sop-into-colour": {
+      "id": "cell-sop-into-colour",
+      "name": "SoP Into Colour",
+      "packId": null,
+      "familyId": "fam-sop-verse",
+      "versionIndex": 3,
+      "chords": [
+        { "root": 9, "quality": "sus4", "duration": 2, "bass": 9, "roman": "iv", "region": "flavour", "tag": "into", "localTonic": 0, "localMode": "major", "name": "Asus4", "notes": [9, 2, 4] },
+        { "root": 4, "quality": "min", "duration": 2, "bass": 4, "roman": "iii", "region": "diatonic", "tag": "into", "localTonic": 0, "localMode": "major", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 9, "quality": "sus4", "duration": 2, "bass": 9, "roman": "vi", "region": "flavour", "tag": "into", "localTonic": 0, "localMode": "major", "name": "Asus4", "notes": [9, 2, 4] },
+        { "root": 0, "quality": "add9", "duration": 4, "bass": 0, "roman": "I", "region": "flavour", "tag": "gate", "localTonic": 0, "localMode": "major", "name": "Cadd9", "notes": [0, 4, 7, 2] }
+      ]
+    },
+    "cell-sop-colour": {
+      "id": "cell-sop-colour",
+      "name": "SoP Colour",
+      "packId": null,
+      "familyId": "fam-sop-colour",
+      "versionIndex": 1,
+      "chords": [
+        { "root": 0, "quality": "add9", "duration": 4, "bass": 0, "roman": "I", "region": "flavour", "tag": "add9 colour", "localTonic": 0, "localMode": "major", "name": "Cadd9", "notes": [0, 4, 7, 2] },
+        { "root": 9, "quality": "sus4", "duration": 4, "bass": 9, "roman": "vi", "region": "flavour", "tag": "subdom sus", "localTonic": 0, "localMode": "major", "name": "Asus4", "notes": [9, 2, 4] },
+        { "root": 0, "quality": "add9", "duration": 4, "bass": 0, "roman": "I", "region": "flavour", "tag": "add9 colour", "localTonic": 0, "localMode": "major", "name": "Cadd9", "notes": [0, 4, 7, 2] },
+        { "root": 9, "quality": "sus4", "duration": 4, "bass": 9, "roman": "vi", "region": "flavour", "tag": "subdom sus", "localTonic": 0, "localMode": "major", "name": "Asus4", "notes": [9, 2, 4] }
+      ]
+    },
+    "cell-sop-colour-end": {
+      "id": "cell-sop-colour-end",
+      "name": "SoP Colour End",
+      "packId": null,
+      "familyId": "fam-sop-colour",
+      "versionIndex": 2,
+      "chords": [
+        { "root": 0, "quality": "add9", "duration": 2, "bass": 0, "roman": "I", "region": "flavour", "tag": "exit", "localTonic": 0, "localMode": "major", "name": "Cadd9", "notes": [0, 4, 7, 2] },
+        { "root": 9, "quality": "sus4", "duration": 2, "bass": 9, "roman": "vi", "region": "flavour", "tag": "exit", "localTonic": 0, "localMode": "major", "name": "Asus4", "notes": [9, 2, 4] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "iii", "region": "diatonic", "tag": "home", "localTonic": 0, "localMode": "major", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 0, "quality": "maj", "duration": 4, "bass": 0, "roman": "I", "region": "diatonic", "tag": "lift", "localTonic": 0, "localMode": "major", "name": "C", "notes": [0, 4, 7] }
+      ]
+    },
+    "cell-sop-bridge": {
+      "id": "cell-sop-bridge",
+      "name": "SoP Bridge",
+      "packId": null,
+      "familyId": null,
+      "versionIndex": 1,
+      "chords": [
+        { "root": 7, "quality": "maj", "duration": 4, "bass": 7, "roman": "I", "region": "diatonic", "tag": "bridge", "localTonic": 7, "localMode": "major", "name": "G", "notes": [7, 11, 2] },
+        { "root": 6, "quality": "maj", "duration": 2, "bass": 6, "roman": "VII", "region": "flavour", "tag": "bridge", "localTonic": 7, "localMode": "major", "name": "F#", "notes": [6, 10, 1] },
+        { "root": 4, "quality": "min", "duration": 2, "bass": 4, "roman": "vi", "region": "diatonic", "tag": "bridge", "localTonic": 7, "localMode": "major", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 9, "quality": "sus4", "duration": 4, "bass": 9, "roman": "ii", "region": "flavour", "tag": "bridge", "localTonic": 7, "localMode": "major", "name": "Asus4", "notes": [9, 2, 4] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "vi", "region": "diatonic", "tag": "bridge", "localTonic": 7, "localMode": "major", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 7, "quality": "maj", "duration": 2, "bass": 7, "roman": "I", "region": "diatonic", "tag": "bridge", "localTonic": 7, "localMode": "major", "name": "G", "notes": [7, 11, 2] },
+        { "root": 6, "quality": "maj", "duration": 2, "bass": 6, "roman": "VII", "region": "flavour", "tag": "bridge", "localTonic": 7, "localMode": "major", "name": "F#", "notes": [6, 10, 1] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "vi", "region": "diatonic", "tag": "bridge", "localTonic": 7, "localMode": "major", "name": "Em", "notes": [4, 7, 11] }
+      ]
+    },
+    "cell-sop-refrain": {
+      "id": "cell-sop-refrain",
+      "name": "SoP Refrain",
+      "packId": null,
+      "familyId": "fam-sop-outro",
+      "versionIndex": 1,
+      "chords": [
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "region": "diatonic", "tag": "refrain", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 0, "quality": "maj", "duration": 4, "bass": 0, "roman": "bVI", "region": "diatonic", "tag": "refrain", "localTonic": 4, "localMode": "minor", "name": "C", "notes": [0, 4, 7] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "region": "diatonic", "tag": "refrain", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 0, "quality": "maj", "duration": 4, "bass": 0, "roman": "bVI", "region": "diatonic", "tag": "refrain", "localTonic": 4, "localMode": "minor", "name": "C", "notes": [0, 4, 7] }
+      ]
+    },
+    "cell-sop-into-outro": {
+      "id": "cell-sop-into-outro",
+      "name": "SoP Into Outro",
+      "packId": null,
+      "familyId": "fam-sop-outro",
+      "versionIndex": 2,
+      "chords": [
+        { "root": 0, "quality": "add9", "duration": 2, "bass": 0, "roman": "bVI", "region": "flavour", "tag": "into", "localTonic": 4, "localMode": "minor", "name": "Cadd9", "notes": [0, 4, 7, 2] },
+        { "root": 9, "quality": "sus4", "duration": 2, "bass": 9, "roman": "iv", "region": "flavour", "tag": "into", "localTonic": 4, "localMode": "minor", "name": "Asus4", "notes": [9, 2, 4] },
+        { "root": 4, "quality": "min", "duration": 8, "bass": 4, "roman": "i", "region": "diatonic", "tag": "into", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] }
+      ]
+    },
+    "cell-sop-outro": {
+      "id": "cell-sop-outro",
+      "name": "SoP Outro",
+      "packId": null,
+      "familyId": "fam-sop-outro",
+      "versionIndex": 3,
+      "chords": [
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "region": "diatonic", "tag": "outro", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 0, "quality": "maj", "duration": 4, "bass": 0, "roman": "bVI", "region": "diatonic", "tag": "outro", "localTonic": 4, "localMode": "minor", "name": "C", "notes": [0, 4, 7] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "region": "diatonic", "tag": "outro", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 0, "quality": "maj", "duration": 4, "bass": 0, "roman": "bVI", "region": "diatonic", "tag": "outro", "localTonic": 4, "localMode": "minor", "name": "C", "notes": [0, 4, 7] }
+      ]
+    },
+    "cell-sop-outro-hold": {
+      "id": "cell-sop-outro-hold",
+      "name": "SoP Outro Hold",
+      "packId": null,
+      "familyId": "fam-sop-outro",
+      "versionIndex": 4,
+      "chords": [
+        { "root": 4, "quality": "min", "duration": 8, "bass": 4, "roman": "i", "region": "diatonic", "tag": "hold", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 4, "quality": "min", "duration": 8, "bass": 4, "roman": "i", "region": "diatonic", "tag": "hold", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 4, "quality": "min", "duration": 16, "bass": 4, "roman": "i", "region": "diatonic", "tag": "hold", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] }
+      ]
+    },
+    "cell-sop-full-linear": {
+      "id": "cell-sop-full-linear",
+      "name": "SoP Full Path (Landscape)",
+      "packId": null,
+      "familyId": null,
+      "versionIndex": 1,
+      "chords": [
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 9, "quality": "sus4", "duration": 4, "bass": 9, "roman": "iv", "localTonic": 4, "localMode": "minor", "name": "Asus4", "notes": [9, 2, 4] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 9, "quality": "sus4", "duration": 4, "bass": 9, "roman": "iv", "localTonic": 4, "localMode": "minor", "name": "Asus4", "notes": [9, 2, 4] },
+        { "root": 4, "quality": "min", "duration": 2, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 7, "quality": "maj", "duration": 2, "bass": 7, "roman": "bIII", "localTonic": 4, "localMode": "minor", "name": "G", "notes": [7, 11, 2] },
+        { "root": 6, "quality": "maj", "duration": 2, "bass": 6, "roman": "II", "localTonic": 4, "localMode": "minor", "name": "F#", "notes": [6, 10, 1] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 9, "quality": "sus4", "duration": 4, "bass": 9, "roman": "iv", "localTonic": 4, "localMode": "minor", "name": "Asus4", "notes": [9, 2, 4] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 9, "quality": "sus4", "duration": 4, "bass": 9, "roman": "iv", "localTonic": 4, "localMode": "minor", "name": "Asus4", "notes": [9, 2, 4] },
+        { "root": 0, "quality": "add9", "duration": 4, "bass": 0, "roman": "VI", "localTonic": 0, "localMode": "major", "name": "Cadd9", "notes": [0, 4, 7, 2] },
+        { "root": 9, "quality": "sus4", "duration": 4, "bass": 9, "roman": "iv", "localTonic": 0, "localMode": "major", "name": "Asus4", "notes": [9, 2, 4] },
+        { "root": 0, "quality": "add9", "duration": 4, "bass": 0, "roman": "VI", "localTonic": 0, "localMode": "major", "name": "Cadd9", "notes": [0, 4, 7, 2] },
+        { "root": 9, "quality": "sus4", "duration": 4, "bass": 9, "roman": "iv", "localTonic": 0, "localMode": "major", "name": "Asus4", "notes": [9, 2, 4] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 0, "quality": "maj", "duration": 4, "bass": 0, "roman": "bVI", "localTonic": 4, "localMode": "minor", "name": "C", "notes": [0, 4, 7] },
+        { "root": 4, "quality": "min", "duration": 4, "bass": 4, "roman": "i", "localTonic": 4, "localMode": "minor", "name": "Em", "notes": [4, 7, 11] },
+        { "root": 0, "quality": "maj", "duration": 8, "bass": 0, "roman": "bVI", "localTonic": 4, "localMode": "minor", "name": "C", "notes": [0, 4, 7] }
+      ]
+    }
+  },
+  "families": {
+    "fam-sop-verse": {
+      "id": "fam-sop-verse",
+      "name": "SoP Verse",
+      "versionIds": ["cell-sop-loop", "cell-sop-end", "cell-sop-into-colour"]
+    },
+    "fam-sop-colour": {
+      "id": "fam-sop-colour",
+      "name": "SoP Colour",
+      "versionIds": ["cell-sop-colour", "cell-sop-colour-end"]
+    },
+    "fam-sop-outro": {
+      "id": "fam-sop-outro",
+      "name": "SoP Outro",
+      "versionIds": ["cell-sop-refrain", "cell-sop-into-outro", "cell-sop-outro", "cell-sop-outro-hold"]
+    }
+  },
+  "arrangement": [
+    {
+      "id": "sec-intro",
+      "name": "Intro",
+      "cellId": "cell-sop-intro",
+      "chain": ["cell-sop-intro"],
+      "reps": 1,
+      "endCellId": null,
+      "intoCellId": null,
+      "seam": { "type": "smooth", "chords": [] }
+    },
+    {
+      "id": "sec-verse-1",
+      "name": "Verse 1",
+      "cellId": "cell-sop-loop",
+      "chain": ["cell-sop-loop"],
+      "reps": 2,
+      "endCellId": "cell-sop-end",
+      "intoCellId": "cell-sop-into-colour",
+      "seam": { "type": "none", "chords": [] }
+    },
+    {
+      "id": "sec-colour-1",
+      "name": "Colour 1",
+      "cellId": "cell-sop-colour",
+      "chain": ["cell-sop-colour"],
+      "reps": 1,
+      "endCellId": "cell-sop-colour-end",
+      "intoCellId": null,
+      "seam": { "type": "smooth", "chords": [] }
+    },
+    {
+      "id": "sec-verse-2",
+      "name": "Verse 2",
+      "cellId": "cell-sop-loop",
+      "chain": ["cell-sop-loop"],
+      "reps": 2,
+      "endCellId": "cell-sop-end",
+      "intoCellId": null,
+      "seam": {
+        "type": "turnaround",
+        "chords": [
+          { "root": 7, "quality": "dom7", "duration": 2, "bass": 7, "roman": "V7→", "region": "secondary", "tag": "seam" }
+        ]
+      }
+    },
+    {
+      "id": "sec-bridge",
+      "name": "Bridge",
+      "cellId": "cell-sop-bridge",
+      "chain": ["cell-sop-bridge"],
+      "reps": 1,
+      "endCellId": null,
+      "intoCellId": "cell-sop-into-colour",
+      "seam": { "type": "none", "chords": [] }
+    },
+    {
+      "id": "sec-colour-2",
+      "name": "Colour 2",
+      "cellId": "cell-sop-colour",
+      "chain": ["cell-sop-colour"],
+      "reps": 1,
+      "endCellId": "cell-sop-colour-end",
+      "intoCellId": null,
+      "seam": { "type": "smooth", "chords": [] }
+    },
+    {
+      "id": "sec-refrain",
+      "name": "Refrain",
+      "cellId": "cell-sop-refrain",
+      "chain": ["cell-sop-refrain"],
+      "reps": 2,
+      "endCellId": null,
+      "intoCellId": null,
+      "seam": { "type": "none", "chords": [] }
+    },
+    {
+      "id": "sec-verse-3",
+      "name": "Verse 3",
+      "cellId": "cell-sop-loop",
+      "chain": ["cell-sop-loop"],
+      "reps": 1,
+      "endCellId": "cell-sop-end",
+      "intoCellId": "cell-sop-into-outro",
+      "seam": { "type": "smooth", "chords": [] }
+    },
+    {
+      "id": "sec-outro",
+      "name": "Outro",
+      "cellId": "cell-sop-outro",
+      "chain": ["cell-sop-outro"],
+      "reps": 1,
+      "endCellId": "cell-sop-outro-hold",
+      "intoCellId": null,
+      "seam": { "type": "none", "chords": [] }
+    }
+  ],
+  "focus": {
+    "cellId": "cell-sop-loop",
+    "sectionId": "sec-verse-1",
+    "chordIndex": 0
+  }
+}

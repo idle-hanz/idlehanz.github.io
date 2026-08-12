@@ -66,8 +66,94 @@ H.stopPlayheadLoop = function () {
   }
 
   /**
-   * Play sequence. opts: { once, fromIndex, chords, label, onEnd }
+   * Map absolute beats-elapsed onto { stepIndex, beatsIntoStep } for a chord list.
+   * Wraps when beatsElapsed ≥ total (loop place).
+   */
+  H.beatsToStepOffset = function (chords, beatsElapsed) {
+    const list = chords || [];
+    if (!list.length) return { stepIndex: 0, beatsIntoStep: 0 };
+    let rem = Math.max(0, Number(beatsElapsed) || 0);
+    const total = H.beatSum(list);
+    if (total > 0 && rem >= total) rem = rem % total;
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i].duration != null ? Number(list[i].duration) : 4;
+      if (rem < b - 0.001) {
+        return { stepIndex: i, beatsIntoStep: rem };
+      }
+      rem -= b;
+    }
+    const last = list.length - 1;
+    const lb = list[last].duration != null ? Number(list[last].duration) : 4;
+    return { stepIndex: last, beatsIntoStep: Math.max(0, lb - 0.05) };
+  };
+
+  /**
+   * While audio is running, rebuild the schedule from current H.state.chords
+   * and continue from the same loop place (beats elapsed).
+   * Call after duration / length edits so the loop doesn't keep the old timeline.
+   */
+  H.resyncPlaybackPreservingPlace = function (opts) {
+    opts = opts || {};
+    if (!H.A().isPlaying || !H.A().isPlaying()) return false;
+    // Don't fight an in-progress strip drag — pointerup will resync once
+    const strip = H.$('#time-strip');
+    if (strip && strip.dataset.resizing === '1') return false;
+    const ph = H.A().getPlayhead && H.A().getPlayhead();
+    if (!ph) return false;
+    const meta = H._transportMeta || { fromIndex: 0, loop: !!H.state.loop };
+    // Custom one-shot sequences (A/B, aim audition) — leave alone unless forced
+    if (meta.external && !opts.forceExternal) return false;
+    const from = Math.max(0, meta.fromIndex || 0);
+    // Prefer explicit loop override (checkbox mid-play), else transport meta, else state
+    const loop =
+      opts.loop != null
+        ? !!opts.loop
+        : meta.loop != null
+          ? !!meta.loop
+          : !!H.state.loop;
+    if (!H.state.chords.length) {
+      H.stopPlaybackUI();
+      return false;
+    }
+    // Structural edits always play full path from 0 (fromIndex may be stale)
+    const useFrom = opts.resetFrom ? 0 : from;
+    const source = H.state.chords.slice(useFrom);
+    if (!source.length) {
+      H.stopPlaybackUI();
+      return false;
+    }
+    let targetBeats = ph.beatsElapsed;
+    // If we dropped a non-zero fromIndex, map absolute place into full timeline
+    if (opts.resetFrom && from > 0) {
+      let prefix = 0;
+      for (let i = 0; i < from && i < H.state.chords.length; i++) {
+        prefix += H.state.chords[i].duration != null ? H.state.chords[i].duration : 4;
+      }
+      targetBeats = prefix + ph.beatsElapsed;
+    }
+    const newTotal = H.beatSum(source);
+    if (newTotal <= 0) return false;
+    if (loop) {
+      if (targetBeats >= newTotal) targetBeats = targetBeats % newTotal;
+    } else {
+      targetBeats = Math.min(targetBeats, Math.max(0, newTotal - 0.05));
+    }
+    const at = H.beatsToStepOffset(source, targetBeats);
+    H.playSeq({
+      force: true,
+      fromIndex: useFrom,
+      loop: loop,
+      once: !loop,
+      startAt: at,
+      silent: true,
+    });
+    return true;
+  };
+
+  /**
+   * Play sequence. opts: { once, fromIndex, chords, label, onEnd, startAt, silent, force, loop }
    * fromIndex — start at selected (or given) step of H.state.chords
+   * startAt — { stepIndex, beatsIntoStep } relative to the slice (place-preserving resync)
    * Durations are in beats; audio engine locks them to H.state.bpm.
    */
   H.playSeq = function (opts) {
@@ -96,17 +182,36 @@ H.stopPlayheadLoop = function () {
     const loop = opts.loop != null ? opts.loop : once ? false : H.state.loop;
     const bpm = Math.max(40, Math.min(200, H.state.bpm || 96));
 
+    H._transportMeta = {
+      fromIndex: from,
+      loop: loop,
+      external: !!opts.chords,
+    };
+
     H.A().playSequence(slice, bpm, {
       loop,
       pulse: H.state.pulse,
+      startAt: opts.startAt || null,
       onStep: (i) => {
         const idx = from + i;
+        H._playingIndex = idx;
         if (H.map) H.map.setPlaying(opts.chords ? -1 : idx);
         if (!opts.chords) {
-          H.state.selected = Math.min(idx, H.state.chords.length - 1);
-          // Light UI refresh — playhead rAF owns progress fills
-          H.renderSlots();
-          // Mark playing class without full strip rebuild when possible
+          // Optional follow: default off so duration/inspector stay on the step you picked
+          if (H.state.followPlayhead) {
+            H.state.selected = Math.min(idx, H.state.chords.length - 1);
+            H.renderSlots();
+            H.renderInspector && H.renderInspector();
+          } else {
+            // Light playing highlight only — leave selected alone
+            const slots = H.$('#slots');
+            if (slots) {
+              slots.querySelectorAll('.slot').forEach((el) => {
+                const ei = parseInt(el.dataset.index, 10);
+                el.classList.toggle('playing', ei === idx);
+              });
+            }
+          }
           const host = H.$('#time-strip');
           if (host && host.dataset.resizing !== '1') {
             host.querySelectorAll('.ts-step').forEach((el) => {
@@ -114,23 +219,25 @@ H.stopPlayheadLoop = function () {
               el.classList.toggle('selected', ei === H.state.selected);
               el.classList.toggle('playing', ei === idx);
             });
-          } else {
-            H.renderTimeStrip();
           }
           H.updateMapStatus();
+          if (H.renderPlaceReadout) H.renderPlaceReadout();
         }
       },
       onEnd: () => {
+        H._playingIndex = -1;
         H.stopPlayheadLoop();
         if (H.map) H.map.setPlaying(-1);
         H.renderTimeStrip();
         H.renderSlots();
         H.updatePlayBtn();
+        if (H.renderPlaceReadout) H.renderPlaceReadout();
         if (opts.onEnd) opts.onEnd();
       },
     });
     if (!opts.chords) H.startPlayheadLoop(from);
     H.updatePlayBtn();
+    if (opts.silent) return;
     const totalBeats = slice.reduce((s, c) => s + (c.duration || 4), 0);
     const totalSec = H.A().beatsToSeconds(totalBeats, bpm);
     if (opts.label) H.setSyncStatus(opts.label);
