@@ -128,8 +128,9 @@
     const notes = Array.isArray(sc.notes) ? sc.notes.map((n) => ((n % 12) + 12) % 12) : [];
     const bassPc = sc.bass != null ? sc.bass : sc.bassPc;
     let isCustom = !!sc.custom || sc.quality === 'custom';
-    // Notes present but not an exact named quality → keep as free pitch set
-    if (!isCustom && notes.length && H.S() && H.S().exactQualityFromNotes) {
+    // Only infer custom from notes when there is no named quality.
+    // Named colours (dom7b9, 7alt, …) must survive save/load.
+    if (!isCustom && !sc.quality && notes.length && H.S() && H.S().exactQualityFromNotes) {
       if (!H.S().exactQualityFromNotes(notes, sc.root)) isCustom = true;
     }
     let ch;
@@ -164,9 +165,13 @@
         ch.roman = sc.roman || '';
       }
     }
-    ch.localTonic = sc.localTonic != null ? sc.localTonic : H.state.tonic;
-    ch.localMode = sc.localMode || H.state.mode;
-    if (H.map && H.map.rememberKey) H.map.rememberKey(ch.localTonic, ch.localMode);
+    if (sc.localTonic != null) {
+      ch.localTonic = sc.localTonic;
+      ch.localMode = sc.localMode || H.state.mode;
+      if (H.map && H.map.rememberKey) H.map.rememberKey(ch.localTonic, ch.localMode);
+    } else if (sc.localMode) {
+      ch.localMode = sc.localMode;
+    }
     return ch;
   };
 

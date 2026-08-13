@@ -80,7 +80,8 @@ H.setSyncStatus = function (msg) {
         chords = H.S().mergeClipIntoChords(
           prev0.chords,
           chords,
-          handoff.clipStart || 0
+          handoff.clipStart || 0,
+          handoff.clipMax || handoff.windowLen || null
         );
       }
       H.applySessionChords(chords, {
@@ -185,16 +186,14 @@ H.setSyncStatus = function (msg) {
       name: cellName,
       packId: H.state.fromPackId || (prevCell && prevCell.packId) || null,
       familyId: prevCell && prevCell.familyId ? prevCell.familyId : null,
-      versionIndex: prevCell && prevCell.versionIndex ? prevCell.versionIndex : 1,
+      versionIndex: prevCell && prevCell.versionIndex != null ? prevCell.versionIndex : 1,
       fromVersionIndex: prevCell && prevCell.fromVersionIndex != null ? prevCell.fromVersionIndex : null,
       fromKind: prevCell && prevCell.fromKind ? prevCell.fromKind : null,
       fromCellId: prevCell && prevCell.fromCellId ? prevCell.fromCellId : null,
       chords: H.state.chords.map((c) => H.S().fromLandscapeChord(c)),
     };
-    if (H.S().applyUserCellName) {
-      H.S().applyUserCellName(song, nextCell, cellName);
-    } else if (H.S().inferLineageOnCell) {
-      H.S().inferLineageOnCell(song, nextCell);
+    if (H.S().stripLineageFromName) {
+      nextCell.name = H.S().stripLineageFromName(cellName) || cellName || 'Cell';
     }
     song.cells[cellId] = nextCell;
     H.state.title = nextCell.name;

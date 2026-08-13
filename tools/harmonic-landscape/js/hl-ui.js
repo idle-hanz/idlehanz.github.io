@@ -1299,8 +1299,12 @@ H.refreshAll = function () {
       });
       el.querySelector('.x').addEventListener('click', (e) => {
         e.stopPropagation();
-        H.state.selected = i;
-        H.removeSelected();
+        if (H.removeChordAt) H.removeChordAt(i);
+        else {
+          H.state.selected = i;
+          H.state.selectedIndices = [i];
+          H.removeSelected();
+        }
       });
       const grip = el.querySelector('.grip');
       grip.addEventListener('dragstart', (e) => {

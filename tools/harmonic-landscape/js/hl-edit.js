@@ -135,7 +135,9 @@ H.smoothVoicings = function () {
     let idxs = (H.state.selectedIndices || [])
       .map((i) => (i | 0))
       .filter((i) => i >= 0 && i < n);
-    if (!idxs.length && H.state.selected >= 0 && H.state.selected < n) {
+    if (H.state.selected >= 0 && H.state.selected < n && idxs.indexOf(H.state.selected) < 0) {
+      idxs = [H.state.selected];
+    } else if (!idxs.length && H.state.selected >= 0 && H.state.selected < n) {
       idxs = [H.state.selected];
     }
     // de-dupe + sort

@@ -573,7 +573,7 @@
         </div>
     </div>
 
-    <script src="../ih-session.js"></script>
+    <script src="../ih-session.js?v=20260814j"></script>
     <script>
     const NOTES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     const NOTES_FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
@@ -946,6 +946,8 @@
         newSlot(5, 0)   // F
     ];
     let progressionFocus = 0;
+    let fretClipStart = 0;
+    let fretClipWindow = 8;
     // Morph: exclusive tones pulse current↔next; shared stay lit
     // morphMode: null | 'pair' (Next eye, red/blue) | 'mono' (Current eye, greyscale)
     let morphMode = null;
@@ -5079,9 +5081,11 @@
         // Hard cap matches addSlot (max 8) — never inflate past the UI limit
         let list = chords;
         let clipNote = '';
-        if (IHSession.clipForFretboard) {
+        let clipStart = meta.clipStart != null ? +meta.clipStart : 0;
+        if (IHSession.clipForFretboard && chords.length > 8 && meta.clipStart == null) {
             const clip = IHSession.clipForFretboard(chords, { focus: meta.focus });
             list = clip.chords;
+            clipStart = clip.start || 0;
             if (clip.truncated) {
                 clipNote = IHSession.fretboardClipMessage
                     ? IHSession.fretboardClipMessage(clip)
@@ -5091,10 +5095,14 @@
             list = list.slice(0, 8);
             clipNote = 'Max 8 chords · truncated from ' + chords.length;
         }
+        fretClipStart = clipStart;
+        fretClipWindow = list.length;
         const slots = IHSession.chordsToFretboardSlots(list, newSlot, chordTypes);
         if (!slots.length) return false;
         progression = slots;
-        progressionFocus = Math.max(0, Math.min(progression.length - 1, +(meta.focus || 0)));
+        const focusRaw = +(meta.focus || 0);
+        const focusLocal = meta.clipStart != null ? focusRaw : focusRaw - clipStart;
+        progressionFocus = Math.max(0, Math.min(progression.length - 1, focusLocal));
         if (clipNote) {
             setIhSyncStatus(clipNote);
             setInstanceStatus(clipNote, true);
@@ -5139,6 +5147,7 @@
                 bpm: handoff.bpm,
                 title: handoff.title,
                 cellName: handoff.cellName,
+                clipStart: handoff.clipStart || 0,
             });
             IHSession.clearHandoffHash();
             if (ok) {
@@ -5184,16 +5193,23 @@
         const id = cellId || (song.focus && song.focus.cellId) || IHSession.newCellId('cell');
         const prev = song.cells[id];
         let nextChords = chords;
-        if (prev && prev.chords && prev.chords.length > chords.length && IHSession.mergeClipIntoChords) {
+        if (prev && prev.chords && prev.chords.length && IHSession.mergeClipIntoChords) {
             const ho = IHSession.readHandoffStorage && IHSession.readHandoffStorage();
-            nextChords = IHSession.mergeClipIntoChords(prev.chords, chords, (ho && ho.clipStart) || 0);
+            const start = fretClipStart || (ho && ho.clipStart) || 0;
+            const win = fretClipWindow || (ho && (ho.clipMax || ho.windowLen)) || null;
+            if (prev.chords.length > chords.length || start > 0) {
+                nextChords = IHSession.mergeClipIntoChords(prev.chords, chords, start, win);
+            }
         }
         song.cells[id] = {
             id,
             name: cellName || (document.getElementById('instance-name') || {}).value || (prev && prev.name) || 'From fretboard',
             packId: prev && prev.packId ? prev.packId : null,
             familyId: prev && prev.familyId ? prev.familyId : null,
-            versionIndex: prev && prev.versionIndex ? prev.versionIndex : 1,
+            versionIndex: prev && prev.versionIndex != null ? prev.versionIndex : 1,
+            fromVersionIndex: prev && prev.fromVersionIndex != null ? prev.fromVersionIndex : null,
+            fromKind: prev && prev.fromKind ? prev.fromKind : null,
+            fromCellId: prev && prev.fromCellId ? prev.fromCellId : null,
             chords: nextChords,
         };
         song.focus = {
@@ -5237,7 +5253,9 @@
             },
             cellId,
             cellName,
-            focus: progressionFocus,
+            focus: (fretClipStart || 0) + progressionFocus,
+            clipStart: fretClipStart || 0,
+            clipMax: fretClipWindow || progression.length,
             chords,
         });
         const ok = IHSession.openWithHandoff(IHSession.PATHS.landscapeFromFretboard, payload);

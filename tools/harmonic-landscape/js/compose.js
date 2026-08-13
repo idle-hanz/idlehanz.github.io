@@ -826,7 +826,13 @@
       if (root === r && quality === q) return;
       steps.push({ root: root, quality: quality, roman: roman || '', region: region || 'interchange' });
     };
-    if (q === 'maj' || q === 'maj7' || q === 'add9' || q === 'sus2' || q === '6') {
+    const deg = (r - t + 12) % 12;
+    const minor = romanBaseOf(modeKey) === 'minor';
+    const alreadyDarkMajor = minor && (deg === 3 || deg === 8 || deg === 10);
+    if (
+      !alreadyDarkMajor &&
+      (q === 'maj' || q === 'maj7' || q === 'add9' || q === 'sus2' || q === '6')
+    ) {
       push(r, 'min', chord.roman || '', 'interchange');
       push(r, 'min7', '', 'interchange');
     }
@@ -1450,8 +1456,10 @@
     });
     if (!options.length) return copy;
     const pick = options[0];
-    copy[pick.i] = withBass(music.cloneChord(pick.ch), pick.ch.root);
+    copy[pick.i] = keepExistingBass(music.cloneChord(pick.ch), chords[pick.i]);
     copy[pick.i].duration = chords[pick.i].duration;
+    if (chords[pick.i].localTonic != null) copy[pick.i].localTonic = chords[pick.i].localTonic;
+    if (chords[pick.i].localMode) copy[pick.i].localMode = chords[pick.i].localMode;
     return copy;
   }
 
@@ -1579,12 +1587,22 @@
         roman: c.roman || '',
         tag: 'sevenths',
       });
-      ch = withBass(ch, c.root);
+      ch = keepExistingBass(ch, c);
       ch.duration = c.duration;
       if (c.localTonic != null) ch.localTonic = c.localTonic;
       if (c.localMode) ch.localMode = c.localMode;
       return ch;
     });
+  }
+
+  function keepExistingBass(ch, src) {
+    const music = M();
+    const bass =
+      src && src.bassPc != null ? src.bassPc : src && src.bass != null ? src.bass : null;
+    if (bass == null) return withBass(ch, ch.root);
+    const pcBass = music.pc(bass);
+    if (chordTonePcs(ch).indexOf(pcBass) >= 0) return withBass(ch, pcBass);
+    return withBass(ch, ch.root);
   }
 
   function chordTonePcs(chord) {
@@ -1726,7 +1744,7 @@
             roman: c.roman || '',
             tag: 'parallel',
           });
-          ch = withBass(ch, r);
+          ch = keepExistingBass(ch, c);
           if (c.localTonic != null) ch.localTonic = c.localTonic;
           if (c.localMode) ch.localMode = c.localMode;
           return ch;
@@ -1741,7 +1759,7 @@
         roman: c.roman || '',
         tag: 'parallel',
       });
-      ch = withBass(ch, c.root);
+      ch = keepExistingBass(ch, c);
       ch.duration = c.duration;
       if (c.localTonic != null) ch.localTonic = c.localTonic;
       if (c.localMode) ch.localMode = c.localMode;
@@ -1789,6 +1807,22 @@
     return s;
   }
 
+  function islandTonicScore(slice, t, modeKey, stampT, stampM) {
+    const music = M();
+    let s = islandFit(slice, t, modeKey);
+    const first = slice[0];
+    if (first && first.root != null) {
+      const deg = (music.pc(first.root) - t + 12) % 12;
+      if (deg === 0) s += 1.2;
+      else if (deg === 7) s += 0.35;
+      else if (deg === 3 || deg === 8) s -= 0.55;
+    }
+    if (stampT != null && t === music.pc(stampT) && romanBaseOf(modeKey) === romanBaseOf(stampM || modeKey)) {
+      s += 1.5;
+    }
+    return s;
+  }
+
   function inferIslandKey(slice, stampT, stampM, fallbackT, fallbackM) {
     const music = M();
     const first = slice[0];
@@ -1796,14 +1830,14 @@
     const firstMode =
       side === 'min' ? 'minor' : side === 'maj' ? 'major' : stampM || fallbackM;
     const cand = [
-      { t: music.pc(first.root), m: firstMode, w: 2.3 },
-      { t: stampT, m: stampM || fallbackM, w: 1.15 },
-      { t: fallbackT, m: fallbackM, w: 0.85 },
+      { t: stampT, m: stampM || fallbackM },
+      { t: fallbackT, m: fallbackM },
+      { t: music.pc(first.root), m: firstMode },
     ];
     let best = cand[0];
-    let bestS = -1;
+    let bestS = -Infinity;
     cand.forEach(function (c) {
-      const s = islandFit(slice, c.t, c.m) * c.w;
+      const s = islandTonicScore(slice, c.t, c.m, stampT, stampM);
       if (s > bestS) {
         bestS = s;
         best = c;
@@ -1857,14 +1891,6 @@
       if (r.end - r.start === 1 && merged.length > 1) {
         const neighbor = merged[i + 1] || merged[i - 1];
         if (neighbor) {
-          const fitsNeighbor = islandFit(chords.slice(r.start, r.end), neighbor.tonic, neighbor.mode);
-          if (fitsNeighbor >= 1) {
-            neighbor.start = Math.min(r.start, neighbor.start);
-            neighbor.end = Math.max(r.end, neighbor.end);
-            merged.splice(i, 1);
-            if (i > 0) i -= 1;
-            continue;
-          }
           const a = Math.min(r.start, neighbor.start);
           const b = Math.max(r.end, neighbor.end);
           const stamp = stampKeyOf(chords[a], fbT, fbM);

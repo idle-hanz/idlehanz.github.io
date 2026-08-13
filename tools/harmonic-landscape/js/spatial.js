@@ -159,6 +159,8 @@
     // Double-click writes in Select/browse mode (single click is preview only)
     c.addEventListener('dblclick', (e) => {
       if (e.button != null && e.button !== 0) return;
+      const st = typeof global.HLApp !== 'undefined' && global.HLApp.state;
+      if (st && st.mapGestureMode === 'write') return;
       const pt = this._eventCanvasXY(e);
       let hit = this._hit(pt.sx, pt.sy);
       if (!hit) hit = this._hitLoose(pt.sx, pt.sy);

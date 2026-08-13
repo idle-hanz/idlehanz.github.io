@@ -177,7 +177,13 @@ H.resolveCompareCell = function (song) {
   }
 
   H.versionsShareLiveGrid = function (a, b) {
-    return !!(a && b && a.length && a.length === b.length);
+    if (!a || !b || !a.length || a.length !== b.length) return false;
+    const sum = function (arr) {
+      return arr.reduce(function (s, c) {
+        return s + (c.duration != null ? Number(c.duration) : 4);
+      }, 0);
+    };
+    return Math.abs(sum(a) - sum(b)) < 0.05;
   }
 
   H.armVersionForNextPass = function (cellId) {
@@ -645,7 +651,13 @@ H.resolveCompareCell = function (song) {
     const sel = host.querySelector('#cell-switch');
     if (sel) {
       sel.addEventListener('change', () => {
-        if (sel.value && sel.value !== H.state.cellId) H.switchToCell(sel.value);
+        if (!sel.value || sel.value === H.state.cellId) return;
+        const live = H.isLiveLoop ? H.isLiveLoop() : H.A() && H.A().isPlaying && H.A().isPlaying();
+        if (live) {
+          H.armVersionForNextPass(sel.value);
+          return;
+        }
+        H.switchToCell(sel.value);
       });
     }
     const bind = (id, fn) => {
@@ -676,7 +688,6 @@ H.resolveCompareCell = function (song) {
    */
   H.deleteVersion = function (cellId) {
     if (!H.S() || !cellId) return;
-    if (H.state.armedVersionId === cellId) H.state.armedVersionId = null;
     // Save current work first if deleting something else
     if (H.state.chords.length && H.state.cellId && H.state.cellId !== cellId) {
       H.pushToSharedSession('landscape');
@@ -705,6 +716,7 @@ H.resolveCompareCell = function (song) {
     }
     msg += '\n\nThis cannot be undone from here.';
     if (!confirm(msg)) return;
+    if (H.state.armedVersionId === cellId) H.state.armedVersionId = null;
 
     if (!H.S().deleteCell) {
       alert('Session update required — refresh the page.');
@@ -1069,7 +1081,11 @@ H.resolveCompareCell = function (song) {
         detail +
         ' · gold=new · blue=parent · Alt-click blue chip to clear compare'
     );
-    H.playSeq({ once: true, force: true });
+    if (H.isLiveLoop && H.isLiveLoop() && H.resyncPlaybackPreservingPlace) {
+      H.resyncPlaybackPreservingPlace({ resetFrom: true, loop: true });
+    } else {
+      H.playSeq({ once: true, force: true });
+    }
   }
 
 })(typeof window !== "undefined" ? window : globalThis);

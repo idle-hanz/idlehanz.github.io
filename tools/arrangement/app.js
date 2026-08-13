@@ -363,7 +363,7 @@
       alert('ih-session.js missing createVariation.');
       return;
     }
-    const newId = S().createVariation(song, cellId, {});
+    const newId = S().createVariation(song, cellId, { fromKind: 'copy' });
     if (!newId) {
       alert('Could not create variation.');
       return;
@@ -682,6 +682,7 @@
       sectionId: selectedSecId,
       ephemeral: true,
       clipStart: clip.start || 0,
+      clipMax: clip.max || clip.chords.length,
       chords: clip.chords,
     });
     S().openWithHandoff(S().PATHS.fretboardFromArrangement, payload);

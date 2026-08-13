@@ -186,11 +186,11 @@ H.chordFromChaseSeat = function (seat, key) {
     const mode = opts.mode || (next && prev ? 'middle' : next ? 'start' : prev ? 'building' : 'solo');
     const home = opts.home || null;
     const tonic =
-      (home && home.root != null
-        ? home.root
-        : opts.tonic != null
-          ? opts.tonic
-          : H.state.tonic);
+      opts.tonic != null
+        ? opts.tonic
+        : home && home.root != null
+          ? home.root
+          : H.state.tonic;
     const modeKey = opts.modeKey || (home && home.localMode) || H.state.mode || 'major';
     const pcDist = (a, b) => {
       const d = Math.abs(((a - b) % 12 + 12) % 12);

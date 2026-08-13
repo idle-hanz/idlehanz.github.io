@@ -62,17 +62,26 @@
   };
 
   /** Splice a fretboard window back into the full cell (never shrink the song). */
-  function mergeClipIntoChords(existing, incoming, start) {
+  function mergeClipIntoChords(existing, incoming, start, windowLen) {
     const prev = Array.isArray(existing) ? existing.slice() : [];
     const clip = Array.isArray(incoming) ? incoming : [];
     const at = Math.max(0, start | 0);
     if (!prev.length) return clip.slice();
     if (!clip.length) return prev;
-    const out = prev.slice();
-    for (let i = 0; i < clip.length; i++) {
-      out[at + i] = clip[i];
-    }
-    return out;
+    const win = windowLen != null && windowLen > 0 ? windowLen : clip.length;
+    const before = prev.slice(0, at);
+    const after = prev.slice(at + win);
+    const mid = clip.map(function (c, i) {
+      const prevCh = prev[at + i];
+      if (!c) return prevCh;
+      const out = Object.assign({}, c);
+      if (out.localTonic == null && prevCh && prevCh.localTonic != null) {
+        out.localTonic = prevCh.localTonic;
+      }
+      if (!out.localMode && prevCh && prevCh.localMode) out.localMode = prevCh.localMode;
+      return out;
+    });
+    return before.concat(mid, after);
   }
 
   function now() {
@@ -339,12 +348,14 @@
     let base = stripGeneratedLineage(userName);
     if (!base) base = stripLineageFromName(cell.name) || 'Cell';
     cell.name = base;
-    if (song && cell.familyId && song.families && song.families[cell.familyId]) {
+    if (
+      song &&
+      cell.familyId &&
+      song.families &&
+      song.families[cell.familyId] &&
+      (cell.versionIndex == null || cell.versionIndex === 1)
+    ) {
       song.families[cell.familyId].name = base;
-      familyVersions(song, cell.familyId).forEach(function (c) {
-        if (!c || c.id === cell.id) return;
-        c.name = base;
-      });
     }
     return cell.name;
   }
@@ -387,7 +398,13 @@
     }
 
     const fam = song.families[familyId];
-    const nextIdx = (fam.versionIds || []).length + 1;
+    let maxV = 0;
+    (fam.versionIds || []).forEach(function (id) {
+      const c = song.cells[id];
+      const n = c && c.versionIndex != null ? c.versionIndex : 0;
+      if (n > maxV) maxV = n;
+    });
+    const nextIdx = maxV + 1;
     const newId = newCellId('cell');
     // Family base without trailing "v2" / "· v1 Darken" clutter for storage
     const baseName = (fam.name || src.name || 'Cell')
@@ -650,6 +667,11 @@
     const set = new Set(normalizePcs(notes).map((n) => ((n - r) % 12 + 12) % 12));
     // Known interval sets (must match exactly)
     const catalog = [
+      ['dom7alt', [0, 4, 10, 1, 3, 8]],
+      ['dom7b9', [0, 4, 7, 10, 1]],
+      ['dom7s9', [0, 4, 7, 10, 3]],
+      ['dom7s11', [0, 4, 7, 10, 6]],
+      ['dom7b13', [0, 4, 7, 10, 8]],
       ['min7', [0, 3, 7, 10]],
       ['dom7', [0, 4, 7, 10]],
       ['maj7', [0, 4, 7, 11]],
@@ -698,13 +720,14 @@
             : pcFromName(c.bass)
           : root;
     const notes = normalizePcs(c.notes);
+    const named = c.quality && c.quality !== 'custom';
     const isCustom =
       !!c.custom ||
       c.quality === 'custom' ||
-      (notes.length > 0 && !exactQualityFromNotes(notes, root));
+      (!named && notes.length > 0 && !exactQualityFromNotes(notes, root));
     const quality = isCustom
       ? 'custom'
-      : c.quality && c.quality !== 'custom'
+      : named
         ? c.quality
         : exactQualityFromNotes(notes, root) || 'maj';
     const out = {
@@ -929,6 +952,7 @@
       sectionId: opts.sectionId || null,
       ephemeral: !!opts.ephemeral,
       clipStart: opts.clipStart != null ? opts.clipStart | 0 : 0,
+      clipMax: opts.clipMax != null ? opts.clipMax | 0 : null,
       chords: (opts.chords || []).map((c) => {
         const row = {
           r: c.root,
@@ -1108,7 +1132,8 @@
           nextChords = mergeClipIntoChords(
             prev.chords,
             nextChords,
-            payload.clipStart || 0
+            payload.clipStart || 0,
+            payload.clipMax || payload.windowLen || null
           );
         }
         song.cells[cellId] = {
@@ -1116,7 +1141,7 @@
           name: keepName ? prev.name : incoming || (prev && prev.name) || 'Cell',
           packId: prev && prev.packId ? prev.packId : null,
           familyId: prev && prev.familyId ? prev.familyId : null,
-          versionIndex: prev && prev.versionIndex ? prev.versionIndex : 1,
+          versionIndex: prev && prev.versionIndex != null ? prev.versionIndex : 1,
           fromVersionIndex: prev && prev.fromVersionIndex != null ? prev.fromVersionIndex : null,
           fromKind: prev && prev.fromKind ? prev.fromKind : null,
           fromCellId: prev && prev.fromCellId ? prev.fromCellId : null,
