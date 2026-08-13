@@ -226,6 +226,14 @@ H.refreshAll = function () {
       return;
     }
     const totalBeats = H.state.chords.reduce((s, c) => s + (c.duration || 4), 0) || 1;
+    const islands =
+      H.C() && H.C().segmentKeyIslands
+        ? H.C().segmentKeyIslands(H.state.chords, H.state.tonic, H.state.mode)
+        : [];
+    const keyAt = {};
+    islands.forEach(function (isl) {
+      keyAt[isl.start] = isl;
+    });
     H.state.chords.forEach((ch, i) => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -270,10 +278,19 @@ H.refreshAll = function () {
         (H.getSelectedIndices() || []).length > 1 &&
           (H.getSelectedIndices() || []).indexOf(i) >= 0
       );
+      const isl = keyAt[i];
+      const keyHtml = isl
+        ? `<span class="ts-key" title="Key from here">${
+            H.C().shortKeyLabel
+              ? H.C().shortKeyLabel(isl.tonic, isl.mode)
+              : ''
+          }</span>`
+        : '';
       btn.innerHTML =
         `<span class="ts-playhead" aria-hidden="true"></span>` +
         `<span class="ts-grip" title="Drag to reorder steps" draggable="true">⋮⋮</span>` +
         `<span class="ts-n">${i + 1}</span>` +
+        keyHtml +
         `<span class="ts-name">${ch.name}</span>` +
         `<span class="ts-dur">${beats}b</span>` +
         `<button type="button" class="ts-del" title="Delete step (Backspace / Delete)" aria-label="Delete step">×</button>`;

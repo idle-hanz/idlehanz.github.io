@@ -1570,23 +1570,13 @@
    * pitch that covers the most chords in that island. A held bass can
    * continue across a modulation if the next island still contains it.
    */
-  function pedalProgression(chords, tonic) {
+  function pedalProgression(chords, tonic, modeKey) {
     const music = M();
     if (!chords || !chords.length) return chords.map((c) => music.cloneChord(c));
     const copy = chords.map((c) => music.cloneChord(c));
-    const n = copy.length;
-    const fallback = tonic != null ? music.pc(tonic) : music.pc(copy[0].root);
-    const homeOf = function (c) {
-      return c.localTonic != null ? music.pc(c.localTonic) : fallback;
-    };
-    const islands = [];
-    let start = 0;
-    for (let i = 1; i <= n; i++) {
-      if (i === n || homeOf(copy[i]) !== homeOf(copy[start])) {
-        islands.push({ start: start, end: i, home: homeOf(copy[start]) });
-        start = i;
-      }
-    }
+    const islands = segmentKeyIslands(chords, tonic, modeKey).map(function (isl) {
+      return { start: isl.start, end: isl.end, home: isl.tonic };
+    });
 
     const pickPedal = function (from, to, home, prefer) {
       const counts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -1726,40 +1716,51 @@
     return null;
   }
 
-  function modeFitCount(chords, t, modeKey) {
+  function romanBaseOf(modeKey) {
     const music = M();
-    const degs = (music.MODES[modeKey] || music.MODES.minor).degrees;
-    let n = 0;
-    (chords || []).forEach(function (c) {
-      const deg = (music.pc(c.root) - t + 12) % 12;
-      if (degs.indexOf(deg) >= 0) n += 1;
-    });
-    return n;
+    return (music.MODES[modeKey] || music.MODES.minor).romanBase;
   }
 
-  /** One key for the whole cell. Prefer the first chord as tonic when it fits. */
-  function inferCellKey(chords, fallbackTonic, fallbackMode) {
+  function stampKeyOf(chord, fallbackT, fallbackM) {
     const music = M();
-    const first = chords[0];
-    const fallbackT = fallbackTonic != null ? music.pc(fallbackTonic) : music.pc(first.root);
-    const fallbackM = fallbackMode || 'minor';
+    return {
+      t: chord && chord.localTonic != null ? music.pc(chord.localTonic) : fallbackT,
+      m: (chord && chord.localMode) || fallbackM,
+    };
+  }
+
+  function islandFit(slice, t, modeKey) {
+    const music = M();
+    const degs = (music.MODES[modeKey] || music.MODES.minor).degrees;
+    const diat = music.diatonicChords(t, modeKey, false);
+    let s = 0;
+    (slice || []).forEach(function (c) {
+      const deg = (music.pc(c.root) - t + 12) % 12;
+      const idx = degs.indexOf(deg);
+      if (idx < 0) return;
+      s += 1;
+      const want = qualitySide(diat[idx] && diat[idx].quality);
+      const got = qualitySide(c.quality);
+      if (want && got && want === got) s += 0.4;
+    });
+    return s;
+  }
+
+  function inferIslandKey(slice, stampT, stampM, fallbackT, fallbackM) {
+    const music = M();
+    const first = slice[0];
     const side = qualitySide(first.quality);
-    const firstMode = side === 'min' ? 'minor' : side === 'maj' ? 'major' : first.localMode || fallbackM;
+    const firstMode =
+      side === 'min' ? 'minor' : side === 'maj' ? 'major' : stampM || fallbackM;
     const cand = [
-      { t: music.pc(first.root), m: firstMode, w: 2.2 },
+      { t: music.pc(first.root), m: firstMode, w: 2.3 },
+      { t: stampT, m: stampM || fallbackM, w: 1.15 },
+      { t: fallbackT, m: fallbackM, w: 0.85 },
     ];
-    if (first.localTonic != null) {
-      cand.push({
-        t: music.pc(first.localTonic),
-        m: first.localMode || fallbackM,
-        w: 1.15,
-      });
-    }
-    cand.push({ t: fallbackT, m: fallbackM, w: 1 });
     let best = cand[0];
     let bestS = -1;
     cand.forEach(function (c) {
-      const s = modeFitCount(chords, c.t, c.m) * c.w;
+      const s = islandFit(slice, c.t, c.m) * c.w;
       if (s > bestS) {
         bestS = s;
         best = c;
@@ -1769,17 +1770,82 @@
   }
 
   /**
-   * Strict parallel key of the CELL, not of each disk stamp.
-   * A–D–A is I–IV–I in A: In major leaves it. A B-minor cell remaps
-   * D as III → D♯m. Mixed localTonics no longer split one phrase.
+   * Split a path into key regions. Stamps (Land here / disk) mark changes;
+   * each region’s tonic is re-read from its chords so a noisy F#/B split
+   * on A–D–A still becomes one A-major island.
    */
-  function parallelKeyProgression(chords, tonic, modeKey, toward) {
+  function segmentKeyIslands(chords, fallbackTonic, fallbackMode) {
     const music = M();
-    if (!chords || !chords.length) return chords.map((c) => music.cloneChord(c));
+    if (!chords || !chords.length) return [];
+    const fbT = fallbackTonic != null ? music.pc(fallbackTonic) : music.pc(chords[0].root);
+    const fbM = fallbackMode || 'minor';
+    const raw = [];
+    let start = 0;
+    for (let i = 1; i <= chords.length; i++) {
+      const prev = stampKeyOf(chords[start], fbT, fbM);
+      const cur = i < chords.length ? stampKeyOf(chords[i], fbT, fbM) : null;
+      if (
+        i === chords.length ||
+        cur.t !== prev.t ||
+        romanBaseOf(cur.m) !== romanBaseOf(prev.m)
+      ) {
+        const slice = chords.slice(start, i);
+        const inf = inferIslandKey(slice, prev.t, prev.m, fbT, fbM);
+        raw.push({ start: start, end: i, tonic: inf.tonic, mode: inf.mode });
+        start = i;
+      }
+    }
+    const merged = [];
+    raw.forEach(function (r) {
+      const last = merged[merged.length - 1];
+      if (
+        last &&
+        last.tonic === r.tonic &&
+        romanBaseOf(last.mode) === romanBaseOf(r.mode)
+      ) {
+        last.end = r.end;
+      } else {
+        merged.push({ start: r.start, end: r.end, tonic: r.tonic, mode: r.mode });
+      }
+    });
+    let i = 0;
+    while (i < merged.length) {
+      const r = merged[i];
+      if (r.end - r.start === 1 && merged.length > 1) {
+        const neighbor = merged[i + 1] || merged[i - 1];
+        if (neighbor) {
+          const a = Math.min(r.start, neighbor.start);
+          const b = Math.max(r.end, neighbor.end);
+          const stamp = stampKeyOf(chords[a], fbT, fbM);
+          const inf = inferIslandKey(chords.slice(a, b), stamp.t, stamp.m, fbT, fbM);
+          const fitMerge = islandFit(chords.slice(a, b), inf.tonic, inf.mode);
+          const fitKeep = islandFit(chords.slice(r.start, r.end), r.tonic, r.mode);
+          if (fitMerge >= fitKeep + 0.5) {
+            neighbor.start = a;
+            neighbor.end = b;
+            neighbor.tonic = inf.tonic;
+            neighbor.mode = inf.mode;
+            merged.splice(i, 1);
+            if (i > 0) i -= 1;
+            continue;
+          }
+        }
+      }
+      i += 1;
+    }
+    return merged;
+  }
+
+  function shortKeyLabel(tonic, modeKey) {
+    const music = M();
+    const name = music.noteName(tonic);
+    return romanBaseOf(modeKey) === 'minor' ? name + 'm' : name;
+  }
+
+  function parallelKeySlice(slice, t, fromMode, toward) {
+    const music = M();
     const targetMode = toward === 'maj' ? 'major' : 'minor';
     const oppositeMode = toward === 'maj' ? 'minor' : 'major';
-    const key = inferCellKey(chords, tonic, modeKey);
-    const t = key.tonic;
     const wantSeventh = function (q) {
       q = String(q || '');
       return (
@@ -1789,36 +1855,22 @@
         q === 'maj9'
       );
     };
-    const stamp = function (src, root, quality, roman) {
-      let ch = music.makeChord(root, quality, {
-        duration: src.duration,
-        region: 'parallel',
-        roman: roman || '',
-        tag: 'parallel-key',
-        preferFlat: music.keyPrefersFlat ? music.keyPrefersFlat(t, targetMode) : false,
-      });
-      ch = withBass(ch, ch.root);
-      ch.duration = src.duration;
-      ch.localTonic = t;
-      ch.localMode = targetMode;
-      return ch;
-    };
-    const allTargetColour = chords.every(function (c) {
+    const allTarget = slice.every(function (c) {
       const s = qualitySide(c.quality);
       if (s === 'dim') return true;
       return toward === 'maj' ? s === 'maj' : s === 'min';
     });
-    if (allTargetColour) {
-      return chords.map(function (src) {
+    if (allTarget) {
+      return slice.map(function (src) {
         const c = music.cloneChord(src);
         c.localTonic = t;
         c.localMode = targetMode;
         return c;
       });
     }
-
-    const fromKey = oppositeMode;
-    const out = chords.map((c) => music.cloneChord(c));
+    const fromKey =
+      romanBaseOf(fromMode) === romanBaseOf(targetMode) ? oppositeMode : fromMode;
+    const out = slice.map((c) => music.cloneChord(c));
     let changed = 0;
     out.forEach(function (src, i) {
       if (src.custom || src.quality === 'custom') return;
@@ -1828,14 +1880,23 @@
       if (idx < 0) return;
       const destList = music.diatonicChords(t, targetMode, wantSeventh(src.quality));
       const dest = destList[idx];
-      if (!dest) return;
-      if (dest.root === src.root && dest.quality === src.quality) return;
-      out[i] = stamp(src, dest.root, dest.quality, dest.roman);
+      if (!dest || (dest.root === src.root && dest.quality === src.quality)) return;
+      let ch = music.makeChord(dest.root, dest.quality, {
+        duration: src.duration,
+        region: 'parallel',
+        roman: dest.roman || '',
+        tag: 'parallel-key',
+        preferFlat: music.keyPrefersFlat ? music.keyPrefersFlat(t, targetMode) : false,
+      });
+      ch = withBass(ch, ch.root);
+      ch.duration = src.duration;
+      ch.localTonic = t;
+      ch.localMode = targetMode;
+      out[i] = ch;
       changed += 1;
     });
     if (!changed) {
-      const washed = parallelProgression(out, toward === 'maj' ? 'maj' : 'min');
-      return washed.map(function (ch) {
+      return parallelProgression(out, toward === 'maj' ? 'maj' : 'min').map(function (ch) {
         ch.localTonic = t;
         ch.localMode = targetMode;
         return ch;
@@ -1846,6 +1907,27 @@
       ch.localMode = targetMode;
       return ch;
     });
+  }
+
+  /**
+   * Parallel key per key-region. A B-minor opening and an A-major turnaround
+   * are rewritten separately — never one tonic for the whole cell.
+   */
+  function parallelKeyProgression(chords, tonic, modeKey, toward) {
+    const music = M();
+    if (!chords || !chords.length) return chords.map((c) => music.cloneChord(c));
+    const islands = segmentKeyIslands(chords, tonic, modeKey);
+    const out = chords.map((c) => music.cloneChord(c));
+    islands.forEach(function (isl) {
+      const mapped = parallelKeySlice(
+        out.slice(isl.start, isl.end),
+        isl.tonic,
+        isl.mode,
+        toward
+      );
+      for (let i = 0; i < mapped.length; i++) out[isl.start + i] = mapped[i];
+    });
+    return out;
   }
 
   /** Two darker/colour joins — a whole-cell reharm take, not one step. */
@@ -2667,6 +2749,8 @@
     pedalProgression,
     parallelProgression,
     parallelKeyProgression,
+    segmentKeyIslands,
+    shortKeyLabel,
     reharmProgression,
     reharmBar,
     varySameBassNewUpper,

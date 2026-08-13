@@ -267,8 +267,8 @@ H.resolveCompareCell = function (song) {
       '<button type="button" class="btn ghost" id="btn-var-reharm" title="Fork with two reharm joins">+ Reharm</button>' +
       '<button type="button" class="btn ghost" id="btn-var-major" title="Fork: minors become majors. Majors stay. Same roots.">+ Major</button>' +
       '<button type="button" class="btn ghost" id="btn-var-minor" title="Fork: majors become minors. Minors stay. Same roots.">+ Minor</button>' +
-      '<button type="button" class="btn ghost" id="btn-var-in-major" title="Whole cell in the parallel major of this phrase’s key (usually the first chord). A–D–A stays A–D–A. A B-minor cell becomes B–D♯m–G♯m–…">+ In major</button>' +
-      '<button type="button" class="btn ghost" id="btn-var-in-minor" title="Whole cell in the parallel minor of this phrase’s key. C–G–Am–F → Cm–Gm–A♭–Fm. A–D–A → Am–Dm–Am.">+ In minor</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-in-major" title="Each key region in its own parallel major. A B-minor opening and an A-major turnaround are rewritten separately.">+ In major</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-in-minor" title="Each key region in its own parallel minor. Does not assume one key for the whole cell.">+ In minor</button>' +
       '<button type="button" class="btn ghost" id="btn-var-darken" title="Fork with one darker join">+ Darken</button>' +
       '<button type="button" class="btn ghost" id="btn-var-brighter" title="Fork with one brighter join">+ Brighten</button>' +
       '<button type="button" class="btn ghost" id="btn-ab-ver" title="Play this then blue compare">A/B listen</button>' +
@@ -696,7 +696,7 @@ H.resolveCompareCell = function (song) {
         : 0;
     } else if (kind === 'pedal' && C && C.pedalProgression) {
       changed = applyLand(function (land) {
-        return C.pedalProgression(land, H.state.tonic);
+        return C.pedalProgression(land, H.state.tonic, H.state.mode);
       }, 'pedal')
         ? 1
         : 0;
