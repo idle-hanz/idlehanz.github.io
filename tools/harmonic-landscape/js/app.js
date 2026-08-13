@@ -511,6 +511,7 @@
 
     H.fillControls();
     H.wire();
+    if (H.wirePolish) H.wirePolish();
     // Prefer handoff / shared session; else start empty (no default pack)
     const loaded = H.ingestHandoffOrSession();
     if (!loaded) {
@@ -527,6 +528,7 @@
     }
     H.refreshAll();
     H.refreshAltPath();
+    if (H.renderDiskLegend) H.renderDiskLegend();
     H.setSyncStatus(
       loaded
         ? 'Loaded shared session'
@@ -647,6 +649,11 @@
         const fold = H.$('#fold-feels');
         if (fold) fold.open = true;
         fold && fold.scrollIntoView && fold.scrollIntoView({ block: 'nearest' });
+      });
+    }
+    if (H.$('#btn-empty-demo')) {
+      H.$('#btn-empty-demo').addEventListener('click', () => {
+        if (H.loadStyleDemo) H.loadStyleDemo('speed-of-pain');
       });
     }
     if (H.$('#coach-start-i')) {
@@ -861,6 +868,7 @@
       });
     });
     if (H.syncFunctionOptsUI) H.syncFunctionOptsUI();
+    if (H.syncFunctionPresetUI) H.syncFunctionPresetUI();
     if (H.$('#function-opts')) H.$('#function-opts').hidden = true;
 
     // Style lens + demos

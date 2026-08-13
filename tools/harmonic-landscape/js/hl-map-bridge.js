@@ -515,13 +515,14 @@ H.chordFromChaseSeat = function (seat, key) {
     const isMin =
       (dest.mode || H.state.mode) === 'minor' ||
       ((H.M().MODES[dest.mode || H.state.mode] || {}).romanBase === 'minor');
-    H.setSyncStatus(
+    const msg =
       'Left home → ' +
-        H.M().noteName(dest.tonic) +
-        (isMin ? 'm' : '') +
-        (planted ? ' · ' + planted : '') +
-        ' · earlier steps stay on their wheels'
-    );
+      H.M().noteName(dest.tonic) +
+      (isMin ? 'm' : '') +
+      (planted ? ' · ' + planted : '') +
+      ' · earlier steps stay on their wheels';
+    H.setSyncStatus(msg);
+    if (H.showToast) H.showToast(msg);
     return true;
   };
 
@@ -569,15 +570,16 @@ H.chordFromChaseSeat = function (seat, key) {
       H.state.selected = pivotSel >= 0 ? pivotSel : H.state.selected;
       H.afterEdit();
       const roman = dest.romanInKey ? ' as ' + dest.romanInKey : '';
-      H.setSyncStatus(
+      const msg =
         'Write home → ' +
-          (dest.name ||
-            music.noteName(dest.tonic) +
-              ' ' +
-              ((music.MODES[mode] || {}).name || mode)) +
-          roman +
-          ' · no new chords · keep writing / drag to reorder'
-      );
+        (dest.name ||
+          music.noteName(dest.tonic) +
+            ' ' +
+            ((music.MODES[mode] || {}).name || mode)) +
+        roman +
+        ' · no new chords';
+      H.setSyncStatus(msg + ' · keep writing / drag to reorder');
+      if (H.showToast) H.showToast(msg);
       return true;
     }
 
@@ -620,19 +622,20 @@ H.chordFromChaseSeat = function (seat, key) {
     );
     if (ok) {
       const roman = dest.romanInKey ? ' as ' + dest.romanInKey : '';
-      H.setSyncStatus(
+      const msg =
         'Pivot' +
-          roman +
-          ' → ' +
-          (dest.name ||
-            music.noteName(dest.tonic) +
-              ' ' +
-              ((music.MODES[mode] || {}).name || mode)) +
-          ' · ' +
-          (establish === 'tonic' ? 'landed tonic' : 'landed V7→I') +
-          ' after step ' +
-          (pivotSel + 1)
-      );
+        roman +
+        ' → ' +
+        (dest.name ||
+          music.noteName(dest.tonic) +
+            ' ' +
+            ((music.MODES[mode] || {}).name || mode)) +
+        ' · ' +
+        (establish === 'tonic' ? 'landed tonic' : 'landed V7→I') +
+        ' after step ' +
+        (pivotSel + 1);
+      H.setSyncStatus(msg);
+      if (H.showToast) H.showToast(msg);
     }
     return ok;
   };
@@ -1263,6 +1266,9 @@ H.chordFromChaseSeat = function (seat, key) {
     H.state.selected = to;
     H.state.fromPackId = null;
     H.afterEdit();
+    if (H.showToast) {
+      H.showToast('Reordered · step ' + (from + 1) + ' → position ' + (to + 1));
+    }
   }
 
   H.afterEdit = function () {

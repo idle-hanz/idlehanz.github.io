@@ -489,6 +489,17 @@
     this.camera.tz = 1;
   };
 
+  /** Pan camera so a multi-key disk sits near the viewport centre. */
+  SpatialMap.prototype.focusDisk = function (disk) {
+    if (!disk) return this.focusHome();
+    this.cameraMode = 'free';
+    // World coords: disk centre should approach view origin under pan
+    this.camera.tx = -(disk.cx || 0);
+    this.camera.ty = -(disk.cy || 0);
+    if (this.camera.tz == null || this.camera.tz < 0.85) this.camera.tz = 1;
+    this.draw && this.draw();
+  };
+
   /**
    * Offline map hit-test self-check (no audio/DOM paint needed).
    * Returns { ok, failures: string[] }. Call from console: HLSpatial.selfTest()

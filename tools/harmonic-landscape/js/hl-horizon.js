@@ -536,13 +536,14 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       }
     }
 
-    // Secondary ii–Vs: ii/X → V7/X → X (when Dom layer on)
+    // Secondary ii–Vs: ii/X → V7/X → X (when Dom layer on) — density cap
     if (fo.showSecondaryIiVs !== false) {
-      const packs =
+      const packs = (
         nb.secondaryIiVs ||
         (music.secondaryIiVs
           ? music.secondaryIiVs(H.state.tonic, H.state.mode, { preferFlat: preferFlat })
-          : []);
+          : [])
+      ).slice(0, fo.colours || fo.valts ? 5 : 3);
       packs.forEach(function (pack) {
         if (!pack || !pack.ii || !pack.v7) return;
         const ii = stamp(pack.ii);
@@ -650,7 +651,7 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
         const dimList = []
           .concat(dim.asV7b9 || [])
           .concat(dim.commonTone || [])
-          .concat((dim.leading || []).slice(0, 7));
+          .concat((dim.leading || []).slice(0, 4));
         dimList.forEach(function (ch) {
           const c = stamp(ch);
           const cid = idOf(c);
@@ -963,6 +964,111 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
     if (music.functionNeighborhood && !forMap) {
       const nb = music.functionNeighborhood(t, H.state.mode);
       // Primary V7 → I first (G7 → C in C major)
+      // Recipes first (primary From-here surface) — denser list, less spam
+      const stampRoute = function (chords) {
+        return (chords || []).map(function (c) {
+          const x = music.cloneChord ? music.cloneChord(c) : { ...c, notes: (c.notes || []).slice() };
+          H.stampKey(x, H.writeKey());
+          return x;
+        });
+      };
+      const pushRecipe = function (name, character, chords, kind) {
+        if (!chords || chords.length < 1) return;
+        const route = stampRoute(chords);
+        const labels = route
+          .map(function (c) {
+            return c.name;
+          })
+          .join(' → ');
+        items.push({
+          chord: route[0],
+          kind: kind || 'recipe',
+          label: labels,
+          job: (name || 'recipe') + (character ? ' · ' + character : ''),
+          route: route,
+          section: 'recipe',
+        });
+      };
+
+      // Primary cadence packages
+      if (nb.primaryDominant && nb.diatonic && nb.diatonic[0]) {
+        pushRecipe(
+          'V7 → I',
+          'authentic',
+          [nb.primaryDominant, nb.diatonic[0]],
+          'recipe'
+        );
+      }
+      if (nb.diatonic && nb.diatonic[1] && nb.primaryDominant && nb.diatonic[0]) {
+        const ii0 = nb.diatonic[1];
+        const iiQ =
+          String(ii0.quality || '').indexOf('dim') >= 0 ||
+          String(ii0.quality || '').indexOf('half') >= 0
+            ? 'halfdim'
+            : 'min7';
+        const iiCh = music.makeChord(ii0.root, iiQ, {
+          region: 'diatonic',
+          roman: ii0.roman || 'ii',
+          tag: 'primary ii',
+          preferFlat: nb.preferFlat,
+        });
+        pushRecipe(
+          'ii–V–I',
+          'primary jazz cadence',
+          [iiCh, nb.primaryDominant, nb.diatonic[0]],
+          'recipe'
+        );
+      }
+      const iiVs =
+        nb.secondaryIiVs ||
+        (music.secondaryIiVs
+          ? music.secondaryIiVs(t, H.state.mode, { preferFlat: nb.preferFlat })
+          : []);
+      // Cap: V and one more target only
+      iiVs.slice(0, 2).forEach(function (pack) {
+        pushRecipe(
+          'ii–V/' + (pack.targetRoman || 'x'),
+          'secondary ii–V',
+          pack.chords,
+          'secondaryii'
+        );
+      });
+      const vAlt =
+        nb.vAlternatives ||
+        (music.vAlternatives
+          ? music.vAlternatives(t, H.state.mode, { preferFlat: nb.preferFlat })
+          : null);
+      if (vAlt && vAlt.routes) {
+        vAlt.routes
+          .filter(function (r) {
+            return (
+              r &&
+              r.chords &&
+              r.chords.length >= 2 &&
+              /alt|♭9|backdoor|Tritone|Delayed/i.test(r.name || '')
+            );
+          })
+          .slice(0, 4)
+          .forEach(function (r) {
+            pushRecipe(r.name, r.character || '', r.chords, 'recipe');
+          });
+      }
+      if (
+        nb.diminished &&
+        nb.diminished.asV7b9 &&
+        nb.diminished.asV7b9[0] &&
+        nb.diatonic &&
+        nb.diatonic[0]
+      ) {
+        pushRecipe(
+          '°7 → I',
+          'dim as V7♭9',
+          [nb.diminished.asV7b9[0], nb.diatonic[0]],
+          'diminished'
+        );
+      }
+
+      // Top secondaries only (recipes already cover packages)
       if (nb.primaryDominant) {
         let v7 = music.cloneChord
           ? music.cloneChord(nb.primaryDominant)
@@ -982,13 +1088,15 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
           chord: v7,
           kind: 'secondary',
           label: tgt ? v7.name + ' → ' + tgt.name : v7.name,
-          job: 'V7 · primary dominant',
+          job: 'V7 · primary',
           route: tgt ? [v7, tgt] : undefined,
           section: 'secondary',
         });
       }
-      (nb.secondary || []).forEach((sec) => {
-        let v7 = music.cloneChord ? music.cloneChord(sec) : { ...sec, notes: (sec.notes || []).slice() };
+      (nb.secondary || []).slice(0, 3).forEach(function (sec) {
+        let v7 = music.cloneChord
+          ? music.cloneChord(sec)
+          : { ...sec, notes: (sec.notes || []).slice() };
         if (from && compose.bestInversion) v7 = compose.bestInversion(from, v7);
         H.stampKey(v7, H.writeKey());
         const tgt = sec.resolveTarget
@@ -1008,8 +1116,11 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
           section: 'secondary',
         });
       });
-      (nb.interchange || []).forEach((ic) => {
-        let ch = music.cloneChord ? music.cloneChord(ic) : { ...ic, notes: (ic.notes || []).slice() };
+      // Sparse borrow sample (full set on In this key map)
+      (nb.interchange || []).slice(0, 3).forEach(function (ic) {
+        let ch = music.cloneChord
+          ? music.cloneChord(ic)
+          : { ...ic, notes: (ic.notes || []).slice() };
         if (from && compose.bestInversion) ch = compose.bestInversion(from, ch);
         H.stampKey(ch, H.writeKey());
         items.push({
@@ -1020,113 +1131,6 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
           section: 'interchange',
         });
       });
-      (nb.gates || []).forEach((g) => {
-        let ch = music.cloneChord ? music.cloneChord(g) : { ...g, notes: (g.notes || []).slice() };
-        if (from && from.root === ch.root && from.quality === ch.quality) return;
-        if (from && compose.bestInversion) ch = compose.bestInversion(from, ch);
-        H.stampKey(ch, H.writeKey());
-        items.push({
-          chord: ch,
-          kind: 'gate',
-          label: ch.name,
-          job: (ch.roman || 'I/IV/V') + ' · gate in/out of borrow',
-          section: 'gate',
-        });
-      });
-
-      // Recipes — multi-chord packages from strands (ii–V/x, V alts, dim→I)
-      const stampRoute = function (chords) {
-        return (chords || []).map(function (c) {
-          const x = music.cloneChord ? music.cloneChord(c) : { ...c, notes: (c.notes || []).slice() };
-          H.stampKey(x, H.writeKey());
-          return x;
-        });
-      };
-      const pushRecipe = function (name, character, chords, kind) {
-        if (!chords || chords.length < 1) return;
-        const route = stampRoute(chords);
-        const labels = route.map(function (c) {
-          return c.name;
-        }).join(' → ');
-        items.push({
-          chord: route[0],
-          kind: kind || 'recipe',
-          label: labels,
-          job: (name || 'recipe') + (character ? ' · ' + character : ''),
-          route: route,
-          section: 'recipe',
-        });
-      };
-
-      // Primary ii–V–I
-      if (nb.diatonic && nb.diatonic[1] && nb.primaryDominant) {
-        const ii0 = nb.diatonic[1];
-        const iiQ =
-          String(ii0.quality || '').indexOf('dim') >= 0 ||
-          String(ii0.quality || '').indexOf('half') >= 0
-            ? 'halfdim'
-            : 'min7';
-        const iiCh = music.makeChord(ii0.root, iiQ, {
-          region: 'diatonic',
-          roman: ii0.roman || 'ii',
-          tag: 'primary ii',
-          preferFlat: nb.preferFlat,
-        });
-        const home = nb.diatonic[0];
-        pushRecipe(
-          'ii–V–I',
-          'primary jazz cadence',
-          [iiCh, nb.primaryDominant, home],
-          'recipe'
-        );
-      }
-
-      // A few secondary ii–Vs (cap so the list stays usable)
-      const iiVs =
-        nb.secondaryIiVs ||
-        (music.secondaryIiVs
-          ? music.secondaryIiVs(t, H.state.mode, { preferFlat: nb.preferFlat })
-          : []);
-      iiVs.slice(0, 4).forEach(function (pack) {
-        pushRecipe(
-          'ii–V/' + (pack.targetRoman || 'x'),
-          'secondary ii–V',
-          pack.chords,
-          'secondaryii'
-        );
-      });
-
-      // V-alternative routes
-      const vAlt =
-        nb.vAlternatives ||
-        (music.vAlternatives
-          ? music.vAlternatives(t, H.state.mode, { preferFlat: nb.preferFlat })
-          : null);
-      if (vAlt && vAlt.routes) {
-        vAlt.routes
-          .filter(function (r) {
-            return (
-              r &&
-              r.chords &&
-              r.chords.length >= 2 &&
-              /alt|♭9|backdoor|Tritone|Delayed|sus/i.test(r.name || '')
-            );
-          })
-          .slice(0, 6)
-          .forEach(function (r) {
-            pushRecipe(r.name, r.character || '', r.chords, 'recipe');
-          });
-      }
-
-      // Dim as V7♭9 → I
-      if (nb.diminished && nb.diminished.asV7b9 && nb.diminished.asV7b9[0] && nb.diatonic[0]) {
-        pushRecipe(
-          '°7 → I',
-          'dim as V7♭9',
-          [nb.diminished.asV7b9[0], nb.diatonic[0]],
-          'diminished'
-        );
-      }
     }
 
     // Flavours — same-key colour (Function atlas owns most of these).

@@ -83,6 +83,7 @@ H.refreshAll = function () {
         requestAnimationFrame(unfreeze);
       }
       H.renderTimeStrip({ force: true });
+      if (H.renderDiskLegend) H.renderDiskLegend();
     }
   };
 
@@ -126,7 +127,9 @@ H.refreshAll = function () {
     const bar = H.$('#function-opts');
     if (bar) bar.hidden = view !== 'function';
     H.syncFunctionOptsUI();
+    if (H.syncFunctionPresetUI) H.syncFunctionPresetUI();
     H.refreshMap({ keepCamera: true });
+    if (H.renderDiskLegend) H.renderDiskLegend();
     if (camSnap && H.map && H.map.restoreCamera) {
       // Same write-home wheel, same zoom. Re-centre only if already near home.
       const nearHome =
@@ -1358,13 +1361,13 @@ H.refreshAll = function () {
     const items = H.buildHorizon();
     const order = {
       home: -1,
-      secondary: 0,
+      recipe: 0,
       secondaryii: 1,
-      interchange: 2,
-      gate: 3,
-      recipe: 4,
+      diminished: 1,
+      secondary: 2,
+      interchange: 3,
+      gate: 4,
       tritone: 5,
-      diminished: 5,
       valt: 5,
       direction: 6,
       flavour: 7,

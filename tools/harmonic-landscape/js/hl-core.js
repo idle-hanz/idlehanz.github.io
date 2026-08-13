@@ -46,6 +46,9 @@
         // Colours live mainly in right-click; map accents optional
         colours: false,
       },
+      /** In this key density: core | jazz | full */
+      functionPreset: 'core',
+      gestureLegendDismissed: false,
       /** Style lens: neutral | classical | jazz | blues | rock | goth | metal | shoegaze */
       style: 'neutral',
     }

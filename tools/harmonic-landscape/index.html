@@ -1054,6 +1054,72 @@
     }
     .coach li { margin: 0; }
     .coach .coach-actions { display: flex; gap: 0.3rem; margin-left: auto; }
+    .gesture-legend {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.75rem;
+      margin: 0 0 0.4rem; padding: 0.4rem 0.55rem;
+      border: 1px solid rgba(126,184,218,0.35); border-radius: 8px;
+      background: rgba(12, 18, 32, 0.92); font-size: 0.72rem; color: var(--text);
+    }
+    .gesture-legend[hidden] { display: none !important; }
+    .gesture-legend strong { color: #9ec9e8; }
+    .gesture-legend .gl-item { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--muted); }
+    .gesture-legend kbd {
+      font: 600 0.65rem DM Sans, system-ui, sans-serif;
+      padding: 0.08rem 0.3rem; border-radius: 4px;
+      border: 1px solid var(--line); background: var(--elev); color: var(--gold2);
+    }
+    .hl-toast {
+      position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%) translateY(120%);
+      z-index: 1200; display: flex; align-items: center; gap: 0.65rem;
+      max-width: min(92vw, 28rem); padding: 0.55rem 0.85rem;
+      border-radius: 10px; border: 1px solid rgba(196,165,116,0.45);
+      background: rgba(18,16,12,0.96); color: var(--text); font-size: 0.82rem;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.45); transition: transform 0.22s ease, opacity 0.22s ease;
+      opacity: 0; pointer-events: none;
+    }
+    .hl-toast.on { transform: translateX(-50%) translateY(0); opacity: 1; pointer-events: auto; }
+    .hl-toast-undo {
+      border: 1px solid rgba(126,184,218,0.5); background: rgba(30,50,80,0.6);
+      color: #9ec9e8; border-radius: 6px; padding: 0.2rem 0.5rem; font: 600 0.75rem DM Sans, system-ui, sans-serif;
+      cursor: pointer;
+    }
+    .hl-toast-undo:hover { border-color: #7eb8da; color: #fff; }
+    .disk-legend {
+      display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center;
+      margin: 0.25rem 0 0.15rem; min-height: 0;
+    }
+    .disk-legend[hidden] { display: none !important; }
+    .disk-chip {
+      border: 1px solid var(--line); background: var(--elev); color: var(--muted);
+      border-radius: 999px; padding: 0.15rem 0.55rem; font: 600 0.68rem DM Sans, system-ui, sans-serif;
+      cursor: pointer;
+    }
+    .disk-chip:hover { border-color: var(--gold); color: var(--gold2); }
+    .disk-chip.active {
+      border-color: rgba(167,139,250,0.65); color: #e9d5ff;
+      background: rgba(88,50,120,0.35);
+    }
+    .fo-presets { display: inline-flex; gap: 0.2rem; margin-right: 0.35rem; align-items: center; }
+    .fo-presets .btn { padding: 0.15rem 0.4rem; font-size: 0.65rem; }
+    .fo-presets .btn.active {
+      border-color: rgba(126,184,218,0.65); color: #9ec9e8;
+      background: rgba(30,50,80,0.55);
+    }
+    .empty-start {
+      display: flex; flex-direction: column; gap: 0.55rem;
+      padding: 0.85rem 0.75rem; margin-bottom: 0.55rem;
+      border: 1px dashed rgba(196,165,116,0.35); border-radius: 10px;
+      background: rgba(196,165,116,0.06);
+    }
+    .empty-start .empty-title {
+      font-family: var(--display); font-size: 0.95rem; color: var(--gold2); margin: 0;
+    }
+    .empty-start .empty-hint { margin: 0; font-size: 0.75rem; color: var(--muted); line-height: 1.4; }
+    .empty-start .empty-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .strip-teach {
+      font-size: 0.68rem; color: var(--muted); margin: 0 0 0.25rem;
+    }
+    .strip-teach strong { color: var(--gold); }
     .staged-badge {
       display: none;
       align-items: center;
@@ -1195,15 +1261,25 @@
     <div id="coach" class="coach" role="region" aria-label="Getting started">
       <strong>Start here</strong>
       <ol>
-        <li><strong>1.</strong> Write home = your key</li>
-        <li><strong>2.</strong> Click seats (I / V…) or + Home / +I +V</li>
-        <li><strong>3.</strong> From here / drag for next moves</li>
-        <li><strong>4.</strong> Purple rings = leave to a new key</li>
+        <li><strong>1.</strong> Write home = key</li>
+        <li><strong>2.</strong> Click seats or + Start on I</li>
+        <li><strong>3.</strong> Right-click a step to pivot keys</li>
+        <li><strong>4.</strong> ⋮⋮ on timeline reorders · drop node on node reorders</li>
       </ol>
       <div class="coach-actions">
         <button type="button" class="btn primary" id="coach-start-i" title="Plant the tonic and start">+ Start on I</button>
         <button type="button" class="btn ghost" id="coach-dismiss" title="Hide this tip">Got it</button>
       </div>
+    </div>
+
+    <div id="gesture-legend" class="gesture-legend" role="region" aria-label="Map gestures">
+      <strong>Map</strong>
+      <span class="gl-item"><kbd>Click seat</kbd> add / edit</span>
+      <span class="gl-item"><kbd>Drag → seat</kbd> reassign step</span>
+      <span class="gl-item"><kbd>Drop on step</kbd> reorder</span>
+      <span class="gl-item"><kbd>⋮⋮ strip</kbd> reorder</span>
+      <span class="gl-item"><kbd>Right-click</kbd> colours · pivot</span>
+      <button type="button" class="btn ghost" id="gesture-legend-dismiss" style="margin-left:auto;padding:0.15rem 0.45rem;font-size:0.68rem">Got it</button>
     </div>
 
     <main>
@@ -1223,9 +1299,13 @@
         <div class="section">
           <h2>Build</h2>
           <div class="empty-start" id="empty-start" hidden>
-            <button type="button" class="btn primary" id="btn-empty-home" title="Start the path on the tonic">+ Start on I</button>
-            <button type="button" class="btn" id="btn-empty-v" title="Add V (or V7) of write home">+ V</button>
-            <button type="button" class="btn ghost" id="btn-empty-feel" title="Open feel packs">Feels…</button>
+            <p class="empty-title">Empty path</p>
+            <p class="empty-hint">Three ways in — then write on the Journey wheel. In this key opens theory layers when you need them.</p>
+            <div class="empty-actions">
+              <button type="button" class="btn primary" id="btn-empty-home" title="Start the path on the tonic">+ Start on I</button>
+              <button type="button" class="btn" id="btn-empty-demo" title="Load Speed of Pain colour demo">Demo: SoP</button>
+              <button type="button" class="btn ghost" id="btn-empty-feel" title="Open feel packs">Feels…</button>
+            </div>
           </div>
           <div class="add-row">
             <select id="add-root" aria-label="Root"></select>
@@ -1339,7 +1419,12 @@
               <button type="button" class="btn ghost" id="btn-demo-sop" title="Load Em–C / Asus2 / G–F#–F–Em demo (goth)">Demo</button>
             </div>
             <div id="function-opts" class="function-opts" hidden>
-              <span class="function-opts-label">Show</span>
+              <span class="function-opts-label">Layers</span>
+              <div class="fo-presets" title="Density presets for the atlas">
+                <button type="button" class="btn ghost active" data-fo-preset="core" title="Diatonic + Dom + Borrow">Core</button>
+                <button type="button" class="btn ghost" data-fo-preset="jazz" title="Core + Tritone + Dim + V alts">Jazz</button>
+                <button type="button" class="btn ghost" data-fo-preset="full" title="All layers">Full</button>
+              </div>
               <label class="fo-ctl" title="V7→I, secondaries, and secondary ii–Vs (blue)"><input type="checkbox" id="fo-dominants" checked> Dom</label>
               <label class="fo-ctl" title="Modal interchange (purple)"><input type="checkbox" id="fo-borrow" checked> Borrow</label>
               <label class="fo-ctl" title="Tritone subs of V and every secondary V (coral)"><input type="checkbox" id="fo-tritone"> Tritone</label>
@@ -1351,18 +1436,21 @@
         </div>
         <canvas id="map" aria-label="Harmonic path and directions"></canvas>
         <div class="map-footer">
+          <div id="disk-legend" class="disk-legend" hidden></div>
           <div id="map-status" class="map-status">Select a step</div>
           <div class="map-legend-line">
             <span class="legend-chip"><span class="legend-dot gold"></span> Selected</span>
             <span class="legend-chip"><span class="legend-dot purple"></span> Playing</span>
             <span class="legend-chip"><span class="legend-dot ghost"></span> Nearby key</span>
-            <span style="opacity:0.75"> · In this key: Dom · Borrow · Tritone · Dim · V alts · Left add · Right colours</span>
+            <span class="legend-chip" title="Step owned by another key disk"><span class="legend-dot" style="background:#7eb8da;border-radius:2px"></span> Other key</span>
+            <span style="opacity:0.75"> · ⋮⋮ strip reorder · right-click pivot · presets on In this key</span>
           </div>
           <div id="traj-caption" class="traj-caption">Path shape appears here</div>
+          <p class="strip-teach"><strong>Timeline</strong> · <strong>⋮⋮</strong> drag reorder · edge resize · body drag→map reassign · right-click pivot/colours</p>
           <div class="time-strip-wrap" id="time-strip-wrap">
-            <div id="time-strip" class="time-strip" title="Click select · drag edge to resize · double-click split · scroll if long"></div>
+            <div id="time-strip" class="time-strip" title="⋮⋮ reorder · edge resize · body drag to map · right-click"></div>
           </div>
-          <p class="foot" style="margin:0.15rem 0 0">Timeline · click select · <kbd>Ctrl</kbd> multi · <kbd>Shift</kbd> range · right-click colours · drag to map · edge resize</p>
+          <p class="foot" style="margin:0.15rem 0 0">Click select · <kbd>Ctrl</kbd> multi · <kbd>Shift</kbd> range · double-click split</p>
         </div>
       </div>
 
@@ -1420,6 +1508,7 @@
   <script src="js/hl-horizon.js"></script>
   <script src="js/hl-playback.js"></script>
   <script src="js/hl-ui.js"></script>
+  <script src="js/hl-polish.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -574,6 +574,14 @@
       // True other-key ownership only (not diatonic in write home)
       if (!pos) pos = this._chordPos(ch, i, 0);
       const r = 16 + Math.min(11, (ch.duration || 4) * 1.15);
+      const ownT =
+        ch.localTonic != null ? ((ch.localTonic % 12) + 12) % 12 : null;
+      const homeT =
+        this.origin && this.origin.tonic != null
+          ? ((this.origin.tonic % 12) + 12) % 12
+          : null;
+      const foreignKey =
+        ownT != null && homeT != null && ownT !== homeT;
       return {
         chord: ch,
         x: pos.x,
@@ -583,6 +591,8 @@
         onScale: pos.onScale,
         shell: pos.shell,
         seat: pos.seat,
+        foreignKey: foreignKey,
+        keyTonic: ownT != null ? ownT : homeT,
       };
     });
     // Never soft-separate path off seats â€” that made Chase â‰  Function

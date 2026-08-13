@@ -1027,6 +1027,19 @@
       ctx.textBaseline = 'middle';
       ctx.fillText(String(n.i + 1), x - r * 0.75, y - r * 0.75);
 
+      // Other-key pip (owned by a different disk than write home)
+      if (n.foreignKey) {
+        const px = x + r * 0.78;
+        const py = y - r * 0.78;
+        ctx.beginPath();
+        ctx.arc(px, py, 5 / this.camera.zoom, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(126,184,218,0.95)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(20,16,12,0.75)';
+        ctx.lineWidth = 1 / this.camera.zoom;
+        ctx.stroke();
+      }
+
       ctx.fillStyle = aiming ? 'rgba(232,201,138,0.9)' : '#0a0a0a';
       ctx.font = `bold ${Math.max(9, 11 / this.camera.zoom)}px DM Sans, sans-serif`;
       ctx.textBaseline = 'middle';
