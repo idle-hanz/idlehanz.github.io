@@ -439,7 +439,8 @@ H.smoothVoicings = function () {
         const song = H.S().loadSong && H.S().loadSong();
         if (song) {
           song.cells = {};
-          song.families = song.families || {};
+          song.families = {};
+          song.arrangement = [];
           song.focus = { cellId: null, sectionId: null, chordIndex: 0 };
           song.key = { tonic: H.state.tonic, mode: H.state.mode };
           H.S().saveSong(song, 'landscape');

@@ -38,8 +38,8 @@
     sus2: 10,
     sus4: 11,
     add9: 16,
-    maj9: 20,
-    min9: 21,
+    maj9: 19,
+    min9: 20,
   };
 
   const TYPE_TO_QUALITY = {
@@ -55,10 +55,25 @@
     9: 'aug',
     10: 'sus2',
     11: 'sus4',
+    13: 'dom7',
     16: 'add9',
-    20: 'maj9',
-    21: 'min9',
+    19: 'maj9',
+    20: 'min9',
   };
+
+  /** Splice a fretboard window back into the full cell (never shrink the song). */
+  function mergeClipIntoChords(existing, incoming, start) {
+    const prev = Array.isArray(existing) ? existing.slice() : [];
+    const clip = Array.isArray(incoming) ? incoming : [];
+    const at = Math.max(0, start | 0);
+    if (!prev.length) return clip.slice();
+    if (!clip.length) return prev;
+    const out = prev.slice();
+    for (let i = 0; i < clip.length; i++) {
+      out[at + i] = clip[i];
+    }
+    return out;
+  }
 
   function now() {
     return new Date().toISOString();
@@ -736,6 +751,7 @@
       focus: opts.focus != null ? opts.focus : 0,
       sectionId: opts.sectionId || null,
       ephemeral: !!opts.ephemeral,
+      clipStart: opts.clipStart != null ? opts.clipStart | 0 : 0,
       chords: (opts.chords || []).map((c) => {
         const row = {
           r: c.root,
@@ -897,13 +913,25 @@
           chordIndex: payload.focus || 0,
         };
       } else {
+        let nextChords = expandHandoffChords(payload);
+        if (
+          prev &&
+          prev.chords &&
+          prev.chords.length > nextChords.length
+        ) {
+          nextChords = mergeClipIntoChords(
+            prev.chords,
+            nextChords,
+            payload.clipStart || 0
+          );
+        }
         song.cells[cellId] = {
           id: cellId,
           name: keepName ? prev.name : incoming || (prev && prev.name) || 'Cell',
           packId: prev && prev.packId ? prev.packId : null,
           familyId: prev && prev.familyId ? prev.familyId : null,
           versionIndex: prev && prev.versionIndex ? prev.versionIndex : 1,
-          chords: expandHandoffChords(payload),
+          chords: nextChords,
         };
         song.focus = {
           cellId: cellId,
@@ -1253,6 +1281,7 @@
     fretboardSlotsToChords,
     clipForFretboard,
     fretboardClipMessage,
+    mergeClipIntoChords,
     buildHandoffPayload,
     expandHandoffChords,
     encodeHandoff,

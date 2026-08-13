@@ -613,6 +613,7 @@
       focus: Math.max(0, focusAt - (clip.start || 0)),
       sectionId: selectedSecId,
       ephemeral: true,
+      clipStart: clip.start || 0,
       chords: clip.chords,
     });
     S().openWithHandoff(S().PATHS.fretboardFromArrangement, payload);
@@ -3186,7 +3187,11 @@ function spiralCanvasClick(ev) {
 
   // ─── Play / export ───────────────────────────────────────
   function sessionChordToPlayable(c) {
-    let ch = M().makeChord(c.root, c.quality || 'maj', { duration: c.duration || 4 });
+    const opts = { duration: c.duration || 4 };
+    if (c.notes && c.notes.length) opts.notes = c.notes;
+    if (c.custom || c.quality === 'custom') opts.custom = true;
+    if (c.name) opts.name = c.name;
+    let ch = M().makeChord(c.root, c.quality || 'maj', opts);
     if (c.bass != null && c.bass !== c.root && window.HLCompose && HLCompose.withBass) {
       ch = HLCompose.withBass(ch, c.bass);
       ch.duration = c.duration || 4;

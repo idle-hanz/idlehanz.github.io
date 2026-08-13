@@ -41,6 +41,15 @@ H.setSyncStatus = function (msg) {
     H.state.selected = H.state.chords.length
       ? Math.max(0, Math.min(H.state.chords.length - 1, meta.focusIndex || 0))
       : -1;
+    const first = H.state.chords[0];
+    if (first && first.localTonic != null) {
+      H.state.tonic = first.localTonic;
+      if (first.localMode) H.state.mode = first.localMode;
+      const tEl2 = H.$('#tonic');
+      if (tEl2) tEl2.value = String(H.state.tonic);
+      const mEl2 = H.$('#mode');
+      if (mEl2) mEl2.value = H.state.mode;
+    }
     if (H.map && H.map.setOrigin) H.map.setOrigin(H.state.tonic, H.state.mode);
     H.recognize({ preserveName: true });
     H.clearPendingHome();
@@ -53,24 +62,36 @@ H.setSyncStatus = function (msg) {
     // 1) URL hash handoff (works on file://)
     const handoff = H.S().readHandoffFromLocation() || H.S().readHandoffStorage();
     if (handoff && handoff.to === 'landscape' && handoff.cellId) {
-      const chords = H.S().expandHandoffChords(handoff);
+      let chords = H.S().expandHandoffChords(handoff);
       H.S().clearHandoffHash();
       try {
         localStorage.removeItem('idlehanz_handoff_v1');
       } catch (_) {}
-      if (chords && chords.length) {
-        H.applySessionChords(chords, {
-          title: handoff.cellName || handoff.title,
-          cellId: handoff.cellId,
-          tonic: handoff.key && handoff.key.tonic,
-          mode: handoff.key && handoff.key.mode,
-          bpm: handoff.bpm,
-          focusIndex: handoff.focus || 0,
-        });
-        H.pushToSharedSession('landscape');
-        return true;
+      const song0 = H.S().loadSong && H.S().loadSong();
+      const prev0 = song0 && song0.cells && song0.cells[handoff.cellId];
+      if (
+        prev0 &&
+        prev0.chords &&
+        prev0.chords.length > (chords ? chords.length : 0) &&
+        H.S().mergeClipIntoChords
+      ) {
+        chords = H.S().mergeClipIntoChords(
+          prev0.chords,
+          chords,
+          handoff.clipStart || 0
+        );
       }
-      // Empty new-cell handoff — fall through and resume a real cell
+      H.applySessionChords(chords, {
+        title: handoff.cellName || (prev0 && prev0.name) || handoff.title,
+        cellId: handoff.cellId,
+        packId: prev0 && prev0.packId,
+        tonic: handoff.key && handoff.key.tonic,
+        mode: handoff.key && handoff.key.mode,
+        bpm: handoff.bpm,
+        focusIndex: handoff.focus || 0,
+      });
+      if (chords && chords.length) H.pushToSharedSession('landscape');
+      return true;
     }
 
     if (opts.resume === false) return false;
@@ -471,6 +492,7 @@ H.setSyncStatus = function (msg) {
       focus: focusInClip,
       chords: clip.chords,
       ephemeral: true,
+      clipStart: clip.start || 0,
     });
     const ok = H.S().openWithHandoff(H.S().PATHS.fretboardFromLandscape, payload);
     const clipMsg = H.S().fretboardClipMessage

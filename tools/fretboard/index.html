@@ -5182,18 +5182,32 @@
             updatedBy: by || 'fretboard',
         });
         const id = cellId || (song.focus && song.focus.cellId) || IHSession.newCellId('cell');
+        const prev = song.cells[id];
+        let nextChords = chords;
+        if (prev && prev.chords && prev.chords.length > chords.length && IHSession.mergeClipIntoChords) {
+            const ho = IHSession.readHandoffStorage && IHSession.readHandoffStorage();
+            nextChords = IHSession.mergeClipIntoChords(prev.chords, chords, (ho && ho.clipStart) || 0);
+        }
         song.cells[id] = {
             id,
-            name: cellName || (document.getElementById('instance-name') || {}).value || 'From fretboard',
-            packId: null,
-            chords,
+            name: cellName || (document.getElementById('instance-name') || {}).value || (prev && prev.name) || 'From fretboard',
+            packId: prev && prev.packId ? prev.packId : null,
+            familyId: prev && prev.familyId ? prev.familyId : null,
+            versionIndex: prev && prev.versionIndex ? prev.versionIndex : 1,
+            chords: nextChords,
         };
-        song.focus = { cellId: id, sectionId: null, chordIndex: progressionFocus };
+        song.focus = {
+            cellId: id,
+            sectionId: (song.focus && song.focus.sectionId) || null,
+            chordIndex: progressionFocus,
+        };
         song.bpm = audioTempo;
-        song.key = {
-            tonic: scaleRoot,
-            mode: /minor|dorian|phrygian|locrian|aeolian/i.test(scaleType) ? 'minor' : 'major',
-        };
+        if (!song.arrangement || !song.arrangement.length) {
+            song.key = {
+                tonic: scaleRoot,
+                mode: /minor|dorian|phrygian|locrian|aeolian/i.test(scaleType) ? 'minor' : 'major',
+            };
+        }
         song.title = song.cells[id].name;
         IHSession.saveSong(song, by || 'fretboard');
         setIhSyncStatus('Session saved');
