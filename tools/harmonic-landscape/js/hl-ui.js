@@ -120,18 +120,12 @@ H.refreshAll = function () {
     const camSnap = H.map && H.map.snapshotCamera ? H.map.snapshotCamera() : null;
     if (H.map) H.map._keepCameraOnce = true;
     if (H.map && H.map.setMapView) H.map.setMapView(view);
-    const chaseBtn = H.$('#view-chase');
-    const fnBtn = H.$('#view-function');
-    if (chaseBtn) {
-      chaseBtn.classList.toggle('active', view === 'chase');
-      chaseBtn.classList.toggle('primary', view === 'chase');
-      chaseBtn.classList.toggle('ghost', view !== 'chase');
-    }
-    if (fnBtn) {
-      fnBtn.classList.toggle('active', view === 'function');
-      fnBtn.classList.toggle('primary', view === 'function');
-      fnBtn.classList.toggle('ghost', view !== 'function');
-    }
+    document.querySelectorAll('[data-map-view]').forEach(function (btn) {
+      const on = btn.getAttribute('data-map-view') === view;
+      btn.classList.toggle('active', on);
+      btn.classList.toggle('primary', on);
+      btn.classList.toggle('ghost', !on);
+    });
     const bar = H.$('#function-opts');
     if (bar) bar.hidden = view !== 'function';
     H.syncFunctionOptsUI();
@@ -847,11 +841,14 @@ H.refreshAll = function () {
   H.updateEmptyStart = function () {
     const el = H.$('#empty-start');
     if (el) el.hidden = !!H.state.chords.length;
+    const canResume =
+      !(H.state.chords && H.state.chords.length) &&
+      H.hasResumableSession &&
+      H.hasResumableSession();
     const resume = H.$('#btn-resume-session');
-    if (resume) {
-      resume.hidden = !!(H.state.chords && H.state.chords.length) ||
-        !(H.hasResumableSession && H.hasResumableSession());
-    }
+    if (resume) resume.hidden = !canResume;
+    const resumeHdr = H.$('#btn-resume-header');
+    if (resumeHdr) resumeHdr.hidden = !canResume;
   };
 
   /** First-run coach strip */

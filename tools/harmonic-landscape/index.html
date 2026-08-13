@@ -33,9 +33,18 @@
 
     .app {
       height: 100vh;
-      display: grid;
-      grid-template-rows: auto 1fr;
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
+    }
+    .app > header,
+    .app > #coach,
+    .app > #gesture-legend {
+      flex: 0 0 auto;
+    }
+    .app > main {
+      flex: 1 1 auto;
+      min-height: 0;
     }
 
     header {
@@ -62,8 +71,9 @@
       font-size: 0.82rem;
       color: var(--muted);
     }
-    .nav { display: flex; gap: 0.7rem; font-size: 0.78rem; }
+    .nav { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.7rem; font-size: 0.78rem; }
     .nav a { color: var(--muted); }
+    .header-views { margin-right: 0.25rem; }
     .ctrls {
       margin-left: auto;
       display: flex;
@@ -1298,6 +1308,11 @@
         <p>Sequence is the document · space is the compass</p>
       </div>
       <nav class="nav">
+        <div class="map-view-switch header-views" role="group" aria-label="Map view">
+          <button type="button" class="btn primary active" data-map-view="chase" title="Journey: your path across keys">Journey</button>
+          <button type="button" class="btn ghost" data-map-view="function" title="In this key: same-key atlas">In this key</button>
+        </div>
+        <button type="button" class="btn ghost" id="btn-resume-header" title="Reload the last cell from the shared song session">Resume</button>
         <button type="button" class="btn primary" id="btn-fret" title="Send sequence to Guitar Fretboard">→ Fretboard</button>
         <button type="button" class="btn" id="btn-arrange" title="Open Arrangement">Arrangement</button>
         <span id="sync-status" class="key" style="font-size:0.72rem;color:var(--muted)"></span>
@@ -1385,7 +1400,7 @@
             <p class="empty-hint">Stay in Select to browse. Switch to Write (or double-click) to add. In this key opens theory layers when you need them.</p>
             <div class="empty-actions">
               <button type="button" class="btn primary" id="btn-empty-home" title="Start the path on the tonic">+ Start on I</button>
-              <button type="button" class="btn ghost" id="btn-resume-session" title="Reload the last focused cell from the shared song session" hidden>Resume session</button>
+              <button type="button" class="btn primary" id="btn-resume-session" title="Reload the last cell from the shared song session">Resume session</button>
               <button type="button" class="btn" id="btn-empty-demo" title="Load Speed of Pain colour demo">Demo: SoP</button>
               <button type="button" class="btn ghost" id="btn-empty-feel" title="Open feel packs">Feels…</button>
             </div>
@@ -1483,8 +1498,8 @@
           <!-- One toolbar row: camera · view · build · style · function layers -->
           <div class="map-toolbar" id="map-toolbar">
             <div class="map-view-switch" role="group" aria-label="Map view">
-              <button type="button" class="btn primary active" id="view-chase" title="Journey: your path across keys, scale seats, purple nearby keys">Journey</button>
-              <button type="button" class="btn ghost" id="view-function" title="In this key: same-key atlas — diatonic, V7s, borrow">In this key</button>
+              <button type="button" class="btn primary active" id="view-chase" data-map-view="chase" title="Journey: your path across keys, scale seats, purple nearby keys">Journey</button>
+              <button type="button" class="btn ghost" id="view-function" data-map-view="function" title="In this key: same-key atlas — diatonic, V7s, borrow">In this key</button>
             </div>
             <div class="map-tools">
               <button type="button" class="btn ghost active" id="cam-home" title="Lock camera on home (no jolt)">Home</button>
@@ -1579,28 +1594,28 @@
     </div>
   </div>
 
-  <script src="../ih-session.js?v=20260813e"></script>
-  <script src="js/music.js?v=20260813e"></script>
-  <script src="js/compose.js?v=20260813e"></script>
-  <script src="js/audio.js?v=20260813e"></script>
-  <script src="js/packs.js?v=20260813e"></script>
-  <script src="js/spatial.js?v=20260813e"></script>
-  <script src="js/spatial-layout.js?v=20260813e"></script>
-  <script src="js/spatial-input.js?v=20260813e"></script>
-  <script src="js/spatial-draw.js?v=20260813e"></script>
+  <script src="../ih-session.js?v=20260813f"></script>
+  <script src="js/music.js?v=20260813f"></script>
+  <script src="js/compose.js?v=20260813f"></script>
+  <script src="js/audio.js?v=20260813f"></script>
+  <script src="js/packs.js?v=20260813f"></script>
+  <script src="js/spatial.js?v=20260813f"></script>
+  <script src="js/spatial-layout.js?v=20260813f"></script>
+  <script src="js/spatial-input.js?v=20260813f"></script>
+  <script src="js/spatial-draw.js?v=20260813f"></script>
   <!-- App modules (shared HLApp namespace) — order matters -->
-  <script src="js/hl-core.js?v=20260813e"></script>
-  <script src="js/hl-styles.js?v=20260813e"></script>
-  <script src="js/hl-context-menu.js?v=20260813e"></script>
-  <script src="js/hl-undo.js?v=20260813e"></script>
-  <script src="js/hl-session.js?v=20260813e"></script>
-  <script src="js/hl-map-bridge.js?v=20260813e"></script>
-  <script src="js/hl-versions.js?v=20260813e"></script>
-  <script src="js/hl-edit.js?v=20260813e"></script>
-  <script src="js/hl-horizon.js?v=20260813e"></script>
-  <script src="js/hl-playback.js?v=20260813e"></script>
-  <script src="js/hl-ui.js?v=20260813e"></script>
-  <script src="js/hl-polish.js?v=20260813e"></script>
-  <script src="js/app.js?v=20260813e"></script>
+  <script src="js/hl-core.js?v=20260813f"></script>
+  <script src="js/hl-styles.js?v=20260813f"></script>
+  <script src="js/hl-context-menu.js?v=20260813f"></script>
+  <script src="js/hl-undo.js?v=20260813f"></script>
+  <script src="js/hl-session.js?v=20260813f"></script>
+  <script src="js/hl-map-bridge.js?v=20260813f"></script>
+  <script src="js/hl-versions.js?v=20260813f"></script>
+  <script src="js/hl-edit.js?v=20260813f"></script>
+  <script src="js/hl-horizon.js?v=20260813f"></script>
+  <script src="js/hl-playback.js?v=20260813f"></script>
+  <script src="js/hl-ui.js?v=20260813f"></script>
+  <script src="js/hl-polish.js?v=20260813f"></script>
+  <script src="js/app.js?v=20260813f"></script>
 </body>
 </html>

@@ -722,6 +722,11 @@
         if (H.resumeSharedSession) H.resumeSharedSession();
       });
     }
+    if (H.$('#btn-resume-header')) {
+      H.$('#btn-resume-header').addEventListener('click', () => {
+        if (H.resumeSharedSession) H.resumeSharedSession();
+      });
+    }
     if (H.$('#coach-start-i')) {
       H.$('#coach-start-i').addEventListener('click', () => {
         if (H.startAtHome) H.startAtHome();
@@ -911,12 +916,11 @@
     if (H.$('#btn-smooth')) H.$('#btn-smooth').addEventListener('click', H.smoothVoicings);
     if (H.$('#btn-swing')) H.$('#btn-swing').addEventListener('click', H.suggestSwingNext);
     if (H.$('#btn-arch')) H.$('#btn-arch').addEventListener('click', H.suggestArchHome);
-    if (H.$('#view-chase')) {
-      H.$('#view-chase').addEventListener('click', () => H.setMapView('chase'));
-    }
-    if (H.$('#view-function')) {
-      H.$('#view-function').addEventListener('click', () => H.setMapView('function'));
-    }
+    document.querySelectorAll('[data-map-view]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        H.setMapView(btn.getAttribute('data-map-view'));
+      });
+    });
     // Function layers: Dom + Borrow + Tritone + Dim + V alts + Colours
     const foMap = {
       'fo-dominants': 'dominants',

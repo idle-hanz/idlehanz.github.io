@@ -54,58 +54,72 @@ H.setSyncStatus = function (msg) {
     const handoff = H.S().readHandoffFromLocation() || H.S().readHandoffStorage();
     if (handoff && handoff.to === 'landscape' && handoff.cellId) {
       const chords = H.S().expandHandoffChords(handoff);
-      H.applySessionChords(chords, {
-        title: handoff.cellName || handoff.title,
-        cellId: handoff.cellId,
-        tonic: handoff.key && handoff.key.tonic,
-        mode: handoff.key && handoff.key.mode,
-        bpm: handoff.bpm,
-        focusIndex: handoff.focus || 0,
-      });
       H.S().clearHandoffHash();
       try {
         localStorage.removeItem('idlehanz_handoff_v1');
       } catch (_) {}
-      if (chords && chords.length) H.pushToSharedSession('landscape');
-      return true;
+      if (chords && chords.length) {
+        H.applySessionChords(chords, {
+          title: handoff.cellName || handoff.title,
+          cellId: handoff.cellId,
+          tonic: handoff.key && handoff.key.tonic,
+          mode: handoff.key && handoff.key.mode,
+          bpm: handoff.bpm,
+          focusIndex: handoff.focus || 0,
+        });
+        H.pushToSharedSession('landscape');
+        return true;
+      }
+      // Empty new-cell handoff — fall through and resume a real cell
     }
 
-    // 2) Last focused cell (default). Pass { resume: false } only for a forced empty slate.
     if (opts.resume === false) return false;
 
     const song = H.S().loadSong();
-    if (song) {
-      const cell = H.S().getFocusedCell(song);
-      if (cell && cell.chords && cell.chords.length) {
-        H.applySessionChords(cell.chords, {
-          title: cell.name || song.title,
-          cellId: cell.id,
-          packId: cell.packId,
-          tonic: song.key && song.key.tonic,
-          mode: song.key && song.key.mode,
-          bpm: song.bpm,
-          focusIndex: song.focus && song.focus.chordIndex,
-        });
-        return true;
-      }
+    const cell = H.pickResumableCell(song);
+    if (cell && cell.chords && cell.chords.length) {
+      if (song.focus) song.focus.cellId = cell.id;
+      H.applySessionChords(cell.chords, {
+        title: cell.name || song.title,
+        cellId: cell.id,
+        packId: cell.packId,
+        tonic: song.key && song.key.tonic,
+        mode: song.key && song.key.mode,
+        bpm: song.bpm,
+        focusIndex: song.focus && song.focus.chordIndex,
+      });
+      return true;
     }
     return false;
   }
 
+  H.pickResumableCell = function (song) {
+    if (!song || !song.cells) return null;
+    const focused = H.S() && H.S().getFocusedCell ? H.S().getFocusedCell(song) : null;
+    if (focused && focused.chords && focused.chords.length) return focused;
+    let best = null;
+    Object.keys(song.cells).forEach(function (id) {
+      const c = song.cells[id];
+      const n = c && c.chords ? c.chords.length : 0;
+      if (!n) return;
+      if (!best || n > best.chords.length) best = c;
+    });
+    return best;
+  };
+
   H.hasResumableSession = function () {
     if (!H.S()) return false;
-    const song = H.S().loadSong();
-    const cell = song && H.S().getFocusedCell(song);
-    return !!(cell && cell.chords && cell.chords.length);
+    return !!H.pickResumableCell(H.S().loadSong());
   };
 
   H.resumeSharedSession = function () {
     const ok = H.ingestHandoffOrSession({ resume: true });
     if (ok) {
       H.refreshAll();
-      H.setSyncStatus('Resumed session · ' + (H.state.title || 'cell'));
+      if (H.updateEmptyStart) H.updateEmptyStart();
+      H.setSyncStatus('Resumed · ' + (H.state.title || 'cell'));
     } else {
-      H.setSyncStatus('Nothing to resume');
+      H.setSyncStatus('Nothing to resume · load a project or Demo: SoP');
     }
     return ok;
   };
