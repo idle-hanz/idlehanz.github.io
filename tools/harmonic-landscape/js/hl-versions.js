@@ -17,18 +17,38 @@ H.resolveCompareCell = function (song) {
     return cell;
   }
 
-  /** The take this cell was forked from (id), or null for v1 / unknown. */
-  H.parentCellId = function (song, cell) {
-    if (!song || !cell || !song.cells) return null;
-    if (cell.fromCellId && song.cells[cell.fromCellId] && cell.fromCellId !== cell.id) {
-      return cell.fromCellId;
+  /**
+   * Parent version number from the visible name string only.
+   * "v4 v2 Darken" / "Theme · v2 Darken" / "Theme · v4 v2 Darken" → 2.
+   */
+  H.parentVersionIndexFromString = function (name, own) {
+    const s = String(name || '');
+    if (!s) return null;
+    const pair = s.match(/v(\d+)\s+v(\d+)/i);
+    if (pair) {
+      const n = parseInt(pair[2], 10);
+      if (!isNaN(n) && (own == null || n !== own)) return n;
     }
-    let n = cell.fromVersionIndex;
-    if (n == null) {
-      const m = String(cell.name || '').match(/·\s*v(\d+)\s+/i);
-      if (m) n = parseInt(m[1], 10);
+    const afterDot = s.match(/·\s*v(\d+)/i);
+    if (afterDot) {
+      const n = parseInt(afterDot[1], 10);
+      if (!isNaN(n) && (own == null || n !== own)) return n;
     }
-    if (n == null || isNaN(n)) return null;
+    return null;
+  }
+
+  H.parentVersionIndexFromName = function (cell) {
+    if (!cell) return null;
+    const fromName = H.parentVersionIndexFromString(cell.name, cell.versionIndex);
+    if (fromName != null) return fromName;
+    if (cell.fromVersionIndex != null && cell.fromVersionIndex !== cell.versionIndex) {
+      return cell.fromVersionIndex;
+    }
+    return null;
+  }
+
+  H.siblingWithVersionIndex = function (song, cell, n) {
+    if (!song || !cell || n == null || isNaN(n)) return null;
     const pool =
       H.S() && H.S().siblingsOfCell && cell.id
         ? H.S().siblingsOfCell(song, cell.id)
@@ -36,8 +56,8 @@ H.resolveCompareCell = function (song) {
     const hit = (pool || []).find(function (c) {
       return c && c.id !== cell.id && c.versionIndex === n;
     });
-    if (hit) return hit.id;
-    const ids = Object.keys(song.cells);
+    if (hit) return hit;
+    const ids = Object.keys(song.cells || {});
     for (let i = 0; i < ids.length; i++) {
       const c = song.cells[ids[i]];
       if (
@@ -46,8 +66,26 @@ H.resolveCompareCell = function (song) {
         c.versionIndex === n &&
         (!cell.familyId || c.familyId === cell.familyId)
       ) {
-        return c.id;
+        return c;
       }
+    }
+    return null;
+  }
+
+  /** The take this cell was forked from (id), or null for v1 / unknown. Name wins. */
+  H.parentCellId = function (song, cell) {
+    if (!song || !cell || !song.cells) return null;
+    const named = H.parentVersionIndexFromString(cell.name, cell.versionIndex);
+    if (named != null) {
+      const byName = H.siblingWithVersionIndex(song, cell, named);
+      if (byName) return byName.id;
+    }
+    if (cell.fromVersionIndex != null && cell.fromVersionIndex !== cell.versionIndex) {
+      const byFrom = H.siblingWithVersionIndex(song, cell, cell.fromVersionIndex);
+      if (byFrom) return byFrom.id;
+    }
+    if (cell.fromCellId && song.cells[cell.fromCellId] && cell.fromCellId !== cell.id) {
+      return cell.fromCellId;
     }
     return null;
   }
@@ -55,20 +93,7 @@ H.resolveCompareCell = function (song) {
   H.pickDefaultCompareId = function (song) {
     if (!song || !H.state.cellId || !song.cells) return null;
     const cur = song.cells[H.state.cellId];
-    const parent = H.parentCellId(song, cur);
-    if (parent) return parent;
-    const last = H.state.lastCompareCellId;
-    if (last && last !== H.state.cellId && song.cells[last]) return last;
-    if (!H.S() || !H.S().siblingsOfCell) return null;
-    const sibs = H.S().siblingsOfCell(song, H.state.cellId) || [];
-    const v1 = sibs.find(function (c) {
-      return c.id !== H.state.cellId && (c.versionIndex == null || c.versionIndex === 1);
-    });
-    if (v1) return v1.id;
-    const other = sibs.find(function (c) {
-      return c.id !== H.state.cellId;
-    });
-    return other ? other.id : null;
+    return H.parentCellId(song, cur);
   }
 
   H.armBlueCompare = function (id, opts) {
@@ -216,16 +241,13 @@ H.resolveCompareCell = function (song) {
       H.state.armedVersionId = null;
       return null;
     }
-    const leavingId = H.state.cellId;
     H.state.armedVersionId = null;
-    const parentId =
-      (H.parentCellId && H.parentCellId(song, cell)) || cell.fromCellId || leavingId;
+    const parentId = H.parentCellId ? H.parentCellId(song, cell) : null;
     if (parentId && parentId !== id) {
       H.state.compareCellId = parentId;
       H.state.lastCompareCellId = parentId;
-    } else if (leavingId && leavingId !== id) {
-      H.state.compareCellId = leavingId;
-      H.state.lastCompareCellId = leavingId;
+    } else {
+      H.state.compareCellId = null;
     }
     song.focus = {
       cellId: id,
@@ -251,14 +273,12 @@ H.resolveCompareCell = function (song) {
       return x;
     });
     const name = cell.name || id;
-    const blueId = leavingId;
+    const blueId = parentId && parentId !== id ? parentId : null;
     setTimeout(function () {
       if (blueId && blueId !== H.state.cellId && H.armBlueCompare) {
         H.armBlueCompare(blueId, { skipRender: true });
-      } else {
-        const tog = H.$('#tog-alt');
-        if (tog) tog.checked = true;
-        if (H.map && H.map.setShowAlt) H.map.setShowAlt(true);
+      } else if (H.clearBlueCompare) {
+        H.clearBlueCompare({ silent: true });
       }
       H.renderTitle();
       H.renderVersionBar();
@@ -269,7 +289,14 @@ H.resolveCompareCell = function (song) {
       if (H.refreshAltPath) H.refreshAltPath();
       if (H.renderTimeStrip) H.renderTimeStrip({ force: true });
       if (H.startPlayheadLoop) H.startPlayheadLoop(0);
-      H.setSyncStatus('Loop · now “' + name + '” · previous take in blue');
+      H.setSyncStatus(
+        'Loop · now “' +
+          name +
+          '”' +
+          (blueId && song.cells[blueId]
+            ? ' · blue = ' + (song.cells[blueId].name || 'parent')
+            : '')
+      );
       if (H.A() && H.A().isPlaying && !H.A().isPlaying() && H.state.loop && H.playSeq) {
         H._loopLive = true;
         H.playSeq({ force: true, fromIndex: 0, loop: true, silent: true });
@@ -301,6 +328,13 @@ H.resolveCompareCell = function (song) {
       chordIndex: 0,
     };
     H.S().saveSong(song, 'landscape');
+    const parentId = H.parentCellId ? H.parentCellId(song, cell) : null;
+    if (parentId && parentId !== cellId && song.cells[parentId]) {
+      H.state.compareCellId = parentId;
+      H.state.lastCompareCellId = parentId;
+    } else {
+      H.state.compareCellId = null;
+    }
     H.applySessionChords(cell.chords || [], {
       title: cell.name || 'Cell',
       cellId: cell.id,
@@ -311,13 +345,12 @@ H.resolveCompareCell = function (song) {
       focusIndex: 0,
     });
     H.state.nameLocked = true;
-    H.refreshAll();
-    const parentId = H.parentCellId ? H.parentCellId(song, cell) : cell.fromCellId;
-    if (parentId && parentId !== cellId && song.cells[parentId] && H.armBlueCompare) {
-      H.armBlueCompare(parentId);
-    } else if (H.restoreBlueCompare) {
-      H.restoreBlueCompare();
+    const tog = H.$('#tog-alt');
+    if (tog && parentId && parentId !== cellId) {
+      tog.checked = true;
+      if (H.map && H.map.setShowAlt) H.map.setShowAlt(true);
     }
+    H.refreshAll();
     if (!opts.silent) {
       const v = cell.versionIndex != null ? ' v' + cell.versionIndex : '';
       const blue =
@@ -343,18 +376,24 @@ H.resolveCompareCell = function (song) {
     return true;
   }
 
-  /** Lineage on a chip: "v1 Darken" from "Theme · v1 Darken" (v2 prefix is separate). */
+  /** Lineage on a chip: "v2 Darken" so the row reads "v4 v2 Darken". */
   H.shortVersionTitle = function (label, vi, cell) {
-    if (cell && cell.fromKind && cell.fromVersionIndex != null) {
-      return 'v' + cell.fromVersionIndex + ' ' + H.variationKindLabel(cell.fromKind);
+    const parentN = cell ? H.parentVersionIndexFromName(cell) : null;
+    let kind = '';
+    if (cell && cell.fromKind) kind = H.variationKindLabel(cell.fromKind);
+    if (!kind) {
+      const s = String(label || '');
+      const k = s.match(/·\s*v\d+\s+(.+)$/i) || s.match(/v\d+\s+v\d+\s+(.+)$/i);
+      if (k) kind = k[1].trim();
     }
+    if (parentN != null && kind) return 'v' + parentN + ' ' + kind;
+    if (parentN != null) return 'v' + parentN;
+    if (kind) return kind;
     let s = String(label || '').trim();
     const lin = s.match(/·\s*(v\d+\s+.+)$/i);
     if (lin) return lin[1].trim();
     s = s.replace(/\s*·\s*v\d+.*$/i, '').replace(/\s*v\d+\s*$/i, '').trim();
-    if (!s || /^custom sequence$/i.test(s) || /^untitled/i.test(s)) {
-      return '';
-    }
+    if (!s || /^custom sequence$/i.test(s) || /^untitled/i.test(s)) return '';
     return s;
   }
 
