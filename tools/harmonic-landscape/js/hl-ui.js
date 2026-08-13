@@ -826,14 +826,10 @@ H.refreshAll = function () {
       });
       return n ? out : null;
     };
-    if (kind === 'darker' && C.darkenChord) {
-      next = mapAll(function (c) {
-        return C.darkenChord(c, t, m);
-      });
-    } else if (kind === 'brighter' && C.brightenChord) {
-      next = mapAll(function (c) {
-        return C.brightenChord(c, t, m);
-      });
+    if (kind === 'darker' && C.darkenProgression) {
+      next = C.darkenProgression(src, t, m);
+    } else if (kind === 'brighter' && C.brightenProgression) {
+      next = C.brightenProgression(src, t, m);
     } else if (kind === 'secondary' && C.secondaryDominantOf) {
       next = mapAll(function (c, idx) {
         return C.secondaryDominantOf(src[idx + 1] || src[0], c.duration);
@@ -887,8 +883,8 @@ H.refreshAll = function () {
       H.A().playChord({ chord: H.state.chords[H.state.selected] });
     }
     const labels = {
-      darker: 'Darkened whole cell',
-      brighter: 'Brightened whole cell',
+      darker: 'Darkened the cell · ♭VI / borrow (not every chord)',
+      brighter: 'Brightened a couple of dark spots',
       secondary: 'Each step → V7 of the next (home kept)',
       tritone: 'Tritone across the cell (home kept)',
       dim: 'Diminished whole cell',

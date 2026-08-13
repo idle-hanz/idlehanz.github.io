@@ -945,6 +945,106 @@
     return ch;
   }
 
+  /**
+   * Darken a cell as a piece: one or two strategic darker colours.
+   * Not “every chord minor” — keep the shape, drop in ♭VI / borrow / a darker III or VII.
+   */
+  function darkenProgression(chords, tonic, modeKey) {
+    const music = M();
+    if (!chords || !chords.length) return chords;
+    const t = music.pc(tonic);
+    const bVI = (t + 8) % 12;
+    const copy = chords.map((c) => music.cloneChord(c));
+    const isBVI = function (c) {
+      return c && c.root === bVI && (c.quality === 'maj' || c.quality === 'maj7');
+    };
+    const hasBVI = copy.some(isBVI);
+    const isHome = function (c) {
+      return c && c.root === t;
+    };
+    let changed = 0;
+
+    if (!hasBVI && copy.length >= 3) {
+      let slot = -1;
+      const prefer = Math.min(2, copy.length - 1);
+      if (!isHome(copy[prefer])) slot = prefer;
+      if (slot < 0) {
+        for (let i = 1; i < copy.length - 1; i++) {
+          const q = String(copy[i].quality || '');
+          if (copy[i].root !== t && (q === 'maj' || q === 'maj7' || q === 'add9')) {
+            slot = i;
+            break;
+          }
+        }
+      }
+      if (slot < 0) slot = Math.min(2, copy.length - 1);
+      if (slot >= 0 && !isBVI(copy[slot])) {
+        let ch = music.makeChord(bVI, 'maj', {
+          duration: copy[slot].duration,
+          region: 'interchange',
+          roman: '♭VI',
+          tag: 'darken',
+        });
+        ch = withBass(ch, ch.root);
+        ch.duration = copy[slot].duration;
+        if (copy[slot].localTonic != null) ch.localTonic = copy[slot].localTonic;
+        if (copy[slot].localMode) ch.localMode = copy[slot].localMode;
+        copy[slot] = ch;
+        changed += 1;
+      }
+    }
+
+    if (changed < 2) {
+      let best = -1;
+      let bestBright = -1;
+      copy.forEach(function (c, i) {
+        if (i === 0) return;
+        if (isBVI(c) || isHome(c)) return;
+        const q = String(c.quality || '');
+        const bright =
+          q === 'maj' || q === 'maj7' || q === 'add9' || q === 'sus2' ? 2 : q.indexOf('dom') === 0 ? 1 : 0;
+        if (bright > bestBright) {
+          bestBright = bright;
+          best = i;
+        }
+      });
+      if (best >= 0 && darkenChord) {
+        const darker = darkenChord(copy[best], tonic, modeKey);
+        if (
+          darker &&
+          (darker.root !== copy[best].root || darker.quality !== copy[best].quality)
+        ) {
+          copy[best] = darker;
+          changed += 1;
+        }
+      }
+    }
+
+    if (!changed && varyOneChord) {
+      return varyOneChord(copy, tonic, modeKey, Math.min(2, copy.length - 1));
+    }
+    return copy;
+  }
+
+  function brightenProgression(chords, tonic, modeKey) {
+    const music = M();
+    if (!chords || chords.length < 2) return chords.map((c) => music.cloneChord(c));
+    const copy = chords.map((c) => music.cloneChord(c));
+    let n = 0;
+    copy.forEach(function (c, i) {
+      if (i === 0 || n >= 2) return;
+      const q = String(c.quality || '');
+      if (q.indexOf('dim') >= 0 || q === 'halfdim' || q === 'min' || q === 'min7') {
+        const br = brightenChord(c, tonic, modeKey);
+        if (br && (br.root !== c.root || br.quality !== c.quality)) {
+          copy[i] = br;
+          n += 1;
+        }
+      }
+    });
+    return n ? copy : copy;
+  }
+
   function varyOneChord(chords, tonic, modeKey, index) {
     const music = M();
     if (!chords.length) return chords.slice();
@@ -1780,6 +1880,8 @@
     varyOneChord,
     darkenChord,
     brightenChord,
+    darkenProgression,
+    brightenProgression,
     secondaryDominantOf,
     tritoneSubOf,
     diminishChord,

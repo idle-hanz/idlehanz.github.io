@@ -627,26 +627,26 @@ H.resolveCompareCell = function (song) {
       }
     } else if (kind === 'darken' || kind === 'reharm') {
       const C = H.C();
-      if (kind === 'darken' && C && C.darkenChord) {
-        newChords = newChords.map(function (sc) {
-          const land = H.sessionChordToLandscape
-            ? H.sessionChordToLandscape(sc)
-            : sc;
-          const ch = C.darkenChord(land, H.state.tonic, H.state.mode);
-          if (!ch || (ch.root === land.root && ch.quality === land.quality)) {
-            return sc;
-          }
-          changed += 1;
-          const out = H.S().fromLandscapeChord(ch);
-          out.tag = 'darken';
-          return out;
+      if (kind === 'darken' && C && C.darkenProgression) {
+        const land = newChords.map(function (sc) {
+          return H.sessionChordToLandscape ? H.sessionChordToLandscape(sc) : sc;
         });
+        const darkened = C.darkenProgression(land, H.state.tonic, H.state.mode);
+        if (darkened && darkened.length) {
+          newChords = darkened.map(function (ch) {
+            const out = H.S().fromLandscapeChord(ch);
+            out.tag = ch.tag || 'darken';
+            return out;
+          });
+          changed += 1;
+        }
       } else if (newChords.length >= 3) {
         const t = H.state.tonic;
-        newChords[i] = {
+        const slot = Math.min(2, newChords.length - 1);
+        newChords[slot] = {
           root: (t + 8) % 12,
           quality: 'maj',
-          duration: newChords[i].duration,
+          duration: newChords[slot].duration,
           bass: (t + 8) % 12,
           roman: 'bVI',
           region: 'interchange',
