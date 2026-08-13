@@ -796,8 +796,9 @@ H.refreshAll = function () {
     const i = index != null && index >= 0 && index < n ? index : H.state.selected;
     if (i == null || i < 0 || i >= n) return;
     const cur = H.state.chords[i];
-    const t = H.state.tonic;
-    const m = H.state.mode;
+    const key = H.keyOf ? H.keyOf(cur) : { tonic: H.state.tonic, mode: H.state.mode };
+    const t = key.tonic;
+    const m = key.mode;
     let ch = null;
     if (kind === 'darker' && C.darkenChord) ch = C.darkenChord(cur, t, m);
     else if (kind === 'brighter' && C.brightenChord) ch = C.brightenChord(cur, t, m);
@@ -834,9 +835,11 @@ H.refreshAll = function () {
     } else if (kind === 'closer' && C.closerProgression) {
       next = C.closerProgression(src, t, m);
     } else if (kind === 'backdoor' && C.backdoorProgression) {
-      next = C.backdoorProgression(src, t);
+      next = C.backdoorProgression(src, t, m);
     } else if (kind === 'inner-v' && C.plantInnerSecondary) {
       next = C.plantInnerSecondary(src, t);
+    } else if (kind === 'reharm' && C.reharmProgression) {
+      next = C.reharmProgression(src, t, m);
     } else if (kind === 'reharm' && C.reharmBar) {
       next = C.reharmBar(src, t, m);
     } else if (kind === 'reharm' && C.varyOneChord) {
@@ -867,8 +870,15 @@ H.refreshAll = function () {
       return;
     }
     H.pushUndo();
-    H.state.chords = next.map((c) => {
-      H.stampKey(c, H.keyOf(c) || H.writeKey());
+    H.state.chords = next.map((c, i) => {
+      const prev = src[i];
+      const key =
+        c.localTonic != null
+          ? { tonic: c.localTonic, mode: c.localMode || (prev && prev.localMode) || m }
+          : prev
+            ? H.keyOf(prev)
+            : H.writeKey();
+      H.stampKey(c, key);
       return c;
     });
     H.state.fromPackId = null;

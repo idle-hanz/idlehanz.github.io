@@ -959,29 +959,62 @@
     return withBass(ch, ch.root);
   }
 
+  function localKeyOf(chord, fallbackT, fallbackM) {
+    const music = M();
+    return {
+      tonic:
+        chord && chord.localTonic != null
+          ? music.pc(chord.localTonic)
+          : music.pc(fallbackT),
+      mode: (chord && chord.localMode) || fallbackM || 'minor',
+    };
+  }
+
+  function applyPerIsland(chords, tonic, modeKey, fn) {
+    const music = M();
+    if (!chords || !chords.length) return chords;
+    const islands = segmentKeyIslands(chords, tonic, modeKey);
+    const out = chords.map((c) => music.cloneChord(c));
+    islands.forEach(function (isl) {
+      const slice = out.slice(isl.start, isl.end);
+      const mapped = fn(slice, isl.tonic, isl.mode);
+      if (!mapped || !mapped.length) return;
+      const n = Math.min(mapped.length, slice.length);
+      for (let i = 0; i < n; i++) {
+        const ch = mapped[i];
+        if (ch.localTonic == null) ch.localTonic = isl.tonic;
+        if (!ch.localMode) ch.localMode = isl.mode;
+        out[isl.start + i] = ch;
+      }
+    });
+    return out;
+  }
+
   function closerProgression(chords, tonic, modeKey) {
     const music = M();
     if (!chords || !chords.length) return chords;
     const last = chords[chords.length - 1];
-    const vRoot = (music.pc(tonic) + 7) % 12;
+    const k = localKeyOf(last, tonic, modeKey);
+    const vRoot = (k.tonic + 7) % 12;
     const alreadyV7 = last.root === vRoot && last.quality === 'dom7';
     const alreadyDark = last.root === vRoot && last.quality === 'dom7b9';
     if (alreadyDark) return chords.map((c) => music.cloneChord(c));
     return plantLastAs(chords, function (cur) {
-      return closerDominant(tonic, modeKey, cur.duration, alreadyV7);
+      return closerDominant(k.tonic, k.mode, cur.duration, alreadyV7);
     });
   }
 
-  function backdoorProgression(chords, tonic) {
+  function backdoorProgression(chords, tonic, modeKey) {
     const music = M();
     if (!chords || !chords.length) return chords;
     const last = chords[chords.length - 1];
-    const bdRoot = (music.pc(tonic) + 10) % 12;
+    const k = localKeyOf(last, tonic, modeKey);
+    const bdRoot = (k.tonic + 10) % 12;
     if (last.root === bdRoot && String(last.quality || '').indexOf('dom') === 0) {
       return chords.map((c) => music.cloneChord(c));
     }
     return plantLastAs(chords, function (cur) {
-      return backdoorDominant(tonic, cur.duration);
+      return backdoorDominant(k.tonic, cur.duration);
     });
   }
 
@@ -989,7 +1022,7 @@
     const music = M();
     if (!chords || chords.length < 3) return chords.map((c) => music.cloneChord(c));
     const copy = chords.map((c) => music.cloneChord(c));
-    const t = tonic != null ? music.pc(tonic) : copy[0].root;
+    const fallbackT = tonic != null ? music.pc(tonic) : copy[0].root;
     let best = null;
     let bestS = -Infinity;
     for (let i = 2; i < copy.length; i++) {
@@ -1004,8 +1037,9 @@
       if (cur.root === vRoot && String(cur.quality || '').indexOf('dom') === 0) continue;
       const v = secondaryDominantOf(tgt, cur.duration);
       if (!v) continue;
+      const homeT = tgt.localTonic != null ? music.pc(tgt.localTonic) : fallbackT;
       let s = 0.35;
-      if (tgt.root === t) s += 0.7;
+      if (tgt.root === homeT) s += 0.7;
       if (
         tgt.region === 'diatonic' ||
         q === 'maj' ||
@@ -1193,11 +1227,15 @@
   }
 
   /**
-   * Darken a cell as a piece: ONE classic darker join that still leads.
+   * Darken each key region as a piece: ONE classic darker join that still leads.
    * Major: IV→iv, else plant ♭VI. Minor: plant iv on a bright island, else
    * last step → V7♭9 / ♭II7. Never “paint every chord minor”.
    */
   function darkenProgression(chords, tonic, modeKey) {
+    return applyPerIsland(chords, tonic, modeKey, darkenIsland);
+  }
+
+  function darkenIsland(chords, tonic, modeKey) {
     const music = M();
     if (!chords || !chords.length) return chords;
     const t = music.pc(tonic);
@@ -1333,6 +1371,10 @@
   }
 
   function brightenProgression(chords, tonic, modeKey) {
+    return applyPerIsland(chords, tonic, modeKey, brightenIsland);
+  }
+
+  function brightenIsland(chords, tonic, modeKey) {
     const music = M();
     if (!chords || !chords.length) return chords.map((c) => music.cloneChord(c));
     const t = music.pc(tonic);
@@ -1493,12 +1535,10 @@
     );
   }
 
-  /** Whole-cell 7ths: keep family, add the seventh. V stays dominant. */
+  /** 7ths per step, using that step’s local key for V / VII. */
   function seventhizeProgression(chords, tonic, modeKey) {
     const music = M();
     if (!chords || !chords.length) return chords;
-    const t = music.pc(tonic);
-    const minor = isMinorMode(modeKey);
     return chords.map(function (src) {
       const c = music.cloneChord(src);
       if (c.custom || c.quality === 'custom') return c;
@@ -1516,6 +1556,9 @@
       ) {
         return c;
       }
+      const k = localKeyOf(c, tonic, modeKey);
+      const t = k.tonic;
+      const minor = isMinorMode(k.mode);
       const deg = (music.pc(c.root) - t + 12) % 12;
       let nextQ = null;
       if (q === 'dim') {
@@ -1932,21 +1975,23 @@
 
   /** Two darker/colour joins — a whole-cell reharm take, not one step. */
   function reharmProgression(chords, tonic, modeKey) {
-    const music = M();
-    if (!chords || chords.length < 2) return chords.map((c) => music.cloneChord(c));
-    const a = Math.min(2, Math.max(1, chords.length - 2));
-    let next = varyOneChord(chords, tonic, modeKey, a);
-    if (chords.length >= 5) {
-      const b = Math.max(1, chords.length - 2);
-      if (b !== a) next = varyOneChord(next, tonic, modeKey, b);
-    }
-    return next;
+    return applyPerIsland(chords, tonic, modeKey, function (slice, t, m) {
+      const music = M();
+      if (!slice || slice.length < 2) return slice.map((c) => music.cloneChord(c));
+      const a = Math.min(2, Math.max(1, slice.length - 2));
+      let next = varyOneChord(slice, t, m, a);
+      if (slice.length >= 5) {
+        const b = Math.max(1, slice.length - 2);
+        if (b !== a) next = varyOneChord(next, t, m, b);
+      }
+      return next;
+    });
   }
 
   function reharmBar(chords, tonic, modeKey, barIndex) {
-    // barIndex 0-based; default bar 3 → index 2
     const i = barIndex != null ? barIndex : Math.min(2, Math.max(0, chords.length - 2));
-    return varyOneChord(chords, tonic, modeKey, i);
+    const k = localKeyOf(chords[i], tonic, modeKey);
+    return varyOneChord(chords, k.tonic, k.mode, i);
   }
 
   function varySameBassNewUpper(chords, tonic, modeKey) {
@@ -1958,17 +2003,19 @@
     let bestT = -1;
     copy.forEach((c, i) => {
       if (i === copy.length - 1) return;
-      const t = chordTension(c, tonic, modeKey);
-      if (t > bestT) {
-        bestT = t;
+      const k = localKeyOf(c, tonic, modeKey);
+      const ten = chordTension(c, k.tonic, k.mode);
+      if (ten > bestT) {
+        bestT = ten;
         target = i;
       }
     });
     const bass = effectiveBass(copy[target]);
+    const tk = localKeyOf(copy[target], tonic, modeKey);
     const suggestions = suggestNext({
       fromChord: target ? copy[target - 1] : null,
-      tonic,
-      modeKey,
+      tonic: tk.tonic,
+      modeKey: tk.mode,
       goalId: 'epic_lift',
       count: 10,
       path: copy.slice(0, target),
