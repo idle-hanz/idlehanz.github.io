@@ -267,6 +267,8 @@ H.resolveCompareCell = function (song) {
       '<button type="button" class="btn ghost" id="btn-var-reharm" title="Fork with two reharm joins">+ Reharm</button>' +
       '<button type="button" class="btn ghost" id="btn-var-major" title="Fork: minors become majors. Majors stay. Same roots.">+ Major</button>' +
       '<button type="button" class="btn ghost" id="btn-var-minor" title="Fork: majors become minors. Minors stay. Same roots.">+ Minor</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-in-major" title="Rewrite in the parallel major: same degrees, roots can move (D → D♯m in B). Chromatic steps stay. Uses each step’s local key.">+ In major</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-in-minor" title="Rewrite in the parallel minor: same degrees, roots can move (D♯m → D in B). Chromatic steps stay. Uses each step’s local key.">+ In minor</button>' +
       '<button type="button" class="btn ghost" id="btn-var-darken" title="Fork with one darker join">+ Darken</button>' +
       '<button type="button" class="btn ghost" id="btn-var-brighter" title="Fork with one brighter join">+ Brighten</button>' +
       '<button type="button" class="btn ghost" id="btn-ab-ver" title="Play this then blue compare">A/B listen</button>' +
@@ -398,6 +400,8 @@ H.resolveCompareCell = function (song) {
     bind('#btn-var-reharm', () => H.createVariation('reharm'));
     bind('#btn-var-major', () => H.createVariation('parallel-major'));
     bind('#btn-var-minor', () => H.createVariation('parallel-minor'));
+    bind('#btn-var-in-major', () => H.createVariation('key-major'));
+    bind('#btn-var-in-minor', () => H.createVariation('key-minor'));
     bind('#btn-var-darken', () => H.createVariation('darken'));
     bind('#btn-var-brighter', () => H.createVariation('brighter'));
     bind('#btn-ab-ver', () => H.playAB());
@@ -563,6 +567,8 @@ H.resolveCompareCell = function (song) {
       parallel: 'Parallel',
       'parallel-major': 'Major',
       'parallel-minor': 'Minor',
+      'key-major': 'In major',
+      'key-minor': 'In minor',
       darken: 'Darken',
       brighter: 'Brighten',
       reharm: 'Reharm',
@@ -668,6 +674,18 @@ H.resolveCompareCell = function (song) {
       }, 'parallel')
         ? 1
         : 0;
+    } else if (kind === 'key-major' && C && C.parallelKeyProgression) {
+      changed = applyLand(function (land) {
+        return C.parallelKeyProgression(land, H.state.tonic, H.state.mode, 'maj');
+      }, 'parallel-key')
+        ? 1
+        : 0;
+    } else if (kind === 'key-minor' && C && C.parallelKeyProgression) {
+      changed = applyLand(function (land) {
+        return C.parallelKeyProgression(land, H.state.tonic, H.state.mode, 'min');
+      }, 'parallel-key')
+        ? 1
+        : 0;
     } else if (kind === 'voice') {
       changed = applyLand(C && C.smoothCellVoicings, 'voice') ? 1 : 0;
     } else if (kind === 'sevenths' && C && C.seventhizeProgression) {
@@ -759,6 +777,8 @@ H.resolveCompareCell = function (song) {
       copy: ' (exact copy — tweak freely)',
       'parallel-major': ' · minors → majors (majors kept)',
       'parallel-minor': ' · majors → minors (minors kept)',
+      'key-major': ' · same degrees in the parallel major (roots can move)',
+      'key-minor': ' · same degrees in the parallel minor (roots can move)',
       voice: ' · inversions smoothed through the cell',
       sevenths: ' · 7ths on every step',
       pedal: ' · common-tone bass · local home, only if it belongs',

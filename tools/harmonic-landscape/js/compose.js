@@ -1716,6 +1716,55 @@
     });
   }
 
+  /**
+   * Strict parallel key: same scale-degree functions, new mode.
+   * Roots can move (Bm: D as III → D♯m as iii in B major).
+   * Uses each step’s local tonic after a modulation. Chromatic steps stay.
+   */
+  function parallelKeyProgression(chords, tonic, modeKey, toward) {
+    const music = M();
+    if (!chords || !chords.length) return chords.map((c) => music.cloneChord(c));
+    const targetMode = toward === 'maj' ? 'major' : 'minor';
+    const fallbackT = tonic != null ? music.pc(tonic) : music.pc(chords[0].root);
+    const fallbackM = modeKey || 'minor';
+    const wantSeventh = function (q) {
+      q = String(q || '');
+      return (
+        q.indexOf('7') >= 0 ||
+        q === 'halfdim' ||
+        q === 'min9' ||
+        q === 'maj9'
+      );
+    };
+    return chords.map(function (src) {
+      const c = music.cloneChord(src);
+      if (c.custom || c.quality === 'custom') return c;
+      const t = c.localTonic != null ? music.pc(c.localTonic) : fallbackT;
+      const fromKey = c.localMode || fallbackM;
+      const from = music.MODES[fromKey] || music.MODES.minor;
+      const to = music.MODES[targetMode] || music.MODES.major;
+      if (from.romanBase === to.romanBase) return c;
+      const deg = (music.pc(c.root) - t + 12) % 12;
+      const idx = from.degrees.indexOf(deg);
+      if (idx < 0) return c;
+      const destList = music.diatonicChords(t, targetMode, wantSeventh(c.quality));
+      const dest = destList[idx];
+      if (!dest) return c;
+      let ch = music.makeChord(dest.root, dest.quality, {
+        duration: c.duration,
+        region: 'parallel',
+        roman: dest.roman || '',
+        tag: 'parallel-key',
+        preferFlat: music.keyPrefersFlat ? music.keyPrefersFlat(t, targetMode) : false,
+      });
+      ch = withBass(ch, ch.root);
+      ch.duration = c.duration;
+      ch.localTonic = t;
+      ch.localMode = targetMode;
+      return ch;
+    });
+  }
+
   /** Two darker/colour joins — a whole-cell reharm take, not one step. */
   function reharmProgression(chords, tonic, modeKey) {
     const music = M();
@@ -2534,6 +2583,7 @@
     seventhizeProgression,
     pedalProgression,
     parallelProgression,
+    parallelKeyProgression,
     reharmProgression,
     reharmBar,
     varySameBassNewUpper,
