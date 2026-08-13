@@ -21,7 +21,7 @@
       selectedIndices: [],
       title: "Untitled sequence", recognition: null,
       fromPackId: null, cellId: null, nameLocked: false, addRoot: 11, addQuality: "min",
-      syncMsg: "", undoStack: [], redoStack: [], compareCellId: null, defaultDuration: 4,
+      syncMsg: "", undoStack: [], redoStack: [], compareCellId: null, lastCompareCellId: null, defaultDuration: 4,
       pendingTonic: null, pendingMode: null,
       /**
        * When true, playhead advances H.state.selected each step (inspector follows).

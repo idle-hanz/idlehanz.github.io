@@ -1029,11 +1029,23 @@
     if (H.$('#tog-alt')) {
       H.$('#tog-alt').addEventListener('change', (e) => {
         H.map.setShowAlt(e.target.checked);
-        // Hide overlay immediately when unchecked; restore only if a compare target exists
         if (!e.target.checked) {
           if (H.map) H.map.setAltPath([]);
-        } else {
-          H.refreshAltPath();
+          return;
+        }
+        const ok = H.restoreBlueCompare ? H.restoreBlueCompare() : false;
+        H.refreshAltPath();
+        H.renderVersionBar();
+        H.renderSlots();
+        if (!ok) {
+          H.setSyncStatus('Blue · Alt-click a version chip to choose what to compare');
+        } else if (H.state.compareCellId && H.S()) {
+          const song = H.S().loadSong();
+          const name =
+            song && song.cells[H.state.compareCellId]
+              ? song.cells[H.state.compareCellId].name
+              : 'compare';
+          H.setSyncStatus('Blue compare → ' + name + ' · gold = this take');
         }
       });
       // Start with blue overlay off until user Alt-clicks a version (or forks)

@@ -7,6 +7,7 @@
   if (!H) throw new Error("HLApp missing - load hl-core.js first");
 H.resolveCompareCell = function (song) {
     if (!song || !H.state.cellId || !H.state.compareCellId) return null;
+    // Viewing the compare target: keep the pointer, just hide the overlay
     if (H.state.compareCellId === H.state.cellId) return null;
     const cell = song.cells[H.state.compareCellId];
     if (!cell) {
@@ -16,6 +17,53 @@ H.resolveCompareCell = function (song) {
     return cell;
   }
 
+  H.pickDefaultCompareId = function (song) {
+    if (!song || !H.state.cellId || !song.cells) return null;
+    const last = H.state.lastCompareCellId;
+    if (last && last !== H.state.cellId && song.cells[last]) return last;
+    if (!H.S() || !H.S().siblingsOfCell) return null;
+    const sibs = H.S().siblingsOfCell(song, H.state.cellId) || [];
+    const v1 = sibs.find(function (c) {
+      return c.id !== H.state.cellId && (c.versionIndex == null || c.versionIndex === 1);
+    });
+    if (v1) return v1.id;
+    const other = sibs.find(function (c) {
+      return c.id !== H.state.cellId;
+    });
+    return other ? other.id : null;
+  }
+
+  H.armBlueCompare = function (id, opts) {
+    opts = opts || {};
+    if (!id || id === H.state.cellId) return false;
+    H.state.compareCellId = id;
+    H.state.lastCompareCellId = id;
+    const tog = H.$('#tog-alt');
+    if (tog) tog.checked = true;
+    if (H.map && H.map.setShowAlt) H.map.setShowAlt(true);
+    H.refreshAltPath();
+    if (!opts.skipRender) {
+      H.renderVersionBar();
+      H.renderSlots();
+    }
+    return true;
+  }
+
+  H.restoreBlueCompare = function () {
+    const song = H.S() && H.S().loadSong ? H.S().loadSong() : null;
+    if (!song) return false;
+    if (
+      H.state.compareCellId &&
+      H.state.compareCellId !== H.state.cellId &&
+      song.cells[H.state.compareCellId]
+    ) {
+      return H.armBlueCompare(H.state.compareCellId, { skipRender: true });
+    }
+    const id = H.pickDefaultCompareId(song);
+    if (!id) return false;
+    return H.armBlueCompare(id, { skipRender: true });
+  }
+
   H.clearBlueCompare = function (opts) {
     opts = opts || {};
     H.state.compareCellId = null;
@@ -23,7 +71,7 @@ H.resolveCompareCell = function (song) {
     if (!opts.silent) {
       H.renderVersionBar();
       H.renderSlots();
-      H.setSyncStatus('Blue compare off · Alt-click a version chip to compare again');
+      H.setSyncStatus('Blue compare off · tick Blue or Alt-click a version chip to bring it back');
     }
   }
 
@@ -37,10 +85,6 @@ H.resolveCompareCell = function (song) {
     if (!song || !H.state.cellId) {
       H.map.setAltPath([]);
       return;
-    }
-    // Stale pointer: comparing the cell you're already editing
-    if (H.state.compareCellId && H.state.compareCellId === H.state.cellId) {
-      H.state.compareCellId = null;
     }
     const other = H.resolveCompareCell(song);
     if (!other || !other.chords || !other.chords.length) {
@@ -117,9 +161,20 @@ H.resolveCompareCell = function (song) {
     });
     H.state.nameLocked = true;
     H.refreshAll();
+    if (H.state.compareCellId && H.state.compareCellId !== H.state.cellId) {
+      H.restoreBlueCompare();
+    }
     if (!opts.silent) {
       const v = cell.versionIndex != null ? ' v' + cell.versionIndex : '';
-      H.setSyncStatus('Editing “' + (cell.name || cellId) + '”' + (cell.familyId ? v : ''));
+      const blue =
+        H.state.compareCellId &&
+        H.state.compareCellId !== H.state.cellId &&
+        song.cells[H.state.compareCellId]
+          ? ' · blue = ' + (song.cells[H.state.compareCellId].name || 'compare')
+          : H.state.compareCellId === H.state.cellId
+            ? ' · blue armed · open another take to see the overlay'
+            : '';
+      H.setSyncStatus('Editing “' + (cell.name || cellId) + '”' + (cell.familyId ? v : '') + blue);
       if (cell.chords && cell.chords.length) {
         H.A().ensure();
         const first = H.state.chords[0];
@@ -192,11 +247,14 @@ H.resolveCompareCell = function (song) {
       H.state.compareCellId && song.cells[H.state.compareCellId]
         ? song.cells[H.state.compareCellId].name || 'compare'
         : null;
+    const blueOnThis = H.state.compareCellId && H.state.compareCellId === H.state.cellId;
     html +=
-      '<div class="version-bar-label">Versions · each fork is a full take · click = edit · Alt-click = blue compare' +
-      (compareName
-        ? ' · <span style="color:#7eb8da">blue = ' + H.escapeHtml(compareName) + '</span>'
-        : ' · no blue overlay') +
+      '<div class="version-bar-label">Versions · click = edit · Alt-click or Blue = compare' +
+      (blueOnThis
+        ? ' · <span style="color:#7eb8da">blue armed on this take · open another chip to see it</span>'
+        : compareName
+          ? ' · <span style="color:#7eb8da">blue = ' + H.escapeHtml(compareName) + '</span>'
+          : ' · no blue overlay · tick Blue to restore') +
       '</div>';
     if (hasFamily || cur) {
       const famName =
@@ -354,16 +412,7 @@ H.resolveCompareCell = function (song) {
             H.clearBlueCompare();
             return;
           }
-          H.state.compareCellId = id;
-          // Ensure blue path toggle is on so the overlay appears
-          const tog = H.$('#tog-alt');
-          if (tog && !tog.checked) {
-            tog.checked = true;
-            if (H.map) H.map.setShowAlt(true);
-          }
-          H.refreshAltPath();
-          H.renderVersionBar();
-          H.renderSlots();
+          H.armBlueCompare(id);
           H.setSyncStatus(
             'Blue compare → ' +
               (song.cells[id] && song.cells[id].name) +
@@ -753,6 +802,7 @@ H.resolveCompareCell = function (song) {
     // Parent stays as explicit blue compare so you see what you forked from
     const parentId = H.state.cellId;
     H.state.compareCellId = parentId;
+    H.state.lastCompareCellId = parentId;
     H.S().saveSong(song, 'landscape');
 
     // Switch to the new version for editing
