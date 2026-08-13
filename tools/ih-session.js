@@ -243,6 +243,13 @@
       packId: src.packId || null,
       familyId,
       versionIndex: nextIdx,
+      fromVersionIndex:
+        opts.fromVersionIndex != null
+          ? opts.fromVersionIndex
+          : src.versionIndex != null
+            ? src.versionIndex
+            : 1,
+      fromKind: opts.fromKind || null,
       chords,
     };
     fam.versionIds = fam.versionIds || [];

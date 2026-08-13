@@ -215,10 +215,15 @@ H.resolveCompareCell = function (song) {
       return x;
     });
     const name = cell.name || id;
+    const blueId = leavingId;
     setTimeout(function () {
-      const tog = H.$('#tog-alt');
-      if (tog) tog.checked = true;
-      if (H.map && H.map.setShowAlt) H.map.setShowAlt(true);
+      if (blueId && blueId !== H.state.cellId && H.armBlueCompare) {
+        H.armBlueCompare(blueId, { skipRender: true });
+      } else {
+        const tog = H.$('#tog-alt');
+        if (tog) tog.checked = true;
+        if (H.map && H.map.setShowAlt) H.map.setShowAlt(true);
+      }
       H.renderTitle();
       H.renderVersionBar();
       if (H.map && H.map.setOrigin) {
@@ -299,11 +304,14 @@ H.resolveCompareCell = function (song) {
     return true;
   }
 
-  /** Chip / status title: "Voice lead" from "Theme · v1 Voice lead". */
-  H.shortVersionTitle = function (label, vi) {
+  /** Lineage on a chip: "v1 Darken" from "Theme · v1 Darken" (v2 prefix is separate). */
+  H.shortVersionTitle = function (label, vi, cell) {
+    if (cell && cell.fromKind && cell.fromVersionIndex != null) {
+      return 'v' + cell.fromVersionIndex + ' ' + H.variationKindLabel(cell.fromKind);
+    }
     let s = String(label || '').trim();
-    const kind = s.match(/·\s*v\d+\s+(.+)$/i);
-    if (kind) return kind[1].trim();
+    const lin = s.match(/·\s*(v\d+\s+.+)$/i);
+    if (lin) return lin[1].trim();
     s = s.replace(/\s*·\s*v\d+.*$/i, '').replace(/\s*v\d+\s*$/i, '').trim();
     if (!s || /^custom sequence$/i.test(s) || /^untitled/i.test(s)) {
       return '';
@@ -379,7 +387,9 @@ H.resolveCompareCell = function (song) {
       (blueOnThis
         ? '<span style="color:#7eb8da">Blue is this take — open another chip to see the overlay</span>'
         : compareName
-          ? '<span style="color:#7eb8da">Blue · ' + H.escapeHtml(H.shortVersionTitle(compareName)) + '</span>'
+          ? '<span style="color:#7eb8da">Blue · ' +
+            H.escapeHtml(H.shortVersionTitle(compareName, null, cells[H.state.compareCellId])) +
+            '</span>'
           : 'Loop + click a chip = next pass · Alt-click = blue') +
       '</div>';
     if (hasFamily || cur) {
@@ -423,7 +433,7 @@ H.resolveCompareCell = function (song) {
           '<span class="ver-n">v' +
           vi +
           '</span>' +
-          H.escapeHtml(H.shortVersionTitle(label, vi)) +
+          H.escapeHtml(H.shortVersionTitle(label, vi, c)) +
           '<span class="ver-preview">' +
           H.escapeHtml(H.cellPreviewLabel(c)) +
           (isArmed ? ' · next loop' : isCompare ? ' · blue' : '') +
@@ -935,11 +945,19 @@ H.resolveCompareCell = function (song) {
     }
 
     const varName = H.nameForVariation(song, H.state.cellId, kind);
+    const srcCell = song.cells[H.state.cellId];
     const newId = H.S().createVariation(song, H.state.cellId, {
       chords: newChords,
       name: varName,
+      fromKind: kind,
+      fromVersionIndex: srcCell && srcCell.versionIndex != null ? srcCell.versionIndex : 1,
     });
     if (!newId) return;
+    if (song.cells[newId]) {
+      song.cells[newId].fromKind = kind;
+      song.cells[newId].fromVersionIndex =
+        srcCell && srcCell.versionIndex != null ? srcCell.versionIndex : 1;
+    }
     // Parent stays as explicit blue compare so you see what you forked from
     const parentId = H.state.cellId;
     H.state.compareCellId = parentId;
