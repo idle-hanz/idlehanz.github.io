@@ -278,6 +278,18 @@ H.resolveCompareCell = function (song) {
     return true;
   }
 
+  /** Chip / status title: "Voice lead" from "Theme · v1 Voice lead". */
+  H.shortVersionTitle = function (label, vi) {
+    let s = String(label || '').trim();
+    const kind = s.match(/·\s*v\d+\s+(.+)$/i);
+    if (kind) return kind[1].trim();
+    s = s.replace(/\s*·\s*v\d+.*$/i, '').replace(/\s*v\d+\s*$/i, '').trim();
+    if (!s || /^custom sequence$/i.test(s) || /^untitled/i.test(s)) {
+      return '';
+    }
+    return s;
+  }
+
   /** Short chord path for version chip preview */
   H.cellPreviewLabel = function (cell) {
     if (!cell || !cell.chords || !cell.chords.length) return 'empty';
@@ -342,12 +354,12 @@ H.resolveCompareCell = function (song) {
         : null;
     const blueOnThis = H.state.compareCellId && H.state.compareCellId === H.state.cellId;
     html +=
-      '<div class="version-bar-label">Versions · click = edit · while looping, click a take to play it next · Alt-click or Blue = compare' +
+      '<div class="version-bar-label">' +
       (blueOnThis
-        ? ' · <span style="color:#7eb8da">blue armed on this take · open another chip to see it</span>'
+        ? '<span style="color:#7eb8da">Blue is this take — open another chip to see the overlay</span>'
         : compareName
-          ? ' · <span style="color:#7eb8da">blue = ' + H.escapeHtml(compareName) + '</span>'
-          : ' · no blue overlay · tick Blue to restore') +
+          ? '<span style="color:#7eb8da">Blue · ' + H.escapeHtml(H.shortVersionTitle(compareName)) + '</span>'
+          : 'Loop + click a chip = next pass · Alt-click = blue') +
       '</div>';
     if (hasFamily || cur) {
       const famName =
@@ -390,14 +402,7 @@ H.resolveCompareCell = function (song) {
           '<span class="ver-n">v' +
           vi +
           '</span>' +
-          H.escapeHtml(
-            // Prefer short chip title: "v1 Darken" from "Theme · v1 Darken"
-            (() => {
-              const m = String(label).match(/·\s*(v\d+\s+.+)$/i);
-              if (m) return m[1].trim();
-              return label.replace(/\s*v\d+\s*$/i, '') || label;
-            })()
-          ) +
+          H.escapeHtml(H.shortVersionTitle(label, vi)) +
           '<span class="ver-preview">' +
           H.escapeHtml(H.cellPreviewLabel(c)) +
           (isArmed ? ' · next loop' : isCompare ? ' · blue' : '') +
@@ -432,7 +437,8 @@ H.resolveCompareCell = function (song) {
         : '') +
       '</div>';
 
-    if (hasManyCells) {
+    const onlyThisFamily = hasFamily && family.length === cellIds.length;
+    if (hasManyCells && !onlyThisFamily) {
       html += '<div class="cell-switch-row">';
       html += '<label for="cell-switch">All cells</label>';
       html += '<select id="cell-switch" title="Jump to any cell in the song session">';
