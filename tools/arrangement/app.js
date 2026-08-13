@@ -487,6 +487,62 @@
     render();
   }
 
+  function lastChordOfSection(sec) {
+    if (!sec) return null;
+    const reps = Math.max(1, +(sec.reps || 1));
+    const lastId =
+      sec.endCellId ||
+      (S().sectionRepChain
+        ? S().sectionRepChain(sec, reps - 1, reps)[0]
+        : null) ||
+      (S().sectionChain(sec).slice(-1)[0]);
+    const cell = lastId && song.cells[lastId];
+    if (!cell || !cell.chords || !cell.chords.length) return null;
+    return cell.chords[cell.chords.length - 1];
+  }
+
+  function firstChordOfSection(sec) {
+    if (!sec) return null;
+    const id = (S().sectionChain(sec) || [])[0] || sec.cellId;
+    const cell = id && song.cells[id];
+    if (!cell || !cell.chords || !cell.chords.length) return null;
+    return cell.chords[0];
+  }
+
+  function hearSeam(sec, next) {
+    if (!A() || !M()) return;
+    const from = lastChordOfSection(sec);
+    const to = firstChordOfSection(next);
+    const seam = sec.seam || {};
+    const mid =
+      seam.type === 'none' || seam.type === 'smooth'
+        ? []
+        : seam.chords && seam.chords.length
+          ? seam.chords
+          : S().suggestSeamChords
+            ? S().suggestSeamChords(from, to, song.key)
+            : [];
+    const seq = [];
+    if (from) seq.push(sessionChordToPlayable(from));
+    mid.forEach(function (c) {
+      seq.push(sessionChordToPlayable(c));
+    });
+    if (to) seq.push(sessionChordToPlayable(to));
+    if (!seq.length) return;
+    seq.forEach(function (c) {
+      c.duration = Math.min(2, c.duration || 2);
+    });
+    A().ensure();
+    if (A().stopPlayback) A().stopPlayback();
+    A().playSequence(seq, Math.max(song.bpm || 96, 90), { pulse: false, loop: false });
+    setStatus(
+      'Hear seam · ' +
+        seq.map(function (c) {
+          return c.name;
+        }).join(' → ')
+    );
+  }
+
   /** Remove a cell from the library; sections using it are cleaned up. */
   function deleteCell(cellId) {
     const cell = song.cells[cellId];
@@ -1385,12 +1441,14 @@
         selectSection(sec.id);
       });
       tr.querySelector('.sec-name').addEventListener('change', (e) => {
+        pushFormUndo();
         sec.name = e.target.value;
         save();
         renderFocus();
         renderTimeline();
       });
       tr.querySelector('.sec-cell').addEventListener('change', (e) => {
+        pushFormUndo();
         const id = e.target.value;
         sec.cellId = id;
         // Reset chain to this cell only (user can re-check versions)
@@ -1400,6 +1458,7 @@
       });
       tr.querySelectorAll('.chain-box input[type=checkbox]').forEach((cb) => {
         cb.addEventListener('change', () => {
+          pushFormUndo();
           const ids = [];
           tr.querySelectorAll('.chain-box input[type=checkbox]').forEach((c) => {
             if (c.checked) ids.push(c.dataset.vid);
@@ -1411,16 +1470,19 @@
         });
       });
       tr.querySelector('.sec-reps').addEventListener('change', (e) => {
+        pushFormUndo();
         sec.reps = Math.max(1, parseInt(e.target.value, 10) || 1);
         save();
         render();
       });
       tr.querySelector('.sec-end').addEventListener('change', (e) => {
+        pushFormUndo();
         sec.endCellId = e.target.value || null;
         save();
         render();
       });
       tr.querySelector('.sec-into').addEventListener('change', (e) => {
+        pushFormUndo();
         sec.intoCellId = e.target.value || null;
         save();
         render();
@@ -1472,14 +1534,68 @@
               <option value="none"${seam.type === 'none' ? ' selected' : ''}>None</option>
               <option value="smooth"${seam.type === 'smooth' ? ' selected' : ''}>Smooth VL only</option>
               <option value="turnaround"${seam.type === 'turnaround' ? ' selected' : ''}>Turnaround (V7→)</option>
+              <option value="custom"${seam.type === 'custom' ? ' selected' : ''}>Custom join</option>
             </select>
             <span class="status seam-chords">${escapeAttr(seamCh)}</span>
+            <button type="button" class="btn ghost seam-hear" title="Hear last + seam + next">Hear</button>
+            <div class="seam-joins"></div>
           </td>
-          <td colspan="2" class="status">flow between sections</td>
+          <td colspan="2" class="status">join last of this into first of next</td>
         `;
         seamTr.querySelector('.seam-type').addEventListener('change', (e) => {
           setSeamType(sec.id, e.target.value);
         });
+        const fromCh = lastChordOfSection(sec);
+        const toCh = firstChordOfSection(next);
+        const joinHost = seamTr.querySelector('.seam-joins');
+        if (joinHost && window.HLCompose && HLCompose.suggestLoopJoins && fromCh && toCh) {
+          const joins = HLCompose.suggestLoopJoins({
+            fromChord: sessionChordToPlayable(fromCh),
+            toChord: sessionChordToPlayable(toCh),
+            tonic: (toCh.localTonic != null ? toCh.localTonic : song.key && song.key.tonic) || 11,
+            modeKey: toCh.localMode || (song.key && song.key.mode) || 'minor',
+            duration: 2,
+            count: 5,
+          });
+          (joins || []).forEach(function (j) {
+            if (j.mode === 'insert') return;
+            const jb = document.createElement('button');
+            jb.type = 'button';
+            jb.className = 'btn ghost';
+            jb.style.margin = '0.15rem 0.15rem 0 0';
+            jb.textContent = j.label;
+            jb.title = j.job || 'Set as custom seam';
+            jb.addEventListener('click', function (ev) {
+              ev.stopPropagation();
+              pushFormUndo();
+              if (!sec.seam) sec.seam = S().defaultSeam();
+              sec.seam.type = 'custom';
+              sec.seam.chords = (j.chords || []).map(function (c) {
+                return {
+                  root: c.root,
+                  quality: c.quality,
+                  duration: c.duration || 2,
+                  bass: c.bass != null ? c.bass : c.root,
+                  roman: c.roman || '',
+                  region: c.region || 'diatonic',
+                  tag: 'seam',
+                  name: c.name,
+                };
+              });
+              save();
+              render();
+              setStatus('Seam · ' + (j.label || 'custom') + ' into ' + (next.name || ''));
+            });
+            joinHost.appendChild(jb);
+          });
+        }
+        const hearBtn = seamTr.querySelector('.seam-hear');
+        if (hearBtn) {
+          hearBtn.addEventListener('click', function (ev) {
+            ev.stopPropagation();
+            hearSeam(sec, next);
+          });
+        }
         body.appendChild(seamTr);
       }
     });

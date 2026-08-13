@@ -911,6 +911,89 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
     );
   }
 
+  H.activeGoalId = function () {
+    if (H.state.goalId) return H.state.goalId;
+    return (H.goalIdForStyle && H.goalIdForStyle()) || 'balanced';
+  };
+
+  /**
+   * Last-step → first-step joins (loop seam). Destination is the cell start.
+   */
+  H.buildLoopJoins = function () {
+    const n = (H.state.chords || []).length;
+    if (n < 2) return [];
+    const from = H.state.chords[n - 1];
+    const to = H.state.chords[0];
+    if (!from || !to) return [];
+    const compose = H.C();
+    if (!compose || !compose.suggestLoopJoins) return [];
+    const joins = compose.suggestLoopJoins({
+      fromChord: from,
+      toChord: to,
+      tonic: to.localTonic != null ? to.localTonic : H.state.tonic,
+      modeKey: to.localMode || H.state.mode,
+      duration: Math.min(2, H.stepDuration() || 2),
+      count: 6,
+    });
+    return (joins || []).map(function (j) {
+      const route = (j.chords || []).map(function (c) {
+        const x = H.M().cloneChord ? H.M().cloneChord(c) : c;
+        H.stampKey(x, H.keyOf(to) || H.writeKey());
+        return x;
+      });
+      return {
+        chord: route[0],
+        route: route,
+        kind: 'join',
+        label: j.label,
+        job: (j.mode === 'insert' ? 'insert · ' : 'replace last · ') + (j.job || ''),
+        joinMode: j.mode || 'replace',
+        section: 'join',
+        score: j.score,
+      };
+    });
+  };
+
+  H.applyLoopJoin = function (item) {
+    if (!item) return;
+    const n = H.state.chords.length;
+    if (!n) return;
+    const pieces = item.route && item.route.length ? item.route : item.chord ? [item.chord] : [];
+    if (!pieces.length) return;
+    H.state.selected = n - 1;
+    if (item.joinMode !== 'insert' && pieces.length === 1 && H.applyChordAtIndex) {
+      H.applyChordAtIndex(n - 1, pieces[0], {});
+      H.setSyncStatus(
+        'Ways home · replaced last with ' + (pieces[0].name || '') + ' · loops into ' +
+          ((H.state.chords[0] && H.state.chords[0].name) || 'start')
+      );
+      return;
+    }
+    if (item.joinMode === 'insert') {
+      H.commitHorizon(
+        {
+          chord: pieces[0],
+          route: pieces,
+          kind: 'join',
+          label: item.label,
+          job: item.job,
+        },
+        { insert: true }
+      );
+      return;
+    }
+    H.commitHorizon(
+      {
+        chord: pieces[0],
+        route: pieces,
+        kind: 'join',
+        label: item.label,
+        job: item.job,
+      },
+      { replace: true }
+    );
+  };
+
   // --- Horizon builders
   /**
    * opts.forMap — compact set for canvas constellation (no home satellite; capped)
@@ -1191,7 +1274,8 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
             tail,
             tonic: t,
             modeKey: H.state.mode,
-            goalId: (H.goalIdForStyle && H.goalIdForStyle()) || 'balanced',
+            goalId: (H.activeGoalId && H.activeGoalId()) || 'balanced',
+            styleBoost: (H.getStyle && H.getStyle().nextBoost) || null,
             count: forMap ? 6 : 7,
             path: H.state.chords.slice(0, Math.max(0, sel + 1)),
           })
@@ -1200,7 +1284,8 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
               fromChord: from,
               tonic: t,
               modeKey: H.state.mode,
-              goalId: (H.goalIdForStyle && H.goalIdForStyle()) || 'balanced',
+              goalId: (H.activeGoalId && H.activeGoalId()) || 'balanced',
+              styleBoost: (H.getStyle && H.getStyle().nextBoost) || null,
               count: 5,
               path: H.state.chords,
             })

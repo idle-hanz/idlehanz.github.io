@@ -916,6 +916,18 @@
     if (H.$('#btn-smooth')) H.$('#btn-smooth').addEventListener('click', H.smoothVoicings);
     if (H.$('#btn-swing')) H.$('#btn-swing').addEventListener('click', H.suggestSwingNext);
     if (H.$('#btn-arch')) H.$('#btn-arch').addEventListener('click', H.suggestArchHome);
+    if (H.$('#btn-ways-home')) {
+      H.$('#btn-ways-home').addEventListener('click', function () {
+        if (H.state.chords.length) {
+          H.state.selected = H.state.chords.length - 1;
+          if (H.selectStep) H.selectStep(H.state.selected, { play: true });
+        }
+        if (H.renderHorizonLists) H.renderHorizonLists();
+        const list = H.$('#list-from-here');
+        if (list && list.scrollIntoView) list.scrollIntoView({ block: 'nearest' });
+        H.setSyncStatus('Ways home · last → first of this cell · click a Join to replace the last step');
+      });
+    }
     document.querySelectorAll('[data-map-view]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         H.setMapView(btn.getAttribute('data-map-view'));

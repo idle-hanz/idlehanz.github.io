@@ -819,6 +819,9 @@
       color: var(--muted);
       margin-top: 0.08rem;
     }
+    .hz-goal-row { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0.25rem 0 0.45rem; }
+    .hz-goal-row .chip { font-size: 0.65rem; padding: 0.12rem 0.4rem; }
+    .hz.kind-join { border-color: rgba(125,186,146,0.45); background: rgba(125,186,146,0.08); }
     #list-from-here { max-height: calc(100vh - 12rem); overflow: auto; padding-right: 0.15rem; }
     /* Inline in the single toolbar row (no second/third bar stacking) */
     .function-opts {
@@ -1405,6 +1408,15 @@
               <button type="button" class="btn ghost" id="btn-empty-feel" title="Open feel packs">Feels…</button>
             </div>
           </div>
+          <div class="add-row" id="edit-essentials">
+            <button type="button" class="btn ghost btn-danger" id="btn-del-step" title="Delete selected step · Backspace / Delete">Delete</button>
+            <button type="button" class="btn ghost" id="btn-undo" title="Ctrl+Z">Undo</button>
+            <button type="button" class="btn ghost" id="btn-redo-edit" title="Ctrl+Y">Redo</button>
+            <button type="button" class="btn primary" id="btn-ways-home" title="Ranked last→first joins for this looping cell">Ways home</button>
+          </div>
+          <details class="fold" id="fold-build">
+            <summary>Add / insert / clear</summary>
+            <div class="fold-body">
           <div class="add-row">
             <select id="add-root" aria-label="Root"></select>
             <select id="add-quality" aria-label="Quality"></select>
@@ -1413,12 +1425,11 @@
             <button type="button" class="btn ghost" id="btn-quick-i" title="Append tonic (I / i) of write home">+ I</button>
             <button type="button" class="btn ghost" id="btn-quick-v" title="Append V / V7 of write home">+ V</button>
             <button type="button" class="btn ghost" id="btn-dup" title="Duplicate step · Ctrl+D">Dup</button>
-            <button type="button" class="btn ghost btn-danger" id="btn-del-step" title="Delete selected step · Backspace / Delete">Delete</button>
-            <button type="button" class="btn ghost" id="btn-undo" title="Ctrl+Z">Undo</button>
-            <button type="button" class="btn ghost" id="btn-redo-edit" title="Ctrl+Y">Redo</button>
             <button type="button" class="btn ghost" id="btn-clear" title="Clear path only — write home and versions stay">Clear</button>
             <button type="button" class="btn ghost btn-danger" id="btn-reset-all" title="Empty slate">Reset</button>
           </div>
+            </div>
+          </details>
 
           <div class="add-row" id="step-dur" style="margin-top:0.35rem;align-items:center;flex-wrap:wrap" title="Default length for NEW chords. When multiple timeline steps are selected (Ctrl/Shift+click), chips set duration on the selection instead.">
             <span class="hint" id="dur-mode-label" style="margin:0;text-transform:uppercase;font-size:0.62rem;letter-spacing:0.04em;min-width:7.5rem">Default for new chords</span>
@@ -1438,7 +1449,9 @@
           </div>
           <p class="hint" style="margin:0.2rem 0 0;font-size:0.72rem">Timeline: <kbd>Ctrl</kbd>+click multi · <kbd>Shift</kbd>+click range · then hit a beat chip to set length on all selected.</p>
 
-          <h2 style="margin-top:0.75rem">Tools</h2>
+          <details class="fold" id="fold-tools" style="margin-top:0.45rem">
+            <summary>Vary / colour tools</summary>
+            <div class="fold-body">
           <div class="add-row" id="path-tools" style="margin-top:0.25rem">
             <button type="button" class="btn ghost" id="btn-tool-darker" title="Re-colour selected step darker (borrow / tension)">Darker</button>
             <button type="button" class="btn ghost" id="btn-tool-reharm" title="Reharmonise selected step">Reharm</button>
@@ -1448,6 +1461,8 @@
             <button type="button" class="btn ghost" id="btn-swing" title="Add a swing-side step">+ Swing</button>
             <button type="button" class="btn ghost" id="btn-arch" title="Add V7 → home">Arch home</button>
           </div>
+            </div>
+          </details>
           <div id="place-readout" class="place-readout"></div>
           <div id="vl-readout" class="vl-line" hidden></div>
           <div id="inspector" style="margin-top:0.55rem"></div>
@@ -1594,28 +1609,28 @@
     </div>
   </div>
 
-  <script src="../ih-session.js?v=20260813g"></script>
-  <script src="js/music.js?v=20260813g"></script>
-  <script src="js/compose.js?v=20260813g"></script>
-  <script src="js/audio.js?v=20260813g"></script>
-  <script src="js/packs.js?v=20260813g"></script>
-  <script src="js/spatial.js?v=20260813g"></script>
-  <script src="js/spatial-layout.js?v=20260813g"></script>
-  <script src="js/spatial-input.js?v=20260813g"></script>
-  <script src="js/spatial-draw.js?v=20260813g"></script>
+  <script src="../ih-session.js?v=20260813h"></script>
+  <script src="js/music.js?v=20260813h"></script>
+  <script src="js/compose.js?v=20260813h"></script>
+  <script src="js/audio.js?v=20260813h"></script>
+  <script src="js/packs.js?v=20260813h"></script>
+  <script src="js/spatial.js?v=20260813h"></script>
+  <script src="js/spatial-layout.js?v=20260813h"></script>
+  <script src="js/spatial-input.js?v=20260813h"></script>
+  <script src="js/spatial-draw.js?v=20260813h"></script>
   <!-- App modules (shared HLApp namespace) — order matters -->
-  <script src="js/hl-core.js?v=20260813g"></script>
-  <script src="js/hl-styles.js?v=20260813g"></script>
-  <script src="js/hl-context-menu.js?v=20260813g"></script>
-  <script src="js/hl-undo.js?v=20260813g"></script>
-  <script src="js/hl-session.js?v=20260813g"></script>
-  <script src="js/hl-map-bridge.js?v=20260813g"></script>
-  <script src="js/hl-versions.js?v=20260813g"></script>
-  <script src="js/hl-edit.js?v=20260813g"></script>
-  <script src="js/hl-horizon.js?v=20260813g"></script>
-  <script src="js/hl-playback.js?v=20260813g"></script>
-  <script src="js/hl-ui.js?v=20260813g"></script>
-  <script src="js/hl-polish.js?v=20260813g"></script>
-  <script src="js/app.js?v=20260813g"></script>
+  <script src="js/hl-core.js?v=20260813h"></script>
+  <script src="js/hl-styles.js?v=20260813h"></script>
+  <script src="js/hl-context-menu.js?v=20260813h"></script>
+  <script src="js/hl-undo.js?v=20260813h"></script>
+  <script src="js/hl-session.js?v=20260813h"></script>
+  <script src="js/hl-map-bridge.js?v=20260813h"></script>
+  <script src="js/hl-versions.js?v=20260813h"></script>
+  <script src="js/hl-edit.js?v=20260813h"></script>
+  <script src="js/hl-horizon.js?v=20260813h"></script>
+  <script src="js/hl-playback.js?v=20260813h"></script>
+  <script src="js/hl-ui.js?v=20260813h"></script>
+  <script src="js/hl-polish.js?v=20260813h"></script>
+  <script src="js/app.js?v=20260813h"></script>
 </body>
 </html>

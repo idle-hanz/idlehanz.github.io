@@ -350,6 +350,10 @@
       if (goalId === 'stay_close' && region === 'diatonic') score += 0.25;
       if (goalId === 'float' && (ch.quality === 'dom7' || isHome)) score -= 0.35;
 
+      if (opts.styleBoost && ch.roman && opts.styleBoost[ch.roman]) {
+        score += opts.styleBoost[ch.roman];
+      }
+
       // Avoid immediate repeat of same chord
       if (fromChord && fromChord.root === ch.root && fromChord.quality === ch.quality) score -= 1.2;
       if (recentKeys.has(key)) score -= 0.25;
@@ -430,6 +434,7 @@
       goalId = 'balanced',
       count = 6,
       path = [],
+      styleBoost = null,
     } = opts;
 
     const packages = [];
@@ -462,6 +467,7 @@
       tonic,
       modeKey,
       goalId,
+      styleBoost: styleBoost,
       count: 8,
       path,
     });
@@ -1321,6 +1327,98 @@
   }
 
   /**
+   * Ranked joins from `fromChord` into `toChord` (loop tail, or section seam).
+   * Destination is NOT included — the next cell/loop start already is that chord.
+   */
+  function suggestLoopJoins(opts) {
+    opts = opts || {};
+    const music = M();
+    const from = opts.fromChord;
+    const to = opts.toChord;
+    if (!from || !to) return [];
+    const t = music.pc(opts.tonic != null ? opts.tonic : to.root);
+    const mode = opts.modeKey || opts.mode || 'minor';
+    const isMinor =
+      (music.MODES[mode] || music.MODES.minor).romanBase === 'minor';
+    const count = opts.count != null ? opts.count : 6;
+    const dur = opts.duration != null ? opts.duration : 2;
+
+    const mk = function (root, quality, roman, region, job) {
+      let ch = music.makeChord(root, quality, {
+        duration: dur,
+        region: region || 'diatonic',
+        roman: roman || '',
+        tag: 'join',
+      });
+      if (from && bestInversion) ch = bestInversion(from, ch);
+      return { ch: ch, roman: roman, region: region, job: job };
+    };
+
+    const raw = [
+      mk((to.root + 7) % 12, 'dom7', 'V7', 'diatonic', 'authentic into ' + (to.name || 'home')),
+      mk((to.root + 7) % 12, 'dom7b9', 'V7♭9', 'valt', 'dark dominant'),
+      mk((to.root + 7) % 12, isMinor ? 'min' : 'maj', isMinor ? 'v' : 'V', 'diatonic', 'soft dominant'),
+      mk((to.root + 10) % 12, 'maj', isMinor ? 'VII' : '♭VII', 'diatonic', 'step into tonic'),
+      mk((to.root + 5) % 12, isMinor ? 'min' : 'maj', isMinor ? 'iv' : 'IV', 'diatonic', 'plagal'),
+      mk((to.root + 1) % 12, 'dom7', '♭II7', 'tritone', 'tritone into tonic'),
+      mk((to.root + 10) % 12, 'dom7', '♭VII7', 'interchange', 'backdoor'),
+      mk((to.root + 2) % 12, isMinor ? 'halfdim' : 'min7', isMinor ? 'iiø' : 'ii7', 'diatonic', 'supertonic'),
+      mk((to.root + 8) % 12, 'maj', isMinor ? 'VI' : 'vi', 'diatonic', 'submediant colour'),
+    ];
+
+    const seen = {};
+    const scored = [];
+    raw.forEach(function (row) {
+      const ch = row.ch;
+      if (!ch) return;
+      if (ch.root === from.root && ch.quality === from.quality) return;
+      if (ch.root === to.root && (ch.quality === to.quality || (ch.quality || '').indexOf('min') === 0 && (to.quality || '').indexOf('min') === 0)) {
+        return;
+      }
+      const k = ch.root + ':' + ch.quality;
+      if (seen[k]) return;
+      seen[k] = 1;
+      const vlIn = from ? music.voiceLeadingQuality(from, ch) : 0.6;
+      const vlOut = music.voiceLeadingQuality(ch, to);
+      const bassIn = from ? bassMotionScore(from, ch) : 0.6;
+      const bassOut = bassMotionScore(ch, to);
+      let score = vlIn * 0.9 + vlOut * 1.3 + bassIn * 0.4 + bassOut * 0.7;
+      if (row.roman === 'V7') score += 0.45;
+      if (row.roman === 'V7♭9') score += 0.28;
+      if (row.roman === 'VII' || row.roman === '♭VII') score += 0.22;
+      if (row.roman === 'iv' || row.roman === 'IV') score += 0.18;
+      if (row.region === 'tritone') score += 0.05;
+      scored.push({
+        id: 'join-' + k,
+        label: ch.name,
+        job: row.job,
+        roman: row.roman,
+        region: row.region,
+        chords: [ch],
+        mode: 'replace',
+        score: score,
+      });
+    });
+    scored.sort(function (a, b) {
+      return b.score - a.score;
+    });
+    const top = scored.slice(0, count);
+    if (top[0] && top[0].roman === 'V7') {
+      top.push({
+        id: 'join-keep-' + top[0].id,
+        label: 'keep + ' + top[0].label,
+        job: 'insert seam · then into ' + (to.name || 'home'),
+        roman: top[0].roman,
+        region: top[0].region,
+        chords: top[0].chords.slice(),
+        mode: 'insert',
+        score: top[0].score * 0.85,
+      });
+    }
+    return top;
+  }
+
+  /**
    * Routes into a new key (not back to old home) — establish the modulation.
    */
   function waysIntoKey(fromChord, toTonic, toMode, count = 5) {
@@ -1539,6 +1637,7 @@
     keysForPivotChord,
     parallelMinorFamily,
     waysIntoKey,
+    suggestLoopJoins,
     closeAlternates,
   };
 

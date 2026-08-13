@@ -59,6 +59,8 @@
       mapGestureMode: 'select',
       /** Style lens: neutral | classical | jazz | blues | rock | goth | metal | shoegaze */
       style: 'neutral',
+      /** Override compose goal; null = derive from style */
+      goalId: null,
     }
   };
   global.HLApp = H;

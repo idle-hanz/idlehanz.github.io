@@ -1399,6 +1399,83 @@ H.refreshAll = function () {
     if (!host) return;
     host.innerHTML = '';
 
+    const st = H.getStyle ? H.getStyle() : null;
+    const goalId = H.activeGoalId ? H.activeGoalId() : 'balanced';
+    const goalNames = {
+      balanced: 'Balanced',
+      stay_close: 'Stay close',
+      get_darker: 'Darker',
+      delay_home: 'Delay home',
+      epic_lift: 'Lift',
+      float: 'Float',
+      hard_return: 'Home',
+    };
+    const lens = document.createElement('div');
+    lens.className = 'hz-section hz-lens';
+    lens.innerHTML =
+      '<div class="hz-section-title">Style · ' +
+      H.escapeHtml((st && st.label) || 'Neutral') +
+      ' · ' +
+      H.escapeHtml(goalNames[goalId] || goalId) +
+      '</div><div class="hz-section-hint">Ranks next moves. Pick a goal to override the style default.</div>';
+    host.appendChild(lens);
+    const goals = ['stay_close', 'get_darker', 'hard_return', 'float', 'balanced'];
+    const row = document.createElement('div');
+    row.className = 'hz-goal-row';
+    goals.forEach(function (id) {
+      const g = document.createElement('button');
+      g.type = 'button';
+      g.className = 'chip' + (goalId === id ? ' on' : '');
+      g.textContent = goalNames[id] || id;
+      g.addEventListener('click', function () {
+        H.state.goalId = H.state.goalId === id ? null : id;
+        H.renderHorizonLists();
+        H.setSyncStatus(
+          'Goal · ' +
+            (H.state.goalId ? goalNames[H.state.goalId] : 'style default') +
+            ' · From here re-ranked'
+        );
+      });
+      row.appendChild(g);
+    });
+    host.appendChild(row);
+
+    const joins = H.buildLoopJoins ? H.buildLoopJoins() : [];
+    if (joins.length) {
+      const last = H.state.chords[H.state.chords.length - 1];
+      const first = H.state.chords[0];
+      const jh = document.createElement('div');
+      jh.className = 'hz-section';
+      jh.innerHTML =
+        '<div class="hz-section-title">Ways home</div><div class="hz-section-hint">Loop join · ' +
+        H.escapeHtml((last && last.name) || '?') +
+        ' → ' +
+        H.escapeHtml((first && first.name) || 'start') +
+        ' · click replaces last · “keep +” inserts a seam</div>';
+      host.appendChild(jh);
+      joins.forEach(function (it) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'hz kind-join';
+        b.innerHTML =
+          '<span class="hz-tag">Join</span><strong>' +
+          H.escapeHtml(it.label) +
+          '</strong><span>' +
+          H.escapeHtml(it.job || '') +
+          '</span>';
+        b.addEventListener('mouseenter', function () {
+          if (H.A() && it.chord) {
+            H.A().ensure();
+            H.A().playChord({ chord: it.chord, soft: true, duration: 0.4, identify: true });
+          }
+        });
+        b.addEventListener('click', function () {
+          if (H.applyLoopJoin) H.applyLoopJoin(it);
+        });
+        host.appendChild(b);
+      });
+    }
+
     const items = H.buildHorizon();
     const order = {
       home: -1,
@@ -1425,6 +1502,7 @@ H.refreshAll = function () {
       ? 'Click = insert after selection · Shift+click = overwrite what follows · hover = audition'
       : 'Click = append · Shift+click = overwrite · hover = audition';
     const kindLabel = {
+      join: 'Join',
       home: 'Home',
       secondary: 'V7/x',
       secondaryii: 'ii–V/x',
