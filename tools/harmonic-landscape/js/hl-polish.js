@@ -214,16 +214,57 @@
   };
 
   H.setMapGestureMode = function (mode) {
-    var allowed = { select: 1, write: 1, aim: 1, reorder: 1 };
+    if (mode === 'aim' || mode === 'reorder') mode = 'select';
+    var allowed = { select: 1, write: 1 };
     H.state.mapGestureMode = allowed[mode] ? mode : 'select';
     H.syncMapGestureModeUI();
     var labels = {
-      select: 'Select · preview only · drag reorders · × / Delete removes · double-click adds',
-      write: 'Write · click seats / arrows / chart to add',
-      aim: 'Aim · drag a step onto a seat to reassign · miss cancels',
-      reorder: 'Reorder · drag steps only · never adds',
+      select: 'Select · preview · drag reorders · Shift+drag aims · × deletes · double-click adds',
+      write: 'Write · click seats / arrows / From here to add',
     };
     H.setSyncStatus(labels[H.state.mapGestureMode] || labels.select);
+  };
+
+  H.offerRouteConfirm = function (item, onInsert) {
+    var el = H.$('#route-confirm');
+    if (!el || !item) {
+      if (onInsert) onInsert();
+      return;
+    }
+    var route = item.route || (item.chord ? [item.chord] : []);
+    var names = route
+      .map(function (c) {
+        return (c && c.name) || '?';
+      })
+      .join(' → ');
+    var title = H.$('#rc-title');
+    var line = H.$('#rc-route');
+    var job = H.$('#rc-job');
+    if (title) title.textContent = 'Insert package?';
+    if (line) line.textContent = names || '—';
+    if (job) job.textContent = item.job || item.label || '';
+    el.hidden = false;
+    var hear = H.$('#rc-hear');
+    var insert = H.$('#rc-insert');
+    var cancel = H.$('#rc-cancel');
+    var close = function () {
+      el.hidden = true;
+    };
+    if (hear) {
+      hear.onclick = function () {
+        if (H.A() && route[0]) {
+          H.A().ensure();
+          H.A().playChord({ chord: route[0], soft: true, duration: 0.45 });
+        }
+      };
+    }
+    if (insert) {
+      insert.onclick = function () {
+        close();
+        if (onInsert) onInsert();
+      };
+    }
+    if (cancel) cancel.onclick = close;
   };
 
   H.syncMapGestureModeUI = function () {

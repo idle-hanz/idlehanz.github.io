@@ -213,9 +213,16 @@
       if (item.route && item.route.length > 1) {
         H.state.selected =
           H.state.selected >= 0 ? H.state.selected : H.state.chords.length - 1;
-        H.commitHorizon(item, {
-          mode: intent === 'append' ? 'append' : intent === 'insert' ? 'insert' : 'auto',
-        });
+        const pack = function () {
+          H.commitHorizon(item, {
+            mode: intent === 'append' ? 'append' : intent === 'insert' ? 'insert' : 'auto',
+          });
+        };
+        if (H.offerRouteConfirm && !clickOpts.dblClick) {
+          H.offerRouteConfirm(item, pack);
+        } else {
+          pack();
+        }
         return;
       }
       if (item.chord && H.writeChordToPath) {
@@ -552,9 +559,13 @@
     H.wire();
     if (H.wirePolish) H.wirePolish();
     // Prefer handoff / shared session; else start empty (no default pack)
+    if (!H.S()) {
+      H.setSyncStatus(
+        'ih-session.js missing · keep it next to the harmonic-landscape folder on Desktop'
+      );
+    }
     const loaded = H.ingestHandoffOrSession();
     if (!loaded) {
-      // Zero slate: empty path, write home from dropdown defaults only
       H.state.chords = [];
       H.state.selected = -1;
       H.state.title = 'Untitled sequence';
@@ -568,10 +579,13 @@
     H.refreshAll();
     H.refreshAltPath();
     if (H.renderDiskLegend) H.renderDiskLegend();
+    if (H.updateEmptyStart) H.updateEmptyStart();
     H.setSyncStatus(
       loaded
-        ? 'Loaded shared session'
-        : 'Empty · pick Write home · Write mode or double-click a seat / + Home to start'
+        ? 'Opened from handoff'
+        : H.hasResumableSession && H.hasResumableSession()
+          ? 'Empty · Resume session for last cell · or + Home to start'
+          : 'Empty · pick Write home · Write mode or double-click a seat / + Home to start'
     );
 
     document.body.addEventListener('pointerdown', () => H.A().ensure(), { once: true });
@@ -703,6 +717,11 @@
     if (H.$('#btn-empty-demo')) {
       H.$('#btn-empty-demo').addEventListener('click', () => {
         if (H.loadStyleDemo) H.loadStyleDemo('speed-of-pain');
+      });
+    }
+    if (H.$('#btn-resume-session')) {
+      H.$('#btn-resume-session').addEventListener('click', () => {
+        if (H.resumeSharedSession) H.resumeSharedSession();
       });
     }
     if (H.$('#coach-start-i')) {

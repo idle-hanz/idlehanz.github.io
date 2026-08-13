@@ -336,7 +336,10 @@
       song.focus.chordIndex = 0;
     }
 
-    // Clear compare hints in opts callback only — Landscape holds compareCellId
+    (song.arrangement || []).forEach(function (s) {
+      if (s.endCellId === cellId) s.endCellId = null;
+      if (s.intoCellId === cellId) s.intoCellId = null;
+    });
 
     return {
       ok: true,
@@ -731,6 +734,8 @@
       cellId: opts.cellId || null,
       cellName: opts.cellName || 'Cell',
       focus: opts.focus != null ? opts.focus : 0,
+      sectionId: opts.sectionId || null,
+      ephemeral: !!opts.ephemeral,
       chords: (opts.chords || []).map((c) => {
         const row = {
           r: c.root,
@@ -879,20 +884,40 @@
       let song = loadSong() || emptySong({ title: payload.title, bpm: payload.bpm, tonic: payload.key && payload.key.tonic, mode: payload.key && payload.key.mode, updatedBy: payload.by });
       const cellId = payload.cellId || newCellId('cell');
       const prev = song.cells[cellId];
-      // Keep user-chosen cell name if handoff name is empty or generic
       const incoming = (payload.cellName || '').trim();
       const keepName =
         prev && prev.name && (!incoming || incoming === 'Cell' || incoming === 'Untitled sequence');
-      song.cells[cellId] = {
-        id: cellId,
-        name: keepName ? prev.name : incoming || (prev && prev.name) || 'Cell',
-        packId: prev && prev.packId ? prev.packId : null,
-        chords: expandHandoffChords(payload),
-      };
-      song.focus = { cellId, sectionId: null, chordIndex: payload.focus || 0 };
+      const ephemeral = !!(payload.ephemeral || payload.to === 'fretboard');
+      const keepSection =
+        (payload.sectionId || (song.focus && song.focus.sectionId)) || null;
+      if (ephemeral && prev) {
+        song.focus = {
+          cellId: cellId,
+          sectionId: keepSection,
+          chordIndex: payload.focus || 0,
+        };
+      } else {
+        song.cells[cellId] = {
+          id: cellId,
+          name: keepName ? prev.name : incoming || (prev && prev.name) || 'Cell',
+          packId: prev && prev.packId ? prev.packId : null,
+          familyId: prev && prev.familyId ? prev.familyId : null,
+          versionIndex: prev && prev.versionIndex ? prev.versionIndex : 1,
+          chords: expandHandoffChords(payload),
+        };
+        song.focus = {
+          cellId: cellId,
+          sectionId: keepSection,
+          chordIndex: payload.focus || 0,
+        };
+      }
       song.title = payload.title || song.title;
       song.bpm = payload.bpm != null ? payload.bpm : song.bpm;
-      if (payload.key) song.key = payload.key;
+      const songEmpty =
+        !song.arrangement ||
+        !song.arrangement.length ||
+        Object.keys(song.cells || {}).length <= 1;
+      if (payload.key && songEmpty) song.key = payload.key;
       saveSong(song, payload.by);
     } catch (_) {}
 
@@ -957,14 +982,14 @@
         mode: 'site',
       };
     }
-    // Desktop kit: Desktop/guitar_fretboard_app.html + Desktop/harmonic-landscape/ + Desktop/arrangement/
+    // Desktop kit: Desktop/fretboard/ + Desktop/harmonic-landscape/ + Desktop/arrangement/
     return {
-      fretboardFromLandscape: '../guitar_fretboard_app.html',
-      landscapeFromFretboard: './harmonic-landscape/index.html',
+      fretboardFromLandscape: '../fretboard/index.html',
+      landscapeFromFretboard: '../harmonic-landscape/index.html',
       arrangementFromLandscape: '../arrangement/index.html',
-      arrangementFromFretboard: './arrangement/index.html',
+      arrangementFromFretboard: '../arrangement/index.html',
       landscapeFromArrangement: '../harmonic-landscape/index.html',
-      fretboardFromArrangement: '../guitar_fretboard_app.html',
+      fretboardFromArrangement: '../fretboard/index.html',
       mode: 'desktop',
     };
   }

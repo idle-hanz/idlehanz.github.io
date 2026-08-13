@@ -215,6 +215,22 @@
     return H.STYLES[H.getStyleId()] || H.STYLES.neutral;
   };
 
+  /** Compose goal that matches the current style lens. */
+  H.goalIdForStyle = function () {
+    const id = H.getStyleId();
+    const map = {
+      goth: 'get_darker',
+      metal: 'get_darker',
+      jazz: 'balanced',
+      blues: 'stay_close',
+      rock: 'stay_close',
+      shoegaze: 'float',
+      classical: 'stay_close',
+      neutral: 'balanced',
+    };
+    return map[id] || 'balanced';
+  };
+
   H.setStyle = function (id, opts) {
     opts = opts || {};
     if (!H.STYLES[id]) id = 'neutral';

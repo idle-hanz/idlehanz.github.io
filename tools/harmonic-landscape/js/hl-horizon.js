@@ -1191,7 +1191,7 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
             tail,
             tonic: t,
             modeKey: H.state.mode,
-            goalId: 'balanced',
+            goalId: (H.goalIdForStyle && H.goalIdForStyle()) || 'balanced',
             count: forMap ? 6 : 7,
             path: H.state.chords.slice(0, Math.max(0, sel + 1)),
           })
@@ -1200,7 +1200,7 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
               fromChord: from,
               tonic: t,
               modeKey: H.state.mode,
-              goalId: 'balanced',
+              goalId: (H.goalIdForStyle && H.goalIdForStyle()) || 'balanced',
               count: 5,
               path: H.state.chords,
             })

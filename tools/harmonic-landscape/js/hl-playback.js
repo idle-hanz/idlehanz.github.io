@@ -329,7 +329,10 @@ H.stopPlayheadLoop = function () {
       c.duration = Math.min(1.6, c.duration || 1.6);
     });
     H.A().ensure();
-    if (H.A().stopPlayback) H.A().stopPlayback();
+    if (H.A().isPlaying && H.A().isPlaying()) {
+      H.A().playChord({ chord: seq[1] || seq[0], soft: true, duration: 0.4 });
+      return;
+    }
     H.A().playSequence(seq, Math.max(H.state.bpm, 100), { pulse: false, loop: false });
   }
 

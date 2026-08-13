@@ -398,7 +398,20 @@ H.refreshAll = function () {
             additive: additive,
             range: range,
           });
-          if (!additive && !range && ch && H.A().playChord) {
+          if (
+            !additive &&
+            !range &&
+            H.A() &&
+            H.A().isPlaying &&
+            H.A().isPlaying() &&
+            H.playSeq
+          ) {
+            H.playSeq({
+              fromIndex: i,
+              force: true,
+              label: 'Seek step ' + (i + 1),
+            });
+          } else if (!additive && !range && ch && H.A().playChord) {
             H.A().playChord({
               chord: ch,
               duration: H.chordAudioSeconds(ch, { soft: false }),
@@ -826,6 +839,11 @@ H.refreshAll = function () {
   H.updateEmptyStart = function () {
     const el = H.$('#empty-start');
     if (el) el.hidden = !!H.state.chords.length;
+    const resume = H.$('#btn-resume-session');
+    if (resume) {
+      resume.hidden = !!(H.state.chords && H.state.chords.length) ||
+        !(H.hasResumableSession && H.hasResumableSession());
+    }
   };
 
   /** First-run coach strip */
@@ -1484,49 +1502,31 @@ H.refreshAll = function () {
         H.escapeHtml(it.job || (it.chord && it.chord.name) || '') +
         '</span>';
       b.addEventListener('mouseenter', () => {
-        H.A().ensure();
         const pieces =
           it.route && it.route.length ? it.route : it.chord ? [it.chord] : [];
-        const seq = [];
-        const sel =
-          H.state.selected >= 0 && H.state.chords[H.state.selected]
-            ? H.state.chords[H.state.selected]
-            : null;
-        if (sel) seq.push(sel);
-        pieces.forEach((c) => seq.push(c));
-        if (pieces.length === 1 && H.state.chords[H.state.selected + 2]) {
-          seq.push(H.state.chords[H.state.selected + 2]);
-        } else if (pieces.length >= 2 && H.state.chords[H.state.selected + 1 + pieces.length]) {
-          seq.push(H.state.chords[H.state.selected + 1 + pieces.length]);
-        } else if (hasNext && pieces.length === 1 && H.state.chords[H.state.selected + 1]) {
-          if (H.state.chords[H.state.selected + 2]) seq.push(H.state.chords[H.state.selected + 2]);
-        }
-        if (seq.length >= 2) {
-          if (H.A().stopPlayback) H.A().stopPlayback();
-          H.A().playSequence(
-            seq.map((c) => {
-              const x = H.M().cloneChord(c);
-              x.duration = 1.35;
-              return x;
-            }),
-            Math.max(H.state.bpm, 110),
-            { pulse: false, loop: false }
-          );
-        } else if (pieces[0]) {
-          H.A().playChord({ chord: pieces[0], soft: true, duration: 0.45 });
-        }
+        const first = pieces[0];
+        if (!first || !H.A()) return;
+        H.A().ensure();
+        H.A().playChord({ chord: first, soft: true, duration: 0.4, identify: true });
       });
       b.addEventListener('click', (e) => {
         const shift = !!(e && e.shiftKey);
-        if (!H.shouldWriteFromMap || !H.shouldWriteFromMap({})) {
-          const ch = it.chord || (it.route && it.route[0]);
-          if (H.previewMapChord) H.previewMapChord(ch, 'Preview next');
+        const go = function () {
+          H.commitHorizon(it, {
+            insert: !shift,
+            replace: shift,
+          });
+        };
+        if (
+          !shift &&
+          it.route &&
+          it.route.length > 1 &&
+          H.offerRouteConfirm
+        ) {
+          H.offerRouteConfirm(it, go);
           return;
         }
-        H.commitHorizon(it, {
-          insert: !shift,
-          replace: shift,
-        });
+        go();
       });
       host.appendChild(b);
     });

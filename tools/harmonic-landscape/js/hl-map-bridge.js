@@ -824,8 +824,14 @@ H.chordFromChaseSeat = function (seat, key) {
           { mode: 'append', skipUndo: switched }
         );
       }
+      const verb =
+        intent === 'insert'
+          ? 'Insert after ' + (H.state.selected + 1)
+          : intent === 'append'
+            ? 'Append'
+            : 'Write';
       if (H.showToast) {
-        H.showToast('Added · ' + (ch.name || 'chord'));
+        H.showToast(verb + ' · ' + (ch.name || 'chord'));
       }
     } catch (err) {
       console.error('selectChaseSeat failed', err);
@@ -1124,8 +1130,8 @@ H.chordFromChaseSeat = function (seat, key) {
 
     if (n === 0) intent = 'append';
     else if (intent === 'auto') {
-      // Continue writing from the end; change a middle step in place
-      intent = idx >= 0 && idx < n - 1 ? 'edit' : 'append';
+      // Mid-path Write inserts after the selected step. Replace is explicit (edit).
+      intent = idx >= 0 && idx < n - 1 ? 'insert' : 'append';
     }
 
     if (intent === 'edit' && idx >= 0 && idx < n) {
@@ -1319,18 +1325,22 @@ H.chordFromChaseSeat = function (seat, key) {
     }
   }
 
-  H.afterEdit = function () {
-    // Preserve camera across this refresh (aim commit / inspector edit)
+  H.afterEdit = function (opts) {
+    opts = opts || {};
     if (H.map) {
       H.map._freezeCamera = true;
       H.map._keepCameraOnce = true;
     }
-    // Single map lifecycle: clear aim → refresh sequence/map/strip once
     if (H.map && H.map.clearInteraction) H.map.clearInteraction();
     if (H.clearNextPreview) H.clearNextPreview();
     H.recognize({ preserveName: H.state.nameLocked });
-    H.refreshAll();
-    // Unfreeze after layout has run under freeze
+    if (opts.full) {
+      H.refreshAll();
+    } else {
+      H.refreshSequence();
+      H.refreshMap();
+      if (H.updatePlayBtn) H.updatePlayBtn();
+    }
     if (H.map) {
       const m = H.map;
       setTimeout(() => {
@@ -1339,16 +1349,24 @@ H.chordFromChaseSeat = function (seat, key) {
       }, 0);
     }
     if (H.S() && H.state.chords.length) {
-      try {
-        H.pushToSharedSession('landscape');
-      } catch (_) {}
+      if (H._sessionPushTimer) clearTimeout(H._sessionPushTimer);
+      H._sessionPushTimer = setTimeout(function () {
+        H._sessionPushTimer = null;
+        try {
+          H.pushToSharedSession('landscape');
+        } catch (_) {}
+      }, 280);
     }
-    H.refreshAltPath();
+    if (H._horizonTimer) clearTimeout(H._horizonTimer);
+    H._horizonTimer = setTimeout(function () {
+      H._horizonTimer = null;
+      if (H.renderHorizonLists) H.renderHorizonLists();
+    }, 180);
+    if (opts.full || H.state.compareCellId) H.refreshAltPath();
     if (H.updateUndoButtons) H.updateUndoButtons();
     if (H.updateEmptyStart) H.updateEmptyStart();
     if (H.updateCoach) H.updateCoach();
     if (H.renderPlaceReadout) H.renderPlaceReadout();
-    // Path may have grown/shrunk/changed under a running loop — keep place
     if (H.A() && H.A().isPlaying && H.A().isPlaying() && H.resyncPlaybackPreservingPlace) {
       H.resyncPlaybackPreservingPlace({ resetFrom: true });
     }

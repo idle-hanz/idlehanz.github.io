@@ -19,8 +19,42 @@
   let playStartOffset = 0; // index into flat list when "from section"
   let playAccumBeats = 0;
   let playTotalBeats = 0;
+  let formUndoStack = [];
+  const FORM_UNDO_MAX = 40;
 
   const SECTION_NAMES = ['Intro', 'Verse', 'Chorus', 'Bridge', 'Outro', 'Break', 'Solo'];
+
+  function snapshotSong() {
+    try {
+      return JSON.parse(JSON.stringify(song));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function pushFormUndo() {
+    const snap = snapshotSong();
+    if (!snap) return;
+    formUndoStack.push({ song: snap, selectedSecId: selectedSecId });
+    if (formUndoStack.length > FORM_UNDO_MAX) formUndoStack.shift();
+  }
+
+  function undoForm() {
+    if (!formUndoStack.length) {
+      setStatus('Nothing to undo');
+      return;
+    }
+    const prev = formUndoStack.pop();
+    song = prev.song;
+    selectedSecId = prev.selectedSecId;
+    try {
+      S().saveSong(song, 'arrangement-undo');
+    } catch (_) {}
+    if ($('#song-title')) $('#song-title').value = song.title || 'Untitled';
+    if ($('#bpm')) $('#bpm').value = song.bpm || 96;
+    render({ keepLocal: true });
+    setStatus('Undid last form change');
+  }
 
   function init() {
     if (!S()) {
@@ -259,6 +293,7 @@
       alert('No cells yet. Create one in Landscape first (or + New cell).');
       return;
     }
+    pushFormUndo();
     const sec = {
       id: 'sec-' + Date.now().toString(36),
       name: nextSectionName(),
@@ -281,6 +316,7 @@
       alert('Select a section first.');
       return;
     }
+    pushFormUndo();
     const copy = {
       id: 'sec-' + Date.now().toString(36),
       name: (sec.name || 'Section') + ' copy',
@@ -394,6 +430,7 @@
   }
 
   function newCell() {
+    pushFormUndo();
     const id = S().newCellId('cell');
     const name = 'Cell ' + (Object.keys(song.cells).length + 1);
     song.cells[id] = { id, name, packId: null, familyId: null, versionIndex: 1, chords: [] };
@@ -417,6 +454,7 @@
       alert('This cell has no linked versions yet. In Landscape use “+ Vary …” to create v2.');
       return;
     }
+    pushFormUndo();
     const vers = S().familyVersions(song, cell.familyId);
     S().setSectionChain(
       sec,
@@ -430,6 +468,7 @@
   function setSeamType(secId, type) {
     const sec = song.arrangement.find((s) => s.id === secId);
     if (!sec) return;
+    pushFormUndo();
     if (!sec.seam) sec.seam = S().defaultSeam();
     sec.seam.type = type;
     if (type === 'turnaround') {
@@ -466,6 +505,7 @@
         '.\nEmpty sections will be removed from the form.';
     }
     if (!confirm(msg)) return;
+    pushFormUndo();
 
     if (S().deleteCell) {
       const result = S().deleteCell(song, cellId, {});
@@ -531,6 +571,7 @@
       cellId,
       cellName: cellName || (cell && cell.name) || 'Cell',
       focus: 0,
+      sectionId: selectedSecId,
       chords: (cell && cell.chords) || [],
     });
     S().openWithHandoff(S().PATHS.landscapeFromArrangement, payload);
@@ -544,8 +585,10 @@
     }
     song.focus = { cellId, sectionId: selectedSecId, chordIndex: 0 };
     save();
+    const focusAt =
+      song.focus && song.focus.cellId === cellId ? song.focus.chordIndex || 0 : 0;
     const clip = S().clipForFretboard
-      ? S().clipForFretboard(cell.chords, { focus: 0 })
+      ? S().clipForFretboard(cell.chords, { focus: focusAt })
       : {
           chords: cell.chords.slice(0, 8),
           truncated: cell.chords.length > 8,
@@ -567,7 +610,9 @@
       key: song.key,
       cellId,
       cellName: cell.name,
-      focus: 0,
+      focus: Math.max(0, focusAt - (clip.start || 0)),
+      sectionId: selectedSecId,
+      ephemeral: true,
       chords: clip.chords,
     });
     S().openWithHandoff(S().PATHS.fretboardFromArrangement, payload);
@@ -650,6 +695,21 @@
   /** Apply any song package object into the arranger session + UI */
   function applySongPackage(data, by, statusLabel) {
     try {
+      const hasWork =
+        song &&
+        ((song.arrangement && song.arrangement.length) ||
+          Object.keys(song.cells || {}).length);
+      if (hasWork) {
+        if (
+          !confirm(
+            'Replace the current song with “' +
+              ((data && data.title) || 'this package') +
+              '”?\n\nThis overwrites the session. Save a .song.json first if you need it.'
+          )
+        ) {
+          return false;
+        }
+      }
       if (playing) {
         try {
           stopPlay();
@@ -1087,6 +1147,12 @@
   }
 
   function deleteSection(id) {
+    const sec = song.arrangement.find((s) => s.id === id);
+    const name = sec && sec.name ? sec.name : 'this section';
+    if (!confirm('Delete section “' + name + '” from the form? Cells stay in the library.')) {
+      return;
+    }
+    pushFormUndo();
     song.arrangement = song.arrangement.filter((s) => s.id !== id);
     if (selectedSecId === id) selectedSecId = song.arrangement[0] ? song.arrangement[0].id : null;
     save();
@@ -1097,6 +1163,7 @@
     if (from === to || from < 0 || to < 0) return;
     const arr = song.arrangement;
     if (from >= arr.length || to >= arr.length) return;
+    pushFormUndo();
     const [item] = arr.splice(from, 1);
     arr.splice(to, 0, item);
     save();
@@ -3132,8 +3199,9 @@ function spiralCanvasClick(ev) {
     return ch;
   }
 
-  function buildPlayList(fromSectionId) {
-    const flat = S().flattenArrangement(song);
+  function buildPlayList(fromSectionId, opts) {
+    opts = opts || {};
+    let flat = S().flattenArrangement(song);
     if (!flat.length) return { list: [], start: 0, totalBeats: 0 };
 
     let start = 0;
@@ -3141,8 +3209,13 @@ function spiralCanvasClick(ev) {
       const sec = song.arrangement.find((s) => s.id === fromSectionId);
       const name = sec ? sec.name : null;
       if (name) {
-        const idx = flat.findIndex((c) => c._section === name && !c._seam);
-        if (idx >= 0) start = idx;
+        if (opts.sectionOnly) {
+          flat = flat.filter((c) => c._section === name);
+          start = 0;
+        } else {
+          const idx = flat.findIndex((c) => c._section === name && !c._seam);
+          if (idx >= 0) start = idx;
+        }
       }
     }
 
@@ -3252,18 +3325,18 @@ function spiralCanvasClick(ev) {
     if (stopBtn) stopBtn.disabled = !playing;
   }
 
-  function startPlay(fromSection) {
+  function startPlay(fromSection, opts) {
+    opts = opts || {};
     if (!A() || !M()) {
       alert('Audio/music engines not loaded.');
       return;
     }
     if (playing) {
       stopPlay();
-      // if was playing, stop only (second click on play while playing = stop via dedicated stop)
     }
 
     const fromId = fromSection ? selectedSecId : null;
-    const built = buildPlayList(fromId);
+    const built = buildPlayList(fromId, opts);
     if (!built.list.length) {
       alert('Nothing to play — add sections with chords.');
       return;
@@ -3332,6 +3405,16 @@ function spiralCanvasClick(ev) {
     }
     if (playing) stopPlay();
     startPlay(true);
+  }
+
+  function playThisSection() {
+    if (!selectedSecId) {
+      alert('Select a section in the form first.');
+      return;
+    }
+    if (playing) stopPlay();
+    startPlay(true, { sectionOnly: true });
+    setStatus('Playing this section only');
   }
 
   /** Play full song starting at flattened chord index */
@@ -3619,7 +3702,16 @@ function spiralCanvasClick(ev) {
     });
     $('#btn-play').addEventListener('click', playSong);
     if ($('#btn-play-from')) $('#btn-play-from').addEventListener('click', playFromSection);
+    if ($('#btn-play-section')) $('#btn-play-section').addEventListener('click', playThisSection);
+    if ($('#btn-form-undo')) $('#btn-form-undo').addEventListener('click', undoForm);
     if ($('#btn-stop')) $('#btn-stop').addEventListener('click', stopPlay);
+    document.addEventListener('keydown', function (e) {
+      if (e.target && e.target.matches && e.target.matches('input, textarea, select')) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undoForm();
+      }
+    });
     $('#btn-midi').addEventListener('click', exportMidi);
     $('#btn-text').addEventListener('click', exportText);
     if ($('#btn-export-flat')) $('#btn-export-flat').addEventListener('click', exportFlatJson);

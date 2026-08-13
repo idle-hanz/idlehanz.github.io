@@ -38,18 +38,21 @@ H.setSyncStatus = function (msg) {
       if (bEl) bEl.value = H.state.bpm;
     }
     // Session load is committed home — drop any staged dropdown land
-    H.state.selected = Math.max(0, Math.min(H.state.chords.length - 1, meta.focusIndex || 0));
-    H.map.setOrigin(H.state.tonic, H.state.mode);
+    H.state.selected = H.state.chords.length
+      ? Math.max(0, Math.min(H.state.chords.length - 1, meta.focusIndex || 0))
+      : -1;
+    if (H.map && H.map.setOrigin) H.map.setOrigin(H.state.tonic, H.state.mode);
     H.recognize({ preserveName: true });
     H.clearPendingHome();
   }
 
-  H.ingestHandoffOrSession = function () {
+  H.ingestHandoffOrSession = function (opts) {
+    opts = opts || {};
     if (!H.S()) return false;
 
     // 1) URL hash handoff (works on file://)
     const handoff = H.S().readHandoffFromLocation() || H.S().readHandoffStorage();
-    if (handoff && handoff.to === 'landscape' && handoff.chords && handoff.chords.length) {
+    if (handoff && handoff.to === 'landscape' && handoff.cellId) {
       const chords = H.S().expandHandoffChords(handoff);
       H.applySessionChords(chords, {
         title: handoff.cellName || handoff.title,
@@ -60,11 +63,16 @@ H.setSyncStatus = function (msg) {
         focusIndex: handoff.focus || 0,
       });
       H.S().clearHandoffHash();
-      H.pushToSharedSession('landscape');
+      try {
+        localStorage.removeItem('idlehanz_handoff_v1');
+      } catch (_) {}
+      if (chords && chords.length) H.pushToSharedSession('landscape');
       return true;
     }
 
-    // 2) Focused cell in full song session
+    if (!opts.resume) return false;
+
+    // 2) Explicit Resume — focused cell in full song session
     const song = H.S().loadSong();
     if (song) {
       const cell = H.S().getFocusedCell(song);
@@ -84,6 +92,24 @@ H.setSyncStatus = function (msg) {
     return false;
   }
 
+  H.hasResumableSession = function () {
+    if (!H.S()) return false;
+    const song = H.S().loadSong();
+    const cell = song && H.S().getFocusedCell(song);
+    return !!(cell && cell.chords && cell.chords.length);
+  };
+
+  H.resumeSharedSession = function () {
+    const ok = H.ingestHandoffOrSession({ resume: true });
+    if (ok) {
+      H.refreshAll();
+      H.setSyncStatus('Resumed session · ' + (H.state.title || 'cell'));
+    } else {
+      H.setSyncStatus('Nothing to resume');
+    }
+    return ok;
+  };
+
   H.pushToSharedSession = function (by) {
     if (!H.S() || !H.state.chords.length) return null;
     let song = H.S().loadSong() || H.S().emptySong({
@@ -98,7 +124,13 @@ H.setSyncStatus = function (msg) {
       song.title = song.title || 'Untitled';
     }
     song.bpm = H.state.bpm;
-    song.key = { tonic: H.state.tonic, mode: H.state.mode };
+    const songEmpty =
+      !song.arrangement ||
+      !song.arrangement.length ||
+      !Object.keys(song.cells || {}).length;
+    if (songEmpty || !song.key || song.key.tonic == null) {
+      song.key = { tonic: H.state.tonic, mode: H.state.mode };
+    }
     const cellId = H.state.cellId || H.S().newCellId('cell');
     H.state.cellId = cellId;
     // Preserve existing cell name if set and current title is still a pack auto-name
@@ -424,6 +456,7 @@ H.setSyncStatus = function (msg) {
       cellName: H.state.title,
       focus: focusInClip,
       chords: clip.chords,
+      ephemeral: true,
     });
     const ok = H.S().openWithHandoff(H.S().PATHS.fretboardFromLandscape, payload);
     const clipMsg = H.S().fretboardClipMessage
