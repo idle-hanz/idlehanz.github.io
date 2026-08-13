@@ -1134,11 +1134,24 @@ H.refreshAll = function () {
 
   H.renderTitle = function () {
     const titleEl = H.$('#seq-title');
-    // Editable cell name
+    const strip = H.S() && H.S().stripLineageFromName;
+    const base = strip ? strip(H.state.title) : H.state.title;
+    // Theme only — lineage lives in the locked chip
     if (titleEl && titleEl.tagName === 'INPUT') {
-      if (document.activeElement !== titleEl) titleEl.value = H.state.title;
+      if (document.activeElement !== titleEl) titleEl.value = base || '';
     } else if (titleEl) {
-      titleEl.textContent = H.state.title;
+      titleEl.textContent = base || H.state.title;
+    }
+    const lock = H.$('#seq-lineage');
+    if (lock) {
+      let txt = '';
+      if (H.S() && H.S().lineageLockText && H.state.cellId) {
+        const song = H.S().loadSong ? H.S().loadSong() : null;
+        const cell = song && song.cells[H.state.cellId];
+        if (cell) txt = H.S().lineageLockText(cell) || '';
+      }
+      lock.textContent = txt;
+      lock.hidden = !txt;
     }
     H.$('#seq-key').textContent = H.keyLabel();
     const badge = H.$('#canonical-badge');

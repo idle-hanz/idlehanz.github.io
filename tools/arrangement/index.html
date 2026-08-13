@@ -215,12 +215,18 @@
     .cell-wrap.active, .cell-wrap:hover { border-color: var(--gold); }
     .cell-wrap.active { background: rgba(196,165,116,0.08); }
     .cell-head { padding: 0.4rem 0.45rem 0.15rem; }
+    .cell-name-row { display: flex; align-items: center; gap: 0.35rem; }
     .cell-name-input {
-      width: 100%; font-weight: 700; font-size: 0.9rem; color: var(--gold2);
+      flex: 1; min-width: 0; font-weight: 700; font-size: 0.9rem; color: var(--gold2);
       background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
       padding: 0.3rem 0.4rem; font-family: var(--font);
     }
     .cell-name-input:focus { border-color: var(--gold); outline: none; }
+    .lineage-lock {
+      flex: 0 0 auto; font-size: 0.72rem; font-weight: 700; color: var(--gold);
+      border: 1px solid var(--line); background: var(--bg); border-radius: 999px;
+      padding: 0.22rem 0.45rem; user-select: none; pointer-events: none; white-space: nowrap;
+    }
     .cell {
       width: 100%; text-align: left; background: transparent; border: 0;
       padding: 0.25rem 0.55rem 0.35rem; cursor: pointer; color: inherit; font: inherit;
@@ -454,13 +460,13 @@
     </footer>
   </div>
 
-  <script src="../ih-session.js"></script>
-  <script src="../harmonic-landscape/js/music.js"></script>
-  <script src="../harmonic-landscape/js/compose.js"></script>
-  <script src="../harmonic-landscape/js/audio.js"></script>
+  <script src="../ih-session.js?v=20260814h"></script>
+  <script src="../harmonic-landscape/js/music.js?v=20260814h"></script>
+  <script src="../harmonic-landscape/js/compose.js?v=20260814h"></script>
+  <script src="../harmonic-landscape/js/audio.js?v=20260814h"></script>
   <!-- Embedded packages: load under file:// without fetch (Chromium blocks local JSON fetch) -->
   <script src="the-speed-of-pain.song.js"></script>
   <script src="multi-key-cylinders.song.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=20260814h"></script>
 </body>
 </html>

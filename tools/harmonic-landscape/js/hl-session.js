@@ -180,21 +180,31 @@ H.setSyncStatus = function (msg) {
       H.state.title = existing.name;
     }
     const prevCell = song.cells[cellId];
-    song.cells[cellId] = {
+    const nextCell = {
       id: cellId,
       name: cellName,
-      packId: H.state.fromPackId || null,
+      packId: H.state.fromPackId || (prevCell && prevCell.packId) || null,
       familyId: prevCell && prevCell.familyId ? prevCell.familyId : null,
       versionIndex: prevCell && prevCell.versionIndex ? prevCell.versionIndex : 1,
+      fromVersionIndex: prevCell && prevCell.fromVersionIndex != null ? prevCell.fromVersionIndex : null,
+      fromKind: prevCell && prevCell.fromKind ? prevCell.fromKind : null,
+      fromCellId: prevCell && prevCell.fromCellId ? prevCell.fromCellId : null,
       chords: H.state.chords.map((c) => H.S().fromLandscapeChord(c)),
     };
+    if (H.S().applyUserCellName) {
+      H.S().applyUserCellName(song, nextCell, cellName);
+    } else if (H.S().inferLineageOnCell) {
+      H.S().inferLineageOnCell(song, nextCell);
+    }
+    song.cells[cellId] = nextCell;
+    H.state.title = nextCell.name;
     song.focus = {
       cellId,
       sectionId: song.focus && song.focus.sectionId ? song.focus.sectionId : null,
       chordIndex: Math.max(0, H.state.selected),
     };
     H.S().saveSong(song, by || 'landscape');
-    H.setSyncStatus('Session saved · ' + cellName);
+    H.setSyncStatus('Session saved · ' + (nextCell.name || cellName));
     return song;
   }
 

@@ -105,11 +105,12 @@
     if (!song.families) song.families = {};
     if (!song.arrangement) song.arrangement = [];
     if (!song.focus) song.focus = { cellId: null, sectionId: null, chordIndex: 0 };
-    // Migrate cells: familyId / versionIndex
+    // Migrate cells: familyId / versionIndex / locked lineage
     Object.keys(song.cells).forEach((id) => {
       const c = song.cells[id];
       if (c.familyId == null) c.familyId = null;
       if (c.versionIndex == null) c.versionIndex = 1;
+      inferLineageOnCell(song, c);
     });
     // Migrate sections: chain + seam + cycle exit (end / into)
     song.arrangement.forEach((sec) => {
@@ -190,6 +191,166 @@
     return 'fam-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
   }
 
+  const KIND_LABELS = {
+    copy: 'Copy',
+    parallel: 'Parallel',
+    'parallel-major': 'Major',
+    'parallel-minor': 'Minor',
+    'key-major': 'In major',
+    'key-minor': 'In minor',
+    darken: 'Darken',
+    brighter: 'Brighten',
+    reharm: 'Reharm',
+    voice: 'Voice lead',
+    sevenths: '7ths',
+    pedal: 'Pedal',
+    rhythm: 'Rhythm',
+  };
+  const LABEL_TO_KIND = {
+    copy: 'copy',
+    parallel: 'parallel',
+    major: 'parallel-major',
+    minor: 'parallel-minor',
+    'in major': 'key-major',
+    'in minor': 'key-minor',
+    darken: 'darken',
+    brighten: 'brighter',
+    brighter: 'brighter',
+    reharm: 'reharm',
+    'voice lead': 'voice',
+    voice: 'voice',
+    '7ths': 'sevenths',
+    sevenths: 'sevenths',
+    pedal: 'pedal',
+    rhythm: 'rhythm',
+  };
+
+  function variationKindLabel(kind) {
+    return KIND_LABELS[kind] || (kind ? String(kind) : '');
+  }
+
+  function kindFromLabel(label) {
+    const s = String(label || '').trim().toLowerCase();
+    return LABEL_TO_KIND[s] || null;
+  }
+
+  /** Theme only: drop "· v2 Darken" / trailing "v4". */
+  function stripLineageFromName(name) {
+    return String(name || '')
+      .replace(/\s*·\s*v\d+.*$/i, '')
+      .replace(/\s+v\d+\s+v\d+\s+.*$/i, '')
+      .replace(/\s+v\d+\s*$/i, '')
+      .trim();
+  }
+
+  /** Parent + kind from a stored or chip name. "v4 v2 Darken" / "Theme · v2 Darken" → { parent: 2, kind: "Darken" }. */
+  function parseLineageFromName(name, ownVersionIndex) {
+    const s = String(name || '');
+    if (!s) return null;
+    const pair = s.match(/v(\d+)\s+v(\d+)\s*(.*)$/i);
+    if (pair) {
+      const n = parseInt(pair[2], 10);
+      if (!isNaN(n) && (ownVersionIndex == null || n !== ownVersionIndex)) {
+        return { parent: n, kind: String(pair[3] || '').trim() };
+      }
+    }
+    const afterDot = s.match(/·\s*v(\d+)\s*(.*)$/i);
+    if (afterDot) {
+      const n = parseInt(afterDot[1], 10);
+      if (!isNaN(n) && (ownVersionIndex == null || n !== ownVersionIndex)) {
+        return { parent: n, kind: String(afterDot[2] || '').trim() };
+      }
+    }
+    return null;
+  }
+
+  function findSiblingByVersion(song, cell, n) {
+    if (!song || !cell || n == null || isNaN(n)) return null;
+    const ids =
+      cell.familyId && song.families && song.families[cell.familyId]
+        ? song.families[cell.familyId].versionIds || []
+        : Object.keys(song.cells || {});
+    for (let i = 0; i < ids.length; i++) {
+      const c = song.cells[ids[i]];
+      if (c && c.id !== cell.id && c.versionIndex === n) return c;
+    }
+    return null;
+  }
+
+  /** Locked chip text: "v4 v2 Darken". Not user-editable. */
+  function lineageLockText(cell) {
+    if (!cell) return '';
+    const own = cell.versionIndex != null ? cell.versionIndex : null;
+    const parent = cell.fromVersionIndex;
+    const kind = variationKindLabel(cell.fromKind);
+    if (own != null && parent != null && kind) return 'v' + own + ' v' + parent + ' ' + kind;
+    if (own != null && parent != null) return 'v' + own + ' v' + parent;
+    if (own != null && cell.familyId) return 'v' + own;
+    return '';
+  }
+
+  /** Stored name: "Theme · v2 Darken". Lineage is generated, not typed. */
+  function composeCellName(base, cell) {
+    const b = stripLineageFromName(base) || 'Cell';
+    if (!cell) return b;
+    const parent = cell.fromVersionIndex;
+    const kind = variationKindLabel(cell.fromKind);
+    if (parent != null && kind) return b + ' · v' + parent + ' ' + kind;
+    if (parent != null) return b + ' · v' + parent;
+    return b;
+  }
+
+  function inferLineageOnCell(song, cell) {
+    if (!cell) return cell;
+    const parsed = parseLineageFromName(cell.name, cell.versionIndex);
+    if (cell.fromVersionIndex == null && parsed) cell.fromVersionIndex = parsed.parent;
+    if (!cell.fromKind && parsed && parsed.kind) {
+      const k = kindFromLabel(parsed.kind);
+      if (k) cell.fromKind = k;
+    }
+    if (
+      !cell.fromCellId &&
+      song &&
+      cell.fromVersionIndex != null
+    ) {
+      const sib = findSiblingByVersion(song, cell, cell.fromVersionIndex);
+      if (sib) cell.fromCellId = sib.id;
+    }
+    const base = stripLineageFromName(cell.name) || cell.name || 'Cell';
+    if (cell.fromVersionIndex != null) cell.name = composeCellName(base, cell);
+    return cell;
+  }
+
+  /** Rename the theme only. Re-applies locked lineage on this cell (and family siblings). */
+  function applyUserCellName(song, cell, userName) {
+    if (!cell) return '';
+    inferLineageOnCell(song, cell);
+    const base = stripLineageFromName(userName) || stripLineageFromName(cell.name) || 'Cell';
+    cell.name = composeCellName(base, cell);
+    if (song && cell.familyId && song.families && song.families[cell.familyId]) {
+      song.families[cell.familyId].name = base;
+      familyVersions(song, cell.familyId).forEach(function (c) {
+        if (!c || c.id === cell.id) return;
+        inferLineageOnCell(song, c);
+        c.name = composeCellName(base, c);
+      });
+    }
+    return cell.name;
+  }
+
+  function copyCellLineage(prev, dest) {
+    if (!prev || !dest) return dest;
+    if (dest.familyId == null) dest.familyId = prev.familyId || null;
+    if (dest.versionIndex == null) dest.versionIndex = prev.versionIndex != null ? prev.versionIndex : 1;
+    if (dest.fromVersionIndex == null && prev.fromVersionIndex != null) {
+      dest.fromVersionIndex = prev.fromVersionIndex;
+    }
+    if (!dest.fromKind && prev.fromKind) dest.fromKind = prev.fromKind;
+    if (!dest.fromCellId && prev.fromCellId) dest.fromCellId = prev.fromCellId;
+    if (!dest.packId && prev.packId) dest.packId = prev.packId;
+    return dest;
+  }
+
   /**
    * Create a variation cell linked to the same family as sourceCellId.
    * Copies chords (caller may mutate), returns new cell id.
@@ -205,16 +366,13 @@
       familyId = newFamilyId();
       src.familyId = familyId;
       src.versionIndex = 1;
-      const famName = (src.name || 'Cell').replace(/\s*v\d+\s*$/i, '').trim() || 'Cell';
+      const famName = stripLineageFromName(src.name || 'Cell') || 'Cell';
       song.families[familyId] = {
         id: familyId,
         name: famName,
         versionIds: [sourceCellId],
       };
-      // Rename v1 for clarity if still generic pack name only
-      if (!/v\d+/i.test(src.name || '')) {
-        src.name = famName + ' v1';
-      }
+      src.name = famName;
     }
 
     const fam = song.families[familyId];
@@ -226,8 +384,8 @@
       .replace(/\s*v\d+\s*$/i, '')
       .trim() || 'Cell';
     const chords = (opts.chords || src.chords || []).map((c) => ({ ...c }));
-    // Prefer caller name (e.g. "Home grit · v1 Darken"); else plain vN
-    let cellName = (opts.name && String(opts.name).trim()) || baseName + ' v' + nextIdx;
+    // Prefer caller name (theme · locked lineage); else theme only
+    let cellName = (opts.name && String(opts.name).trim()) || baseName;
     // Avoid duplicate display names in the song
     const taken = new Set(
       Object.keys(song.cells).map((id) => (song.cells[id].name || '').toLowerCase())
@@ -235,22 +393,29 @@
     if (taken.has(cellName.toLowerCase())) {
       let n = 2;
       while (taken.has((cellName + ' ' + n).toLowerCase())) n += 1;
-      cellName = cellName + ' ' + n;
+      cellName = stripLineageFromName(cellName) + ' ' + n;
     }
+    const fromVersionIndex =
+      opts.fromVersionIndex != null
+        ? opts.fromVersionIndex
+        : src.versionIndex != null
+          ? src.versionIndex
+          : 1;
+    const fromKind = opts.fromKind || null;
+    const fromCellId = opts.fromCellId || sourceCellId;
+    const lockedName = composeCellName(stripLineageFromName(cellName) || baseName, {
+      fromVersionIndex,
+      fromKind,
+    });
     song.cells[newId] = {
       id: newId,
-      name: cellName,
+      name: lockedName,
       packId: src.packId || null,
       familyId,
       versionIndex: nextIdx,
-      fromVersionIndex:
-        opts.fromVersionIndex != null
-          ? opts.fromVersionIndex
-          : src.versionIndex != null
-            ? src.versionIndex
-            : 1,
-      fromKind: opts.fromKind || null,
-      fromCellId: opts.fromCellId || sourceCellId,
+      fromVersionIndex,
+      fromKind,
+      fromCellId,
       chords,
     };
     fam.versionIds = fam.versionIds || [];
@@ -884,12 +1049,21 @@
    */
   function upsertFocusedCell(song, cell) {
     const id = cell.id || newCellId('cell');
-    song.cells[id] = {
+    const prev = song.cells[id];
+    const dest = {
       id,
-      name: cell.name || 'Cell',
-      packId: cell.packId || null,
+      name: cell.name || (prev && prev.name) || 'Cell',
+      packId: cell.packId || (prev && prev.packId) || null,
+      familyId: cell.familyId || null,
+      versionIndex: cell.versionIndex != null ? cell.versionIndex : null,
+      fromVersionIndex: cell.fromVersionIndex != null ? cell.fromVersionIndex : null,
+      fromKind: cell.fromKind || null,
+      fromCellId: cell.fromCellId || null,
       chords: (cell.chords || []).map(fromLandscapeChord),
     };
+    copyCellLineage(prev, dest);
+    inferLineageOnCell(song, dest);
+    song.cells[id] = dest;
     song.focus = song.focus || {};
     song.focus.cellId = id;
     song.focus.chordIndex = cell.focusIndex != null ? cell.focusIndex : 0;
@@ -945,8 +1119,12 @@
           packId: prev && prev.packId ? prev.packId : null,
           familyId: prev && prev.familyId ? prev.familyId : null,
           versionIndex: prev && prev.versionIndex ? prev.versionIndex : 1,
+          fromVersionIndex: prev && prev.fromVersionIndex != null ? prev.fromVersionIndex : null,
+          fromKind: prev && prev.fromKind ? prev.fromKind : null,
+          fromCellId: prev && prev.fromCellId ? prev.fromCellId : null,
           chords: nextChords,
         };
+        inferLineageOnCell(song, song.cells[cellId]);
         song.focus = {
           cellId: cellId,
           sectionId: keepSection,
@@ -1281,6 +1459,15 @@
     newCellId,
     newFamilyId,
     createVariation,
+    variationKindLabel,
+    kindFromLabel,
+    stripLineageFromName,
+    parseLineageFromName,
+    lineageLockText,
+    composeCellName,
+    inferLineageOnCell,
+    applyUserCellName,
+    findSiblingByVersion,
     familyVersions,
     siblingsOfCell,
     deleteCell,

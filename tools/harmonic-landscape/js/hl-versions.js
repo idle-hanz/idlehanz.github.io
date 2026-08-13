@@ -39,12 +39,16 @@ H.resolveCompareCell = function (song) {
 
   H.parentVersionIndexFromName = function (cell) {
     if (!cell) return null;
-    const fromName = H.parentVersionIndexFromString(cell.name, cell.versionIndex);
-    if (fromName != null) return fromName;
     if (cell.fromVersionIndex != null && cell.fromVersionIndex !== cell.versionIndex) {
       return cell.fromVersionIndex;
     }
-    return null;
+    const fromName = H.S() && H.S().parseLineageFromName
+      ? (function () {
+          const p = H.S().parseLineageFromName(cell.name, cell.versionIndex);
+          return p ? p.parent : null;
+        })()
+      : H.parentVersionIndexFromString(cell.name, cell.versionIndex);
+    return fromName;
   }
 
   H.siblingWithVersionIndex = function (song, cell, n) {
@@ -72,20 +76,17 @@ H.resolveCompareCell = function (song) {
     return null;
   }
 
-  /** The take this cell was forked from (id), or null for v1 / unknown. Name wins. */
+  /** The take this cell was forked from (id), or null for v1 / unknown. */
   H.parentCellId = function (song, cell) {
     if (!song || !cell || !song.cells) return null;
-    const named = H.parentVersionIndexFromString(cell.name, cell.versionIndex);
-    if (named != null) {
-      const byName = H.siblingWithVersionIndex(song, cell, named);
-      if (byName) return byName.id;
-    }
-    if (cell.fromVersionIndex != null && cell.fromVersionIndex !== cell.versionIndex) {
-      const byFrom = H.siblingWithVersionIndex(song, cell, cell.fromVersionIndex);
-      if (byFrom) return byFrom.id;
-    }
+    if (H.S() && H.S().inferLineageOnCell) H.S().inferLineageOnCell(song, cell);
     if (cell.fromCellId && song.cells[cell.fromCellId] && cell.fromCellId !== cell.id) {
       return cell.fromCellId;
+    }
+    const n = H.parentVersionIndexFromName(cell);
+    if (n != null) {
+      const byFrom = H.siblingWithVersionIndex(song, cell, n);
+      if (byFrom) return byFrom.id;
     }
     return null;
   }
@@ -840,6 +841,10 @@ H.resolveCompareCell = function (song) {
 
   /** Human label for a vary kind */
   H.variationKindLabel = function (kind) {
+    if (H.S() && H.S().variationKindLabel) {
+      const s = H.S().variationKindLabel(kind);
+      if (s) return s;
+    }
     const map = {
       copy: 'Copy',
       parallel: 'Parallel',

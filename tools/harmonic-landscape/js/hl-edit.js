@@ -47,19 +47,25 @@ H.smoothVoicings = function () {
   H.setCellName = function (name) {
     const n = String(name || '').trim();
     if (!n) return;
-    H.state.title = n;
     H.state.nameLocked = true;
     if (H.S() && H.state.cellId) {
       const song = H.S().loadSong();
       if (song && song.cells[H.state.cellId]) {
-        song.cells[H.state.cellId].name = n;
+        const cell = song.cells[H.state.cellId];
+        if (H.S().applyUserCellName) H.S().applyUserCellName(song, cell, n);
+        else cell.name = n;
         H.S().saveSong(song, 'landscape');
+        H.state.title = cell.name;
       } else {
+        H.state.title = n;
         H.pushToSharedSession('landscape');
       }
+    } else {
+      H.state.title = n;
     }
     H.renderTitle();
-    H.setSyncStatus('Renamed · ' + n);
+    if (H.renderVersionBar) H.renderVersionBar();
+    H.setSyncStatus('Renamed · ' + (H.state.title || n));
   }
 
   H.removeSelected = function () {

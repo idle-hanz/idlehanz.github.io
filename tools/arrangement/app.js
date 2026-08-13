@@ -607,12 +607,20 @@
     const cell = song.cells[cellId];
     if (!cell) return;
     const n = String(newName || '').trim();
-    if (!n || n === cell.name) return;
-    // Avoid duplicate names (allow if same id)
-    const clash = Object.keys(song.cells).some(
-      (id) => id !== cellId && (song.cells[id].name || '').toLowerCase() === n.toLowerCase()
-    );
-    cell.name = clash ? n + ' · ' + cellId.slice(-4) : n;
+    if (!n) return;
+    if (S() && S().applyUserCellName) {
+      const before = cell.name;
+      S().applyUserCellName(song, cell, n);
+      if (cell.name === before && S().stripLineageFromName(before) === S().stripLineageFromName(n)) {
+        return;
+      }
+    } else {
+      if (n === cell.name) return;
+      const clash = Object.keys(song.cells).some(
+        (id) => id !== cellId && (song.cells[id].name || '').toLowerCase() === n.toLowerCase()
+      );
+      cell.name = clash ? n + ' · ' + cellId.slice(-4) : n;
+    }
     save();
     render();
     setStatus('Renamed · ' + cell.name);
@@ -1301,9 +1309,24 @@
         cell.familyId && song.families && song.families[cell.familyId]
           ? ' · ' + (song.families[cell.familyId].name || 'family') + ' v' + (cell.versionIndex || 1)
           : '';
+      const theme =
+        S() && S().stripLineageFromName
+          ? S().stripLineageFromName(cell.name || id)
+          : cell.name || id;
+      const lineage =
+        S() && S().lineageLockText ? S().lineageLockText(cell) : '';
       wrap.innerHTML = `
         <div class="cell-head">
-          <input type="text" class="cell-name-input" value="${escapeAttr(cell.name || id)}" maxlength="64" title="Rename cell" />
+          <div class="cell-name-row">
+            <input type="text" class="cell-name-input" value="${escapeAttr(theme)}" maxlength="64" title="Theme name only. Version lineage is locked." />
+            ${
+              lineage
+                ? '<span class="lineage-lock" title="Version lineage — not editable">' +
+                  escapeAttr(lineage) +
+                  '</span>'
+                : ''
+            }
+          </div>
         </div>
         <button type="button" class="cell cell-main" title="Open in Landscape to edit chords">
           <span>${bars} bars · ${nCh} chords ${badge}${escapeAttr(fam)}</span>
