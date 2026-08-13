@@ -617,31 +617,7 @@
     H.updateLandButton();
     if (H.$('#btn-transpose-all')) {
       H.$('#btn-transpose-all').addEventListener('click', () => {
-        if (!H.state.chords.length) {
-          H.setSyncStatus('Nothing to transpose');
-          return;
-        }
-        // If user just changed write home, transpose from previous; else ask delta via confirm
-        const prev = H.state._prevTonicForTranspose;
-        if (prev != null && prev !== H.state.tonic) {
-          H.transposeAllToWriteHome(prev);
-          return;
-        }
-        // No pending home change: transpose so first chord / selected becomes write home pitch?
-        const ch =
-          H.state.selected >= 0 && H.state.chords[H.state.selected]
-            ? H.state.chords[H.state.selected]
-            : H.state.chords[0];
-        if (!ch) return;
-        const delta = (H.state.tonic - ch.root + 12) % 12;
-        if (!delta) {
-          H.setSyncStatus('Already aligned with write home root');
-          return;
-        }
-        H.pushUndo();
-        H.state.chords = H.state.chords.map((c) => H.transposeChord(c, delta, H.state.tonic, H.state.mode));
-        H.afterEdit();
-        H.setSyncStatus('Transposed so selection/path aligns with write home ' + H.keyLabel());
+        H.transposeAllToWriteHome();
       });
     }
     H.$('#bpm').addEventListener('change', (e) => {

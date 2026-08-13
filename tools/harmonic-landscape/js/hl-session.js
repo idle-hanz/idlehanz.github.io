@@ -688,11 +688,11 @@ H.setSyncStatus = function (msg) {
     const nextM = mode || H.state.mode;
     const delta = (nextT - prevT + 12) % 12;
 
-    // Stamp ownership BEFORE switching gravity (so old path stays on old disk)
+    // Keep existing disk stamps. Unstamped steps follow the new write home
+    // (do not nail them to the old key — that trapped Fretboard returns on C).
     H.state.chords.forEach((ch) => {
       if (!ch) return;
-      if (ch.localTonic == null) H.stampKey(ch, { tonic: prevT, mode: prevM });
-      else if (!ch.localMode) ch.localMode = prevM;
+      if (ch.localTonic != null && !ch.localMode) ch.localMode = prevM;
     });
 
     if (opts.transpose && delta && H.state.chords.length) {
@@ -898,13 +898,16 @@ H.setSyncStatus = function (msg) {
       H.state.selected >= 0 && H.state.selected < H.state.chords.length
         ? H.state.selected
         : H.state.chords.length - 1;
+    const first = H.state.chords[0];
+    const pathAlreadyDest = first && H.pcNorm(first.root) === dest.tonic;
     // Switch gravity only — old journey keeps its disks (matches ghost establish)
     const result = H.setWritingHome(dest.tonic, dest.mode, {
       transpose: false,
       skipEdit: true,
     });
-    // Plant destination I / i after the pivot on the new wheel
-    const planted = H.plantLandTonic(dest, pivotSel);
+    if (pathAlreadyDest) H.retagPathToKey(dest);
+    // Don't plant a new I if the path already starts on that tonic
+    const planted = pathAlreadyDest ? null : H.plantLandTonic(dest, pivotSel);
     H.afterEdit();
     const disks = H.map && H.map.disks ? H.map.disks.length : 1;
     H.setSyncStatus(
@@ -1011,23 +1014,63 @@ H.setSyncStatus = function (msg) {
     }
   }
 
-  /** Old behaviour: move every chord so they follow the Write home dropdown. */
+  /** Put the whole cell on the Write home dropdown. Notes stay if they already belong there. */
+  H.retagPathToKey = function (dest) {
+    dest = dest || H.writeKey();
+    (H.state.chords || []).forEach(function (ch) {
+      if (ch) H.stampKey(ch, dest);
+    });
+  };
+
+  H.pathTonicGuess = function () {
+    const first = H.state.chords && H.state.chords[0];
+    if (!first) return H.state.tonic;
+    if (first.localTonic != null) return H.pcNorm(first.localTonic);
+    if (first.root != null) return H.pcNorm(first.root);
+    return H.state.tonic;
+  };
+
   H.transposeAllToWriteHome = function (fromTonic) {
-    const prev = fromTonic != null ? fromTonic : H.state._prevTonicForTranspose;
-    if (prev == null || prev === H.state.tonic) {
-      H.setSyncStatus('Pick a new Write home first, then Transpose all — or use Land here to modulate without moving chords');
+    if (!H.state.chords.length) {
+      H.setSyncStatus('Nothing to transpose');
       return;
     }
-    const delta = (H.state.tonic - prev + 12) % 12;
-    if (!delta) return;
-    // Collapse to one disk: all steps move pitches + ownership onto write home
+    const dest = H.dropdownKey ? H.dropdownKey() : H.writeKey();
+    const live = H.writeKey();
+    const pathTonic =
+      fromTonic != null ? H.pcNorm(fromTonic) : H.pathTonicGuess();
+    const first = H.state.chords[0];
+    const alreadyThere =
+      pathTonic === dest.tonic || (first && H.pcNorm(first.root) === dest.tonic);
+
     H.pushUndo();
-    H.state.chords = H.state.chords.map((ch) =>
-      H.transposeChord(ch, delta, H.state.tonic, H.state.mode)
-    );
+    if (dest.tonic !== live.tonic || dest.mode !== live.mode) {
+      H.setWritingHome(dest.tonic, dest.mode, { transpose: false, skipEdit: true });
+    }
+
+    if (alreadyThere) {
+      H.retagPathToKey(dest);
+      H.afterEdit();
+      H.setSyncStatus(
+        'Path on ' + H.keyLabel() + ' · notes unchanged · sitting on write-home'
+      );
+      H.state._prevTonicForTranspose = dest.tonic;
+      return;
+    }
+
+    const delta = (dest.tonic - pathTonic + 12) % 12;
+    if (!delta) {
+      H.retagPathToKey(dest);
+      H.afterEdit();
+      H.state._prevTonicForTranspose = dest.tonic;
+      return;
+    }
+    H.state.chords = H.state.chords.map(function (ch) {
+      return H.transposeChord(ch, delta, dest.tonic, dest.mode);
+    });
     H.afterEdit();
-    H.setSyncStatus('Transposed sequence into ' + H.keyLabel() + ' · all chords moved onto write-home disk');
-    H.state._prevTonicForTranspose = H.state.tonic;
+    H.setSyncStatus('Transposed into ' + H.keyLabel() + ' · all steps on write-home');
+    H.state._prevTonicForTranspose = dest.tonic;
   }
 
   H.uniqueCellName = function (base) {
