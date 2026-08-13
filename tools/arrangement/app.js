@@ -1341,6 +1341,13 @@
         </div>
       `;
       const openEdit = () => openLandscapeForCell(id, song.cells[id].name);
+      wrap.querySelector('.cell-name-input').addEventListener('input', (e) => {
+        if (!S() || !S().stripGeneratedLineage) return;
+        const raw = e.target.value;
+        if (!/·\s*v\d|v\d+\s+v\d/i.test(raw)) return;
+        const next = S().stripGeneratedLineage(raw);
+        if (next !== raw) e.target.value = next;
+      });
       wrap.querySelector('.cell-name-input').addEventListener('change', (e) => {
         renameCell(id, e.target.value);
       });

@@ -53,7 +53,9 @@ H.smoothVoicings = function () {
       if (song && song.cells[H.state.cellId]) {
         const cell = song.cells[H.state.cellId];
         if (H.S().applyUserCellName) H.S().applyUserCellName(song, cell, n);
-        else cell.name = n;
+        else cell.name = H.S().stripGeneratedLineage
+          ? H.S().stripGeneratedLineage(n) || cell.name
+          : n;
         H.S().saveSong(song, 'landscape');
         H.state.title = cell.name;
       } else {

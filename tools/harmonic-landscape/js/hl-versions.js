@@ -42,13 +42,7 @@ H.resolveCompareCell = function (song) {
     if (cell.fromVersionIndex != null && cell.fromVersionIndex !== cell.versionIndex) {
       return cell.fromVersionIndex;
     }
-    const fromName = H.S() && H.S().parseLineageFromName
-      ? (function () {
-          const p = H.S().parseLineageFromName(cell.name, cell.versionIndex);
-          return p ? p.parent : null;
-        })()
-      : H.parentVersionIndexFromString(cell.name, cell.versionIndex);
-    return fromName;
+    return null;
   }
 
   H.siblingWithVersionIndex = function (song, cell, n) {
@@ -76,16 +70,14 @@ H.resolveCompareCell = function (song) {
     return null;
   }
 
-  /** The take this cell was forked from (id), or null for v1 / unknown. */
+  /** The take this cell was forked from (id). Name is never consulted. */
   H.parentCellId = function (song, cell) {
     if (!song || !cell || !song.cells) return null;
-    if (H.S() && H.S().inferLineageOnCell) H.S().inferLineageOnCell(song, cell);
     if (cell.fromCellId && song.cells[cell.fromCellId] && cell.fromCellId !== cell.id) {
       return cell.fromCellId;
     }
-    const n = H.parentVersionIndexFromName(cell);
-    if (n != null) {
-      const byFrom = H.siblingWithVersionIndex(song, cell, n);
+    if (cell.fromVersionIndex != null && cell.fromVersionIndex !== cell.versionIndex) {
+      const byFrom = H.siblingWithVersionIndex(song, cell, cell.fromVersionIndex);
       if (byFrom) return byFrom.id;
     }
     return null;
@@ -377,25 +369,15 @@ H.resolveCompareCell = function (song) {
     return true;
   }
 
-  /** Lineage on a chip: "v2 Darken" so the row reads "v4 v2 Darken". */
+  /** Lineage on a chip: "v2 Darken" so the row reads "v4 v2 Darken". From from*, not the name. */
   H.shortVersionTitle = function (label, vi, cell) {
-    const parentN = cell ? H.parentVersionIndexFromName(cell) : null;
+    const parentN = cell && cell.fromVersionIndex != null ? cell.fromVersionIndex : null;
     let kind = '';
     if (cell && cell.fromKind) kind = H.variationKindLabel(cell.fromKind);
-    if (!kind) {
-      const s = String(label || '');
-      const k = s.match(/·\s*v\d+\s+(.+)$/i) || s.match(/v\d+\s+v\d+\s+(.+)$/i);
-      if (k) kind = k[1].trim();
-    }
     if (parentN != null && kind) return 'v' + parentN + ' ' + kind;
     if (parentN != null) return 'v' + parentN;
     if (kind) return kind;
-    let s = String(label || '').trim();
-    const lin = s.match(/·\s*(v\d+\s+.+)$/i);
-    if (lin) return lin[1].trim();
-    s = s.replace(/\s*·\s*v\d+.*$/i, '').replace(/\s*v\d+\s*$/i, '').trim();
-    if (!s || /^custom sequence$/i.test(s) || /^untitled/i.test(s)) return '';
-    return s;
+    return '';
   }
 
   /** Short chord path for version chip preview */
@@ -864,7 +846,7 @@ H.resolveCompareCell = function (song) {
   }
 
   /**
-   * Name a new version from its source + transform, e.g. "Home grit · v1 Darken".
+   * Theme name only. Lineage is stored on from* fields, never in the string.
    */
   H.nameForVariation = function (song, sourceCellId, kind) {
     const src = song.cells[sourceCellId];
@@ -872,17 +854,14 @@ H.resolveCompareCell = function (song) {
     const fam =
       src.familyId && song.families[src.familyId] ? song.families[src.familyId] : null;
     let base = (fam && fam.name) || src.name || H.state.title || 'Cell';
-    base = String(base)
-      .replace(/\s*·\s*v\d+.*$/i, '')
-      .replace(/\s*v\d+\s*$/i, '')
-      .trim() || 'Cell';
-    const srcV = src.versionIndex != null ? src.versionIndex : 1;
-    const kindLabel = H.variationKindLabel(kind);
-    // "Theme · v1 Darken" — clear lineage from which version was transformed
-    if (kind === 'copy') {
-      return base + ' · v' + srcV + ' Copy';
+    if (H.S() && H.S().stripLineageFromName) base = H.S().stripLineageFromName(base);
+    else {
+      base = String(base)
+        .replace(/\s*·\s*v\d+.*$/i, '')
+        .replace(/\s*v\d+\s*$/i, '')
+        .trim();
     }
-    return base + ' · v' + srcV + ' ' + kindLabel;
+    return base || 'Cell';
   }
 
   /**

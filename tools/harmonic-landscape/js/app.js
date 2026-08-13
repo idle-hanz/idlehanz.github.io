@@ -667,6 +667,14 @@
     H.$('#feel-filter').addEventListener('change', H.renderPacks);
     const titleInput = H.$('#seq-title');
     if (titleInput && titleInput.tagName === 'INPUT') {
+      titleInput.addEventListener('input', () => {
+        const strip = H.S() && H.S().stripGeneratedLineage;
+        if (!strip) return;
+        const raw = titleInput.value;
+        if (!/·\s*v\d|v\d+\s+v\d/i.test(raw)) return;
+        const next = strip(raw);
+        if (next !== raw) titleInput.value = next;
+      });
       titleInput.addEventListener('change', () => H.setCellName(titleInput.value));
       titleInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {

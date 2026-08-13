@@ -234,13 +234,18 @@
     return LABEL_TO_KIND[s] || null;
   }
 
-  /** Theme only: drop "· v2 Darken" / trailing "v4". */
+  /** Drop generated lineage so it cannot be typed back into the name. */
+  function stripGeneratedLineage(name) {
+    let s = String(name || '').trim();
+    s = s.replace(/\s*·\s*v\d+.*$/i, '');
+    s = s.replace(/\s+v\d+\s+v\d+(\s+.*)?$/i, '');
+    if (/^v\d+\s+v\d+(\s+.*)?$/i.test(s)) return '';
+    return s.trim();
+  }
+
+  /** Theme only: drop "· v2 Darken", chip text, trailing "v4". */
   function stripLineageFromName(name) {
-    return String(name || '')
-      .replace(/\s*·\s*v\d+.*$/i, '')
-      .replace(/\s+v\d+\s+v\d+\s+.*$/i, '')
-      .replace(/\s+v\d+\s*$/i, '')
-      .trim();
+    return stripGeneratedLineage(name).replace(/\s+v\d+\s*$/i, '').trim();
   }
 
   /** Parent + kind from a stored or chip name. "v4 v2 Darken" / "Theme · v2 Darken" → { parent: 2, kind: "Darken" }. */
@@ -300,39 +305,45 @@
     return b;
   }
 
+  /**
+   * One-time: fill missing from* from an old stored name, then store theme only.
+   * Never overwrites an existing parent from a later name edit.
+   */
   function inferLineageOnCell(song, cell) {
     if (!cell) return cell;
-    const parsed = parseLineageFromName(cell.name, cell.versionIndex);
-    if (cell.fromVersionIndex == null && parsed) cell.fromVersionIndex = parsed.parent;
-    if (!cell.fromKind && parsed && parsed.kind) {
-      const k = kindFromLabel(parsed.kind);
-      if (k) cell.fromKind = k;
+    if (cell.fromVersionIndex == null) {
+      const parsed = parseLineageFromName(cell.name, cell.versionIndex);
+      if (parsed) {
+        cell.fromVersionIndex = parsed.parent;
+        if (!cell.fromKind && parsed.kind) {
+          const k = kindFromLabel(parsed.kind);
+          if (k) cell.fromKind = k;
+        }
+      }
     }
-    if (
-      !cell.fromCellId &&
-      song &&
-      cell.fromVersionIndex != null
-    ) {
+    if (!cell.fromCellId && song && cell.fromVersionIndex != null) {
       const sib = findSiblingByVersion(song, cell, cell.fromVersionIndex);
       if (sib) cell.fromCellId = sib.id;
     }
-    const base = stripLineageFromName(cell.name) || cell.name || 'Cell';
-    if (cell.fromVersionIndex != null) cell.name = composeCellName(base, cell);
+    const generated =
+      /\s*·\s*v\d+/i.test(cell.name || '') || /v\d+\s+v\d+/i.test(cell.name || '');
+    if (generated) {
+      cell.name = stripLineageFromName(cell.name) || cell.name || 'Cell';
+    }
     return cell;
   }
 
-  /** Rename the theme only. Re-applies locked lineage on this cell (and family siblings). */
+  /** Rename the theme only. Never reads parent from the typed string. */
   function applyUserCellName(song, cell, userName) {
     if (!cell) return '';
-    inferLineageOnCell(song, cell);
-    const base = stripLineageFromName(userName) || stripLineageFromName(cell.name) || 'Cell';
-    cell.name = composeCellName(base, cell);
+    let base = stripGeneratedLineage(userName);
+    if (!base) base = stripLineageFromName(cell.name) || 'Cell';
+    cell.name = base;
     if (song && cell.familyId && song.families && song.families[cell.familyId]) {
       song.families[cell.familyId].name = base;
       familyVersions(song, cell.familyId).forEach(function (c) {
         if (!c || c.id === cell.id) return;
-        inferLineageOnCell(song, c);
-        c.name = composeCellName(base, c);
+        c.name = base;
       });
     }
     return cell.name;
@@ -384,17 +395,8 @@
       .replace(/\s*v\d+\s*$/i, '')
       .trim() || 'Cell';
     const chords = (opts.chords || src.chords || []).map((c) => ({ ...c }));
-    // Prefer caller name (theme · locked lineage); else theme only
-    let cellName = (opts.name && String(opts.name).trim()) || baseName;
-    // Avoid duplicate display names in the song
-    const taken = new Set(
-      Object.keys(song.cells).map((id) => (song.cells[id].name || '').toLowerCase())
-    );
-    if (taken.has(cellName.toLowerCase())) {
-      let n = 2;
-      while (taken.has((cellName + ' ' + n).toLowerCase())) n += 1;
-      cellName = stripLineageFromName(cellName) + ' ' + n;
-    }
+    // Theme only — parent lives on fromCellId / fromVersionIndex, not in the name
+    const cellName = stripLineageFromName((opts.name && String(opts.name).trim()) || baseName) || baseName;
     const fromVersionIndex =
       opts.fromVersionIndex != null
         ? opts.fromVersionIndex
@@ -403,13 +405,9 @@
           : 1;
     const fromKind = opts.fromKind || null;
     const fromCellId = opts.fromCellId || sourceCellId;
-    const lockedName = composeCellName(stripLineageFromName(cellName) || baseName, {
-      fromVersionIndex,
-      fromKind,
-    });
     song.cells[newId] = {
       id: newId,
-      name: lockedName,
+      name: cellName,
       packId: src.packId || null,
       familyId,
       versionIndex: nextIdx,
@@ -1461,6 +1459,7 @@
     createVariation,
     variationKindLabel,
     kindFromLabel,
+    stripGeneratedLineage,
     stripLineageFromName,
     parseLineageFromName,
     lineageLockText,
