@@ -50,9 +50,11 @@ H.setSyncStatus = function (msg) {
       const mEl2 = H.$('#mode');
       if (mEl2) mEl2.value = H.state.mode;
     }
-    if (H.map && H.map.setOrigin) H.map.setOrigin(H.state.tonic, H.state.mode);
-    H.recognize({ preserveName: true });
-    H.clearPendingHome();
+    if (!meta.liveSwap) {
+      if (H.map && H.map.setOrigin) H.map.setOrigin(H.state.tonic, H.state.mode);
+      H.recognize({ preserveName: true });
+      H.clearPendingHome();
+    }
   }
 
   H.ingestHandoffOrSession = function (opts) {

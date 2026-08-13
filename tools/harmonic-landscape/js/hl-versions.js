@@ -205,20 +205,36 @@ H.resolveCompareCell = function (song) {
       mode: song.key && song.key.mode,
       bpm: song.bpm,
       focusIndex: 0,
+      liveSwap: true,
     });
     H.state.nameLocked = true;
-    const tog = H.$('#tog-alt');
-    if (tog) tog.checked = true;
-    if (H.map && H.map.setShowAlt) H.map.setShowAlt(true);
     if (H._transportMeta) H._transportMeta.fromIndex = 0;
-    H.refreshAll();
-    if (H.startPlayheadLoop) H.startPlayheadLoop(0);
-    H.setSyncStatus('Loop · now “' + (cell.name || id) + '” · previous take in blue');
-    return H.state.chords.map(function (c) {
+    const out = H.state.chords.map(function (c) {
       const x = H.M().cloneChord(c);
       x.duration = c.duration != null ? c.duration : 4;
       return x;
     });
+    const name = cell.name || id;
+    setTimeout(function () {
+      const tog = H.$('#tog-alt');
+      if (tog) tog.checked = true;
+      if (H.map && H.map.setShowAlt) H.map.setShowAlt(true);
+      H.renderTitle();
+      H.renderVersionBar();
+      if (H.map && H.map.setOrigin) {
+        H.map.setOrigin(H.state.tonic, H.state.mode, { layoutPath: false });
+      }
+      if (H.refreshMap) H.refreshMap();
+      if (H.refreshAltPath) H.refreshAltPath();
+      if (H.renderTimeStrip) H.renderTimeStrip({ force: true });
+      if (H.startPlayheadLoop) H.startPlayheadLoop(0);
+      H.setSyncStatus('Loop · now “' + name + '” · previous take in blue');
+      if (H.A() && H.A().isPlaying && !H.A().isPlaying() && H.state.loop && H.playSeq) {
+        H._loopLive = true;
+        H.playSeq({ force: true, fromIndex: 0, loop: true, silent: true });
+      }
+    }, 0);
+    return out;
   }
 
   /**
@@ -269,7 +285,12 @@ H.resolveCompareCell = function (song) {
             ? ' · blue armed · open another take to see the overlay'
             : '';
       H.setSyncStatus('Editing “' + (cell.name || cellId) + '”' + (cell.familyId ? v : '') + blue);
-      if (cell.chords && cell.chords.length) {
+      if (
+        cell.chords &&
+        cell.chords.length &&
+        !(H.A() && H.A().isPlaying && H.A().isPlaying()) &&
+        !H._loopLive
+      ) {
         H.A().ensure();
         const first = H.state.chords[0];
         if (first) H.A().playChord({ chord: first, soft: true, duration: 0.45 });
@@ -523,14 +544,15 @@ H.resolveCompareCell = function (song) {
           );
           return;
         }
-        const playing = H.A() && H.A().isPlaying && H.A().isPlaying();
-        if (playing && H.state.loop && !e.shiftKey) {
+        const live = H.isLiveLoop ? H.isLiveLoop() : H.A() && H.A().isPlaying && H.A().isPlaying();
+        if (live && !e.shiftKey) {
           H.armVersionForNextPass(id);
           return;
         }
         if (id !== H.state.cellId) {
           H.switchToCell(id);
-          if (playing && e.shiftKey && H.playSeq) {
+          if (live && e.shiftKey && H.playSeq) {
+            H._loopLive = !!H.state.loop;
             H.playSeq({
               force: true,
               fromIndex: 0,

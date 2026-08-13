@@ -57,12 +57,21 @@ H.stopPlayheadLoop = function () {
   }
 
   H.stopPlaybackUI = function () {
+    H._loopLive = false;
     H.stopPlayheadLoop();
     if (H.A().stopPlayback) H.A().stopPlayback();
     if (H.map) H.map.setPlaying(-1);
     H.updatePlayBtn();
     H.renderSlots();
     H.renderTimeStrip();
+  }
+
+  H.isLiveLoop = function () {
+    if (H._loopLive) return true;
+    if (H._transportMeta && H._transportMeta.loop && H.A() && H.A().isPlaying && H.A().isPlaying()) {
+      return true;
+    }
+    return !!(H.A() && H.A().isLooping && H.A().isLooping());
   }
 
   /**
@@ -187,6 +196,7 @@ H.stopPlayheadLoop = function () {
       loop: loop,
       external: !!opts.chords,
     };
+    H._loopLive = !!loop;
 
     H.A().playSequence(slice, bpm, {
       loop,
@@ -233,6 +243,7 @@ H.stopPlayheadLoop = function () {
         }
       },
       onEnd: () => {
+        H._loopLive = false;
         H._playingIndex = -1;
         H.stopPlayheadLoop();
         if (H.map) H.map.setPlaying(-1);
