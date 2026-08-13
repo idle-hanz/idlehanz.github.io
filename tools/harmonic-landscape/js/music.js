@@ -1707,7 +1707,19 @@
       ],
       6: [
         { name: 'Even', beats: [4, 4, 4, 4, 4, 4] },
-        { name: 'Phrase 4+2', beats: [4, 4, 4, 4, 4, 4] },
+        { name: 'Phrase 4+2', beats: [4, 4, 4, 4, 6, 2] },
+        { name: 'Long–short', beats: [6, 2, 6, 2, 6, 2] },
+      ],
+      7: [
+        { name: 'Even', beats: [4, 4, 4, 4, 4, 4, 4] },
+        { name: 'Push last', beats: [4, 4, 4, 4, 4, 6, 2] },
+        { name: 'Long–short', beats: [6, 2, 6, 2, 6, 2, 4] },
+      ],
+      8: [
+        { name: 'Even', beats: [4, 4, 4, 4, 4, 4, 4, 4] },
+        { name: 'Long–short', beats: [6, 2, 6, 2, 6, 2, 6, 2] },
+        { name: 'Push last', beats: [4, 4, 4, 4, 4, 4, 6, 2] },
+        { name: 'Half-time', beats: [8, 8, 8, 8, 8, 8, 8, 8] },
       ],
     };
     if (patterns[n]) return patterns[n];

@@ -1454,14 +1454,124 @@
     const music = M();
     const n = chords.length;
     if (n < 2) return chords.map((c) => music.cloneChord(c));
-    const patterns = music.rhythmSuggestions(n);
-    // Prefer non-even if available
+    const cur = chords.map(function (c) {
+      return Number(c.duration) || 4;
+    });
+    let patterns = (music.rhythmSuggestions(n) || []).slice();
+    if (n >= 5) {
+      const longShort = [];
+      for (let i = 0; i < n; i++) longShort.push(i % 2 === 0 ? 6 : 2);
+      const pushLast = cur.slice();
+      pushLast[n - 2] = 6;
+      pushLast[n - 1] = 2;
+      const half = cur.map(function () {
+        return 8;
+      });
+      patterns = patterns.concat([
+        { name: 'Long–short', beats: longShort },
+        { name: 'Push last', beats: pushLast },
+        { name: 'Half-time', beats: half },
+      ]);
+    }
+    const differs = function (beats) {
+      return (beats || []).some(function (b, i) {
+        return b !== cur[i];
+      });
+    };
     const pat =
-      patterns.find((p) => new Set(p.beats).size > 1) || patterns[0];
+      patterns.find(function (p) {
+        return differs(p.beats) && new Set(p.beats).size > 1;
+      }) ||
+      patterns.find(function (p) {
+        return differs(p.beats);
+      }) ||
+      patterns[0];
+    if (!pat) return chords.map((c) => music.cloneChord(c));
     return music.applyRhythm(
       chords.map((c) => music.cloneChord(c)),
       pat.beats
     );
+  }
+
+  /** Whole-cell 7ths: keep family, add the seventh. V stays dominant. */
+  function seventhizeProgression(chords, tonic, modeKey) {
+    const music = M();
+    if (!chords || !chords.length) return chords;
+    const t = music.pc(tonic);
+    const minor = isMinorMode(modeKey);
+    return chords.map(function (src) {
+      const c = music.cloneChord(src);
+      if (c.custom || c.quality === 'custom') return c;
+      const q = String(c.quality || 'maj');
+      if (
+        q === 'maj7' ||
+        q === 'min7' ||
+        q === 'dom7' ||
+        q === 'halfdim' ||
+        q === 'dim7' ||
+        q === 'minmaj7' ||
+        q === 'maj9' ||
+        q === 'min9' ||
+        q.indexOf('dom7') === 0
+      ) {
+        return c;
+      }
+      const deg = (music.pc(c.root) - t + 12) % 12;
+      let nextQ = null;
+      if (q === 'dim') {
+        nextQ = deg === 11 || deg === 2 ? (deg === 11 ? 'dim7' : 'halfdim') : 'dim7';
+      } else if (q === 'min' || q === 'madd9') {
+        nextQ = 'min7';
+      } else if (q === 'sus4' || q === '7sus4') {
+        nextQ = 'dom7';
+      } else if (isBrightQuality(q)) {
+        if (deg === 7) nextQ = 'dom7';
+        else if (minor && deg === 10) nextQ = 'dom7';
+        else nextQ = 'maj7';
+      }
+      if (!nextQ || nextQ === q) return c;
+      let ch = music.makeChord(c.root, nextQ, {
+        duration: c.duration,
+        region: c.region || 'flavour',
+        roman: c.roman || '',
+        tag: 'sevenths',
+      });
+      ch = withBass(ch, c.root);
+      ch.duration = c.duration;
+      if (c.localTonic != null) ch.localTonic = c.localTonic;
+      if (c.localMode) ch.localMode = c.localMode;
+      return ch;
+    });
+  }
+
+  /** Hold tonic (or first bass) under every step. */
+  function pedalProgression(chords, tonic) {
+    const music = M();
+    if (!chords || !chords.length) return chords.map((c) => music.cloneChord(c));
+    const bass =
+      tonic != null ? music.pc(tonic) : effectiveBass(chords[0]);
+    return chords.map(function (src) {
+      const c = music.cloneChord(src);
+      const next = withBass(c, bass);
+      next.duration = src.duration;
+      next.tag = 'pedal';
+      if (src.localTonic != null) next.localTonic = src.localTonic;
+      if (src.localMode) next.localMode = src.localMode;
+      return next;
+    });
+  }
+
+  /** Two darker/colour joins — a whole-cell reharm take, not one step. */
+  function reharmProgression(chords, tonic, modeKey) {
+    const music = M();
+    if (!chords || chords.length < 2) return chords.map((c) => music.cloneChord(c));
+    const a = Math.min(2, Math.max(1, chords.length - 2));
+    let next = varyOneChord(chords, tonic, modeKey, a);
+    if (chords.length >= 5) {
+      const b = Math.max(1, chords.length - 2);
+      if (b !== a) next = varyOneChord(next, tonic, modeKey, b);
+    }
+    return next;
   }
 
   function reharmBar(chords, tonic, modeKey, barIndex) {
@@ -2266,6 +2376,9 @@
     tritoneSubOf,
     diminishChord,
     varyRhythmOnly,
+    seventhizeProgression,
+    pedalProgression,
+    reharmProgression,
     reharmBar,
     varySameBassNewUpper,
     structureABBA,

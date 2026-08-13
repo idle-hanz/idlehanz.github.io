@@ -193,7 +193,7 @@ H.resolveCompareCell = function (song) {
         ? song.cells[H.state.compareCellId].name || 'compare'
         : null;
     html +=
-      '<div class="version-bar-label">Versions · click = edit · Alt-click = blue compare' +
+      '<div class="version-bar-label">Versions · each fork is a full take · click = edit · Alt-click = blue compare' +
       (compareName
         ? ' · <span style="color:#7eb8da">blue = ' + H.escapeHtml(compareName) + '</span>'
         : ' · no blue overlay') +
@@ -260,9 +260,14 @@ H.resolveCompareCell = function (song) {
     html +=
       '<div class="ver-actions">' +
       '<button type="button" class="btn ghost" id="btn-var-copy" title="Exact copy as next version">+ Duplicate</button>' +
-      '<button type="button" class="btn ghost" id="btn-var-reharm" title="Fork with reharm colour">+ Reharm</button>' +
-      '<button type="button" class="btn ghost" id="btn-var-parallel" title="Fork parallel maj/min">+ Parallel</button>' +
-      '<button type="button" class="btn ghost" id="btn-var-darken" title="Fork darker">+ Darken</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-voice" title="Fork with smooth inversions through the whole cell">+ Voice lead</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-sevenths" title="Fork with 7ths on every step — same roots, richer colour">+ 7ths</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-pedal" title="Fork with home bass held under the whole cell">+ Pedal</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-rhythm" title="Fork with a new rhythm shape, same chords">+ Rhythm</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-reharm" title="Fork with two reharm joins">+ Reharm</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-parallel" title="Fork parallel maj/min on every step">+ Parallel</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-darken" title="Fork with one darker join">+ Darken</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-brighter" title="Fork with one brighter join">+ Brighten</button>' +
       '<button type="button" class="btn ghost" id="btn-ab-ver" title="Play this then blue compare">A/B listen</button>' +
       (cur
         ? '<button type="button" class="btn ghost btn-danger" id="btn-var-del" title="Delete the version you are editing">Delete current</button>'
@@ -385,9 +390,14 @@ H.resolveCompareCell = function (song) {
       if (el) el.addEventListener('click', fn);
     };
     bind('#btn-var-copy', () => H.createVariation('copy'));
+    bind('#btn-var-voice', () => H.createVariation('voice'));
+    bind('#btn-var-sevenths', () => H.createVariation('sevenths'));
+    bind('#btn-var-pedal', () => H.createVariation('pedal'));
+    bind('#btn-var-rhythm', () => H.createVariation('rhythm'));
     bind('#btn-var-reharm', () => H.createVariation('reharm'));
     bind('#btn-var-parallel', () => H.createVariation('parallel'));
     bind('#btn-var-darken', () => H.createVariation('darken'));
+    bind('#btn-var-brighter', () => H.createVariation('brighter'));
     bind('#btn-ab-ver', () => H.playAB());
     bind('#btn-var-del', () => {
       if (H.state.cellId) H.deleteVersion(H.state.cellId);
@@ -492,7 +502,7 @@ H.resolveCompareCell = function (song) {
       add9: 'min',
       // dim/halfdim stay dark; aug stays bright
     };
-    return H.map[q] || null;
+    return map[q] || null;
   }
 
   /**
@@ -550,9 +560,14 @@ H.resolveCompareCell = function (song) {
       copy: 'Copy',
       parallel: 'Parallel',
       darken: 'Darken',
+      brighter: 'Brighten',
       reharm: 'Reharm',
+      voice: 'Voice lead',
+      sevenths: '7ths',
+      pedal: 'Pedal',
+      rhythm: 'Rhythm',
     };
-    return H.map[kind] || String(kind || 'Var');
+    return map[kind] || String(kind || 'Var');
   }
 
   /**
@@ -579,7 +594,7 @@ H.resolveCompareCell = function (song) {
 
   /**
    * Fork current sequence as a linked variation (same family).
-   * kind: copy | reharm | parallel | darken
+   * kind: copy | voice | sevenths | pedal | rhythm | reharm | parallel | darken | brighter
    */
   H.createVariation = function (kind) {
     if (!H.state.chords.length) {
@@ -597,6 +612,43 @@ H.resolveCompareCell = function (song) {
     // Start from clean session chords
     let newChords = H.state.chords.map((c) => H.S().fromLandscapeChord(c));
     let changed = 0;
+    const C = H.C();
+    const toLand = function (arr) {
+      return arr.map(function (sc) {
+        return H.sessionChordToLandscape ? H.sessionChordToLandscape(sc) : sc;
+      });
+    };
+    const fromLand = function (land, tag) {
+      return (land || []).map(function (ch) {
+        const out = H.S().fromLandscapeChord(ch);
+        out.tag = ch.tag || tag || out.tag;
+        return out;
+      });
+    };
+    const pathSig = function (arr) {
+      return (arr || [])
+        .map(function (c) {
+          const bass = c.bass != null ? c.bass : c.bassPc != null ? c.bassPc : c.root;
+          return (
+            (c.root != null ? c.root : '?') +
+            ':' +
+            (c.quality || '') +
+            ':' +
+            bass +
+            ':' +
+            (c.duration || 4)
+          );
+        })
+        .join('|');
+    };
+    const srcSig = pathSig(newChords);
+    const applyLand = function (fn, tag) {
+      if (!fn) return false;
+      const next = fn(toLand(newChords));
+      if (!next || !next.length) return false;
+      newChords = fromLand(next, tag);
+      return pathSig(newChords) !== srcSig;
+    };
 
     if (kind === 'copy') {
       // Exact fork — keep notes/custom as-is
@@ -625,36 +677,42 @@ H.resolveCompareCell = function (song) {
         H.setSyncStatus('Parallel: nothing to flip (need maj/min family chords)');
         // Still create the version so the button does something visible
       }
-    } else if (kind === 'darken' || kind === 'reharm') {
-      const C = H.C();
-      if (kind === 'darken' && C && C.darkenProgression) {
-        const land = newChords.map(function (sc) {
-          return H.sessionChordToLandscape ? H.sessionChordToLandscape(sc) : sc;
-        });
-        const darkened = C.darkenProgression(land, H.state.tonic, H.state.mode);
-        if (darkened && darkened.length) {
-          newChords = darkened.map(function (ch) {
-            const out = H.S().fromLandscapeChord(ch);
-            out.tag = ch.tag || 'darken';
-            return out;
-          });
-          changed += 1;
-        }
-      } else if (newChords.length >= 3) {
-        const t = H.state.tonic;
-        const slot = Math.min(2, newChords.length - 1);
-        newChords[slot] = {
-          root: (t + 8) % 12,
-          quality: 'maj',
-          duration: newChords[slot].duration,
-          bass: (t + 8) % 12,
-          roman: 'bVI',
-          region: 'interchange',
-          tag: kind,
-        };
-        changed += 1;
-      }
-      if (kind === 'reharm' && newChords.length >= 4) {
+    } else if (kind === 'voice') {
+      changed = applyLand(C && C.smoothCellVoicings, 'voice') ? 1 : 0;
+    } else if (kind === 'sevenths' && C && C.seventhizeProgression) {
+      changed = applyLand(function (land) {
+        return C.seventhizeProgression(land, H.state.tonic, H.state.mode);
+      }, 'sevenths')
+        ? 1
+        : 0;
+    } else if (kind === 'pedal' && C && C.pedalProgression) {
+      changed = applyLand(function (land) {
+        return C.pedalProgression(land, H.state.tonic);
+      }, 'pedal')
+        ? 1
+        : 0;
+    } else if (kind === 'rhythm') {
+      changed = applyLand(C && C.varyRhythmOnly, 'rhythm') ? 1 : 0;
+    } else if (kind === 'brighter' && C && C.brightenProgression) {
+      changed = applyLand(function (land) {
+        return C.brightenProgression(land, H.state.tonic, H.state.mode);
+      }, 'brighter')
+        ? 1
+        : 0;
+    } else if (kind === 'darken' && C && C.darkenProgression) {
+      changed = applyLand(function (land) {
+        return C.darkenProgression(land, H.state.tonic, H.state.mode);
+      }, 'darken')
+        ? 1
+        : 0;
+    } else if (kind === 'reharm') {
+      if (C && C.reharmProgression) {
+        changed = applyLand(function (land) {
+          return C.reharmProgression(land, H.state.tonic, H.state.mode);
+        }, 'reharm')
+          ? 1
+          : 0;
+      } else if (newChords.length >= 4) {
         const t = H.state.tonic;
         const j = newChords.length - 2;
         newChords[j] = {
@@ -668,16 +726,13 @@ H.resolveCompareCell = function (song) {
         };
         changed += 1;
       }
-      // Strip notes on untouched chords so names stay honest
-      newChords = newChords.map((c) => {
-        if (c.tag === kind) return c;
-        if (c.custom || c.quality === 'custom') return c;
-        return H.sessionChordWithQuality(c, c.quality || 'maj', {
-          tag: c.tag || '',
-          region: c.region || 'diatonic',
-          roman: c.roman,
-        });
-      });
+    }
+
+    if (kind !== 'copy' && kind !== 'parallel' && !changed) {
+      H.setSyncStatus(
+        H.variationKindLabel(kind) + ' · already that take · try another fork or edit a step'
+      );
+      return;
     }
 
     const varName = H.nameForVariation(song, H.state.cellId, kind);
@@ -709,12 +764,19 @@ H.resolveCompareCell = function (song) {
       if (H.map) H.map.setShowAlt(true);
     }
     H.refreshAll();
-    const detail =
-      kind === 'copy'
-        ? ' (exact copy — tweak freely)'
-        : kind === 'parallel'
-          ? ' · parallel maj↔min (' + changed + ' flipped)'
-          : ' · ' + H.variationKindLabel(kind);
+    const details = {
+      copy: ' (exact copy — tweak freely)',
+      parallel: ' · parallel maj↔min (' + changed + ' flipped)',
+      voice: ' · inversions smoothed through the cell',
+      sevenths: ' · 7ths on every step',
+      pedal: ' · home bass held under the cell',
+      rhythm: ' · new rhythm shape',
+      darker: ' · one darker join',
+      darken: ' · one darker join',
+      brighter: ' · one brighter join',
+      reharm: ' · two reharm joins',
+    };
+    const detail = details[kind] || ' · ' + H.variationKindLabel(kind);
     H.setSyncStatus(
       'Created “' +
         cell.name +
