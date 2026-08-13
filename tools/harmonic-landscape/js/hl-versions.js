@@ -17,23 +17,50 @@ H.resolveCompareCell = function (song) {
     return cell;
   }
 
+  /** The take this cell was forked from (id), or null for v1 / unknown. */
+  H.parentCellId = function (song, cell) {
+    if (!song || !cell || !song.cells) return null;
+    if (cell.fromCellId && song.cells[cell.fromCellId] && cell.fromCellId !== cell.id) {
+      return cell.fromCellId;
+    }
+    let n = cell.fromVersionIndex;
+    if (n == null) {
+      const m = String(cell.name || '').match(/·\s*v(\d+)\s+/i);
+      if (m) n = parseInt(m[1], 10);
+    }
+    if (n == null || isNaN(n)) return null;
+    const pool =
+      H.S() && H.S().siblingsOfCell && cell.id
+        ? H.S().siblingsOfCell(song, cell.id)
+        : [];
+    const hit = (pool || []).find(function (c) {
+      return c && c.id !== cell.id && c.versionIndex === n;
+    });
+    if (hit) return hit.id;
+    const ids = Object.keys(song.cells);
+    for (let i = 0; i < ids.length; i++) {
+      const c = song.cells[ids[i]];
+      if (
+        c &&
+        c.id !== cell.id &&
+        c.versionIndex === n &&
+        (!cell.familyId || c.familyId === cell.familyId)
+      ) {
+        return c.id;
+      }
+    }
+    return null;
+  }
+
   H.pickDefaultCompareId = function (song) {
     if (!song || !H.state.cellId || !song.cells) return null;
     const cur = song.cells[H.state.cellId];
-    if (cur && cur.fromCellId && cur.fromCellId !== H.state.cellId && song.cells[cur.fromCellId]) {
-      return cur.fromCellId;
-    }
+    const parent = H.parentCellId(song, cur);
+    if (parent) return parent;
     const last = H.state.lastCompareCellId;
     if (last && last !== H.state.cellId && song.cells[last]) return last;
     if (!H.S() || !H.S().siblingsOfCell) return null;
     const sibs = H.S().siblingsOfCell(song, H.state.cellId) || [];
-    const parentN = cur && cur.fromVersionIndex;
-    if (parentN != null) {
-      const byIdx = sibs.find(function (c) {
-        return c.id !== H.state.cellId && c.versionIndex === parentN;
-      });
-      if (byIdx) return byIdx.id;
-    }
     const v1 = sibs.find(function (c) {
       return c.id !== H.state.cellId && (c.versionIndex == null || c.versionIndex === 1);
     });
@@ -63,13 +90,6 @@ H.resolveCompareCell = function (song) {
   H.restoreBlueCompare = function () {
     const song = H.S() && H.S().loadSong ? H.S().loadSong() : null;
     if (!song) return false;
-    if (
-      H.state.compareCellId &&
-      H.state.compareCellId !== H.state.cellId &&
-      song.cells[H.state.compareCellId]
-    ) {
-      return H.armBlueCompare(H.state.compareCellId, { skipRender: true });
-    }
     const id = H.pickDefaultCompareId(song);
     if (!id) return false;
     return H.armBlueCompare(id, { skipRender: true });
@@ -198,7 +218,8 @@ H.resolveCompareCell = function (song) {
     }
     const leavingId = H.state.cellId;
     H.state.armedVersionId = null;
-    const parentId = cell.fromCellId || leavingId;
+    const parentId =
+      (H.parentCellId && H.parentCellId(song, cell)) || cell.fromCellId || leavingId;
     if (parentId && parentId !== id) {
       H.state.compareCellId = parentId;
       H.state.lastCompareCellId = parentId;
@@ -291,10 +312,10 @@ H.resolveCompareCell = function (song) {
     });
     H.state.nameLocked = true;
     H.refreshAll();
-    const parentId = cell.fromCellId;
+    const parentId = H.parentCellId ? H.parentCellId(song, cell) : cell.fromCellId;
     if (parentId && parentId !== cellId && song.cells[parentId] && H.armBlueCompare) {
       H.armBlueCompare(parentId);
-    } else if (H.state.compareCellId && H.state.compareCellId !== H.state.cellId) {
+    } else if (H.restoreBlueCompare) {
       H.restoreBlueCompare();
     }
     if (!opts.silent) {
