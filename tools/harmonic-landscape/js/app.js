@@ -616,8 +616,9 @@
     }
     H.updateLandButton();
     if (H.$('#btn-transpose-all')) {
-      H.$('#btn-transpose-all').addEventListener('click', () => {
-        H.transposeAllToWriteHome();
+      H.$('#btn-transpose-all').addEventListener('click', (e) => {
+        if (e.shiftKey) H.transposeAllToWriteHome();
+        else H.assignPathToWriteHome();
       });
     }
     H.$('#bpm').addEventListener('change', (e) => {

@@ -1022,6 +1022,24 @@ H.setSyncStatus = function (msg) {
     });
   };
 
+  /** Sit every step on the Write home wheel. Pitches do not move. */
+  H.assignPathToWriteHome = function () {
+    if (!H.state.chords.length) {
+      H.setSyncStatus('Nothing to assign');
+      return;
+    }
+    const dest = H.dropdownKey ? H.dropdownKey() : H.writeKey();
+    const live = H.writeKey();
+    H.pushUndo();
+    if (dest.tonic !== live.tonic || dest.mode !== live.mode) {
+      H.setWritingHome(dest.tonic, dest.mode, { transpose: false, skipEdit: true });
+    }
+    H.retagPathToKey(dest);
+    H.afterEdit();
+    H.setSyncStatus('On the ' + H.keyLabel() + ' wheel · notes unchanged');
+    H.state._prevTonicForTranspose = dest.tonic;
+  };
+
   H.pathTonicGuess = function () {
     const first = H.state.chords && H.state.chords[0];
     if (!first) return H.state.tonic;
