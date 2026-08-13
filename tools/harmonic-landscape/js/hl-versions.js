@@ -19,10 +19,21 @@ H.resolveCompareCell = function (song) {
 
   H.pickDefaultCompareId = function (song) {
     if (!song || !H.state.cellId || !song.cells) return null;
+    const cur = song.cells[H.state.cellId];
+    if (cur && cur.fromCellId && cur.fromCellId !== H.state.cellId && song.cells[cur.fromCellId]) {
+      return cur.fromCellId;
+    }
     const last = H.state.lastCompareCellId;
     if (last && last !== H.state.cellId && song.cells[last]) return last;
     if (!H.S() || !H.S().siblingsOfCell) return null;
     const sibs = H.S().siblingsOfCell(song, H.state.cellId) || [];
+    const parentN = cur && cur.fromVersionIndex;
+    if (parentN != null) {
+      const byIdx = sibs.find(function (c) {
+        return c.id !== H.state.cellId && c.versionIndex === parentN;
+      });
+      if (byIdx) return byIdx.id;
+    }
     const v1 = sibs.find(function (c) {
       return c.id !== H.state.cellId && (c.versionIndex == null || c.versionIndex === 1);
     });
@@ -187,7 +198,11 @@ H.resolveCompareCell = function (song) {
     }
     const leavingId = H.state.cellId;
     H.state.armedVersionId = null;
-    if (leavingId && leavingId !== id) {
+    const parentId = cell.fromCellId || leavingId;
+    if (parentId && parentId !== id) {
+      H.state.compareCellId = parentId;
+      H.state.lastCompareCellId = parentId;
+    } else if (leavingId && leavingId !== id) {
       H.state.compareCellId = leavingId;
       H.state.lastCompareCellId = leavingId;
     }
@@ -276,7 +291,10 @@ H.resolveCompareCell = function (song) {
     });
     H.state.nameLocked = true;
     H.refreshAll();
-    if (H.state.compareCellId && H.state.compareCellId !== H.state.cellId) {
+    const parentId = cell.fromCellId;
+    if (parentId && parentId !== cellId && song.cells[parentId] && H.armBlueCompare) {
+      H.armBlueCompare(parentId);
+    } else if (H.state.compareCellId && H.state.compareCellId !== H.state.cellId) {
       H.restoreBlueCompare();
     }
     if (!opts.silent) {
@@ -951,12 +969,14 @@ H.resolveCompareCell = function (song) {
       name: varName,
       fromKind: kind,
       fromVersionIndex: srcCell && srcCell.versionIndex != null ? srcCell.versionIndex : 1,
+      fromCellId: H.state.cellId,
     });
     if (!newId) return;
     if (song.cells[newId]) {
       song.cells[newId].fromKind = kind;
       song.cells[newId].fromVersionIndex =
         srcCell && srcCell.versionIndex != null ? srcCell.versionIndex : 1;
+      song.cells[newId].fromCellId = H.state.cellId;
     }
     // Parent stays as explicit blue compare so you see what you forked from
     const parentId = H.state.cellId;

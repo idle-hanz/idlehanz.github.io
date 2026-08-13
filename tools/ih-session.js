@@ -250,6 +250,7 @@
             ? src.versionIndex
             : 1,
       fromKind: opts.fromKind || null,
+      fromCellId: opts.fromCellId || sourceCellId,
       chords,
     };
     fam.versionIds = fam.versionIds || [];

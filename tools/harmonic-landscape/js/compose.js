@@ -1857,6 +1857,14 @@
       if (r.end - r.start === 1 && merged.length > 1) {
         const neighbor = merged[i + 1] || merged[i - 1];
         if (neighbor) {
+          const fitsNeighbor = islandFit(chords.slice(r.start, r.end), neighbor.tonic, neighbor.mode);
+          if (fitsNeighbor >= 1) {
+            neighbor.start = Math.min(r.start, neighbor.start);
+            neighbor.end = Math.max(r.end, neighbor.end);
+            merged.splice(i, 1);
+            if (i > 0) i -= 1;
+            continue;
+          }
           const a = Math.min(r.start, neighbor.start);
           const b = Math.max(r.end, neighbor.end);
           const stamp = stampKeyOf(chords[a], fbT, fbM);
