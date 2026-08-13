@@ -70,9 +70,9 @@ H.setSyncStatus = function (msg) {
       return true;
     }
 
-    if (!opts.resume) return false;
+    // 2) Last focused cell (default). Pass { resume: false } only for a forced empty slate.
+    if (opts.resume === false) return false;
 
-    // 2) Explicit Resume — focused cell in full song session
     const song = H.S().loadSong();
     if (song) {
       const cell = H.S().getFocusedCell(song);

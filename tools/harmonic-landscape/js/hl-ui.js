@@ -122,8 +122,16 @@ H.refreshAll = function () {
     if (H.map && H.map.setMapView) H.map.setMapView(view);
     const chaseBtn = H.$('#view-chase');
     const fnBtn = H.$('#view-function');
-    if (chaseBtn) chaseBtn.classList.toggle('active', view === 'chase');
-    if (fnBtn) fnBtn.classList.toggle('active', view === 'function');
+    if (chaseBtn) {
+      chaseBtn.classList.toggle('active', view === 'chase');
+      chaseBtn.classList.toggle('primary', view === 'chase');
+      chaseBtn.classList.toggle('ghost', view !== 'chase');
+    }
+    if (fnBtn) {
+      fnBtn.classList.toggle('active', view === 'function');
+      fnBtn.classList.toggle('primary', view === 'function');
+      fnBtn.classList.toggle('ghost', view !== 'function');
+    }
     const bar = H.$('#function-opts');
     if (bar) bar.hidden = view !== 'function';
     H.syncFunctionOptsUI();

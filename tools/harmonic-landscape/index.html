@@ -524,6 +524,26 @@
       gap: 0.25rem 0.35rem;
       max-width: 100%;
     }
+    .map-view-switch {
+      display: inline-flex;
+      gap: 0.2rem;
+      flex: 0 0 auto;
+      padding: 0.12rem;
+      border-radius: 8px;
+      background: rgba(232, 201, 138, 0.08);
+      border: 1px solid rgba(232, 201, 138, 0.28);
+    }
+    .map-view-switch .btn {
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 0.28rem 0.7rem;
+    }
+    .map-view-switch .btn.active,
+    .map-view-switch .btn.primary {
+      background: rgba(196, 165, 116, 0.28);
+      border-color: var(--gold);
+      color: var(--gold2);
+    }
     .map-toolbar .btn {
       padding: 0.22rem 0.45rem;
       font-size: 0.72rem;
@@ -1462,14 +1482,15 @@
         <div class="map-chrome">
           <!-- One toolbar row: camera · view · build · style · function layers -->
           <div class="map-toolbar" id="map-toolbar">
+            <div class="map-view-switch" role="group" aria-label="Map view">
+              <button type="button" class="btn primary active" id="view-chase" title="Journey: your path across keys, scale seats, purple nearby keys">Journey</button>
+              <button type="button" class="btn ghost" id="view-function" title="In this key: same-key atlas — diatonic, V7s, borrow">In this key</button>
+            </div>
             <div class="map-tools">
               <button type="button" class="btn ghost active" id="cam-home" title="Lock camera on home (no jolt)">Home</button>
               <button type="button" class="btn ghost" id="cam-fit" title="Frame whole path">Fit</button>
               <button type="button" class="btn ghost" id="cam-follow" title="Follow playhead">Follow</button>
               <button type="button" class="btn ghost" id="btn-home" title="Recentre">◎</button>
-              <span class="map-sep" aria-hidden="true"></span>
-              <button type="button" class="btn primary active" id="view-chase" title="Journey map: scale seats, multi-disk path, purple nearby keys">Journey</button>
-              <button type="button" class="btn ghost" id="view-function" title="Same-key atlas: diatonic, V7s, borrow — not multi-key">In this key</button>
               <span class="map-sep" aria-hidden="true"></span>
               <div class="map-gesture-modes" id="map-gesture-modes" title="Select never writes. Write = click to add. Shift+drag aims.">
                 <button type="button" class="btn ghost active" data-map-mode="select" title="Browse: click selects / previews · drag reorders · Shift+drag aims · double-click adds">Select</button>
@@ -1558,28 +1579,28 @@
     </div>
   </div>
 
-  <script src="../ih-session.js?v=20260813d"></script>
-  <script src="js/music.js?v=20260813d"></script>
-  <script src="js/compose.js?v=20260813d"></script>
-  <script src="js/audio.js?v=20260813d"></script>
-  <script src="js/packs.js?v=20260813d"></script>
-  <script src="js/spatial.js?v=20260813d"></script>
-  <script src="js/spatial-layout.js?v=20260813d"></script>
-  <script src="js/spatial-input.js?v=20260813d"></script>
-  <script src="js/spatial-draw.js?v=20260813d"></script>
+  <script src="../ih-session.js?v=20260813e"></script>
+  <script src="js/music.js?v=20260813e"></script>
+  <script src="js/compose.js?v=20260813e"></script>
+  <script src="js/audio.js?v=20260813e"></script>
+  <script src="js/packs.js?v=20260813e"></script>
+  <script src="js/spatial.js?v=20260813e"></script>
+  <script src="js/spatial-layout.js?v=20260813e"></script>
+  <script src="js/spatial-input.js?v=20260813e"></script>
+  <script src="js/spatial-draw.js?v=20260813e"></script>
   <!-- App modules (shared HLApp namespace) — order matters -->
-  <script src="js/hl-core.js?v=20260813d"></script>
-  <script src="js/hl-styles.js?v=20260813d"></script>
-  <script src="js/hl-context-menu.js?v=20260813d"></script>
-  <script src="js/hl-undo.js?v=20260813d"></script>
-  <script src="js/hl-session.js?v=20260813d"></script>
-  <script src="js/hl-map-bridge.js?v=20260813d"></script>
-  <script src="js/hl-versions.js?v=20260813d"></script>
-  <script src="js/hl-edit.js?v=20260813d"></script>
-  <script src="js/hl-horizon.js?v=20260813d"></script>
-  <script src="js/hl-playback.js?v=20260813d"></script>
-  <script src="js/hl-ui.js?v=20260813d"></script>
-  <script src="js/hl-polish.js?v=20260813d"></script>
-  <script src="js/app.js?v=20260813d"></script>
+  <script src="js/hl-core.js?v=20260813e"></script>
+  <script src="js/hl-styles.js?v=20260813e"></script>
+  <script src="js/hl-context-menu.js?v=20260813e"></script>
+  <script src="js/hl-undo.js?v=20260813e"></script>
+  <script src="js/hl-session.js?v=20260813e"></script>
+  <script src="js/hl-map-bridge.js?v=20260813e"></script>
+  <script src="js/hl-versions.js?v=20260813e"></script>
+  <script src="js/hl-edit.js?v=20260813e"></script>
+  <script src="js/hl-horizon.js?v=20260813e"></script>
+  <script src="js/hl-playback.js?v=20260813e"></script>
+  <script src="js/hl-ui.js?v=20260813e"></script>
+  <script src="js/hl-polish.js?v=20260813e"></script>
+  <script src="js/app.js?v=20260813e"></script>
 </body>
 </html>

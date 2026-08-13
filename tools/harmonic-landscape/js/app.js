@@ -582,10 +582,8 @@
     if (H.updateEmptyStart) H.updateEmptyStart();
     H.setSyncStatus(
       loaded
-        ? 'Opened from handoff'
-        : H.hasResumableSession && H.hasResumableSession()
-          ? 'Empty · Resume session for last cell · or + Home to start'
-          : 'Empty · pick Write home · Write mode or double-click a seat / + Home to start'
+        ? 'Loaded · ' + (H.state.title || 'cell') + ' · Journey / In this key are on the map toolbar'
+        : 'Empty · + Home to start · Journey / In this key switch the map'
     );
 
     document.body.addEventListener('pointerdown', () => H.A().ensure(), { once: true });
