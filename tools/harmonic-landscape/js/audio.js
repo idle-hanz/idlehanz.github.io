@@ -438,7 +438,16 @@
 
       if (index >= seq.length) {
         if (loopMode) {
-          if (opts.onLoop) opts.onLoop();
+          if (opts.onLoop) {
+            try {
+              const replacement = opts.onLoop();
+              if (replacement && replacement.length && transport) {
+                transport.chords = replacement;
+              }
+            } catch (err) {
+              console.error('onLoop', err);
+            }
+          }
           prevMidi = null;
           const nextT0 = Math.max(when, ensure().currentTime + 0.02);
           // Rebuild from latest chord list (durations may have changed)

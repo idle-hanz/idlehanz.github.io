@@ -127,6 +127,100 @@ H.resolveCompareCell = function (song) {
     return set;
   }
 
+  H.versionsShareLiveGrid = function (a, b) {
+    return !!(a && b && a.length && a.length === b.length);
+  }
+
+  H.armVersionForNextPass = function (cellId) {
+    if (!H.S() || !cellId) return false;
+    if (cellId === H.state.cellId) {
+      H.state.armedVersionId = null;
+      H.renderVersionBar();
+      H.setSyncStatus('Disarmed · this take stays on the loop');
+      return false;
+    }
+    if (H.state.armedVersionId === cellId) {
+      H.state.armedVersionId = null;
+      H.renderVersionBar();
+      H.setSyncStatus('Disarmed · this take stays on the loop');
+      return false;
+    }
+    const song = H.S().loadSong();
+    const cell = song && song.cells[cellId];
+    if (!cell || !cell.chords || !cell.chords.length) {
+      H.setSyncStatus('That take is empty');
+      return false;
+    }
+    if (!H.versionsShareLiveGrid(H.state.chords, cell.chords)) {
+      H.setSyncStatus(
+        'Can’t arm “' +
+          (cell.name || 'take') +
+          '” live · different length · Shift+click to jump now'
+      );
+      return false;
+    }
+    H.state.armedVersionId = cellId;
+    H.renderVersionBar();
+    H.setSyncStatus(
+      'Next loop → ' +
+        (cell.name || 'take') +
+        ' · Shift+click a chip to jump now · click again to disarm'
+    );
+    return true;
+  }
+
+  H.consumeArmedVersionForLoop = function () {
+    const id = H.state.armedVersionId;
+    if (!id || !H.S() || id === H.state.cellId) return null;
+    if (H.state.chords.length && H.state.cellId) {
+      H.pushToSharedSession('landscape');
+    }
+    const song = H.S().loadSong();
+    const cell = song && song.cells[id];
+    if (!cell || !cell.chords || !cell.chords.length) {
+      H.state.armedVersionId = null;
+      return null;
+    }
+    if (!H.versionsShareLiveGrid(H.state.chords, cell.chords)) {
+      H.state.armedVersionId = null;
+      return null;
+    }
+    const leavingId = H.state.cellId;
+    H.state.armedVersionId = null;
+    if (leavingId && leavingId !== id) {
+      H.state.compareCellId = leavingId;
+      H.state.lastCompareCellId = leavingId;
+    }
+    song.focus = {
+      cellId: id,
+      sectionId: song.focus && song.focus.sectionId ? song.focus.sectionId : null,
+      chordIndex: 0,
+    };
+    H.S().saveSong(song, 'landscape');
+    H.applySessionChords(cell.chords, {
+      title: cell.name || 'Cell',
+      cellId: cell.id,
+      packId: cell.packId,
+      tonic: song.key && song.key.tonic,
+      mode: song.key && song.key.mode,
+      bpm: song.bpm,
+      focusIndex: 0,
+    });
+    H.state.nameLocked = true;
+    const tog = H.$('#tog-alt');
+    if (tog) tog.checked = true;
+    if (H.map && H.map.setShowAlt) H.map.setShowAlt(true);
+    if (H._transportMeta) H._transportMeta.fromIndex = 0;
+    H.refreshAll();
+    if (H.startPlayheadLoop) H.startPlayheadLoop(0);
+    H.setSyncStatus('Loop · now “' + (cell.name || id) + '” · previous take in blue');
+    return H.state.chords.map(function (c) {
+      const x = H.M().cloneChord(c);
+      x.duration = c.duration != null ? c.duration : 4;
+      return x;
+    });
+  }
+
   /**
    * Switch Landscape editor to another session cell (saves current first).
    */
@@ -249,7 +343,7 @@ H.resolveCompareCell = function (song) {
         : null;
     const blueOnThis = H.state.compareCellId && H.state.compareCellId === H.state.cellId;
     html +=
-      '<div class="version-bar-label">Versions · click = edit · Alt-click or Blue = compare' +
+      '<div class="version-bar-label">Versions · click = edit · while looping, click a take to play it next · Alt-click or Blue = compare' +
       (blueOnThis
         ? ' · <span style="color:#7eb8da">blue armed on this take · open another chip to see it</span>'
         : compareName
@@ -270,12 +364,14 @@ H.resolveCompareCell = function (song) {
         const active = c.id === H.state.cellId;
         // Only mark blue when user explicitly set compare (never auto-v1)
         const isCompare = !active && H.state.compareCellId === c.id;
+        const isArmed = !active && H.state.armedVersionId === c.id;
         const vi = c.versionIndex != null ? c.versionIndex : '?';
         const label = c.name || 'v' + vi;
         html +=
           '<button type="button" class="ver-chip' +
           (active ? ' active' : '') +
           (isCompare ? ' compare' : '') +
+          (isArmed ? ' armed' : '') +
           '" data-cell="' +
           H.escapeAttr(c.id) +
           '" title="' +
@@ -285,9 +381,11 @@ H.resolveCompareCell = function (song) {
               H.cellPreviewLabel(c) +
               (active
                 ? ' (editing)'
-                : isCompare
-                  ? ' — blue compare (Alt-click again to clear)'
-                  : ' — click edit · Alt-click = blue compare · × delete')
+                : isArmed
+                  ? ' — next loop · click again to disarm'
+                  : isCompare
+                    ? ' — blue compare (Alt-click again to clear)'
+                    : ' — click edit · while looping, click to play next · Alt-click = blue · × delete')
           ) +
           '">' +
           '<span class="ver-n">v' +
@@ -303,7 +401,7 @@ H.resolveCompareCell = function (song) {
           ) +
           '<span class="ver-preview">' +
           H.escapeHtml(H.cellPreviewLabel(c)) +
-          (isCompare ? ' · blue' : '') +
+          (isArmed ? ' · next loop' : isCompare ? ' · blue' : '') +
           '</span>' +
           '<span class="ver-x" data-del="' +
           H.escapeAttr(c.id) +
@@ -420,7 +518,22 @@ H.resolveCompareCell = function (song) {
           );
           return;
         }
-        if (id !== H.state.cellId) H.switchToCell(id);
+        const playing = H.A() && H.A().isPlaying && H.A().isPlaying();
+        if (playing && H.state.loop && !e.shiftKey) {
+          H.armVersionForNextPass(id);
+          return;
+        }
+        if (id !== H.state.cellId) {
+          H.switchToCell(id);
+          if (playing && e.shiftKey && H.playSeq) {
+            H.playSeq({
+              force: true,
+              fromIndex: 0,
+              loop: !!H.state.loop,
+              label: 'Jumped to “' + ((song.cells[id] && song.cells[id].name) || 'take') + '”',
+            });
+          }
+        }
       });
     });
     host.querySelectorAll('.ver-x').forEach((x) => {
@@ -465,6 +578,7 @@ H.resolveCompareCell = function (song) {
    */
   H.deleteVersion = function (cellId) {
     if (!H.S() || !cellId) return;
+    if (H.state.armedVersionId === cellId) H.state.armedVersionId = null;
     // Save current work first if deleting something else
     if (H.state.chords.length && H.state.cellId && H.state.cellId !== cellId) {
       H.pushToSharedSession('landscape');

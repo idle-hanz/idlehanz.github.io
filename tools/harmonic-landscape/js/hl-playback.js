@@ -192,8 +192,16 @@ H.stopPlayheadLoop = function () {
       loop,
       pulse: H.state.pulse,
       startAt: opts.startAt || null,
+      onLoop: function () {
+        if (opts.onLoop) opts.onLoop();
+        if (H.consumeArmedVersionForLoop) return H.consumeArmedVersionForLoop();
+      },
       onStep: (i) => {
-        const idx = from + i;
+        const fromNow =
+          H._transportMeta && H._transportMeta.fromIndex != null
+            ? H._transportMeta.fromIndex
+            : from;
+        const idx = fromNow + i;
         H._playingIndex = idx;
         if (H.map) H.map.setPlaying(opts.chords ? -1 : idx);
         if (!opts.chords) {
@@ -272,7 +280,11 @@ H.stopPlayheadLoop = function () {
     H.A().ensure();
     if (H.A().isPlaying()) H.stopPlaybackUI();
     const song = H.S() && H.S().loadSong();
-    const other = song ? H.resolveCompareCell(song) : null;
+    let other = song ? H.resolveCompareCell(song) : null;
+    if ((!other || !other.chords || !other.chords.length) && song && H.pickDefaultCompareId) {
+      const altId = H.pickDefaultCompareId(song);
+      if (altId && song.cells[altId]) other = song.cells[altId];
+    }
     const nameA = H.state.title || 'A';
     const nameB = other ? other.name || 'B' : null;
     H.setSyncStatus('A/B · A: ' + nameA);
