@@ -994,6 +994,137 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
     );
   };
 
+  H.horizonFocusIndex = function () {
+    const n = (H.state.chords || []).length;
+    if (!n) return -1;
+    if (H.state.selected >= 0 && H.state.selected < n) return H.state.selected;
+    return n - 1;
+  };
+
+  H.isHorizonMidPath = function () {
+    const i = H.horizonFocusIndex();
+    return i >= 0 && i < (H.state.chords || []).length - 1;
+  };
+
+  H.scheduleHorizonLists = function () {
+    if (H._hzListTimer) clearTimeout(H._hzListTimer);
+    H._hzListTimer = setTimeout(function () {
+      H._hzListTimer = null;
+      if (H.renderHorizonLists) H.renderHorizonLists();
+    }, 40);
+  };
+
+  /**
+   * Ranked replacements for one path chair: prev → candidate → next.
+   * Mid-path only. Does not mutate.
+   */
+  H.buildStepReplacements = function (index) {
+    const n = (H.state.chords || []).length;
+    if (index == null || index < 0 || index >= n || n < 2) return [];
+    const music = H.M();
+    const cur = H.state.chords[index];
+    const next = index < n - 1 ? H.state.chords[index + 1] : null;
+    const prev = index > 0 ? H.state.chords[index - 1] : H.state.chords[n - 1];
+    if (!cur || !next) return [];
+    const key = H.keyOf ? H.keyOf(cur) : H.writeKey();
+    const seen = {};
+    const out = [];
+    const sig = function (c) {
+      if (!c || c.root == null) return '';
+      return (
+        c.root +
+        ':' +
+        (c.quality || '') +
+        ':' +
+        (c.bass != null ? c.bass : c.bassPc != null ? c.bassPc : c.root)
+      );
+    };
+    const curSig = sig(cur);
+    const push = function (ch, label, job, kind) {
+      if (!ch || ch.root == null) return;
+      const c = music.cloneChord ? music.cloneChord(ch) : ch;
+      c.duration = cur.duration != null ? cur.duration : 4;
+      if (H.stampKey) H.stampKey(c, key);
+      const k = sig(c);
+      if (!k || k === curSig || seen[k]) return;
+      seen[k] = 1;
+      const score = H.scoreAimContext
+        ? H.scoreAimContext(prev, c, next, {
+            mode: 'middle',
+            tonic: key.tonic,
+            modeKey: key.mode,
+            origin: cur,
+          })
+        : 0;
+      out.push({
+        chord: c,
+        label: label || c.name || '?',
+        job: job || '',
+        kind: kind || 'direction',
+        score: score,
+        replaceStep: true,
+      });
+    };
+
+    if (H.styleNextMoves) {
+      H.styleNextMoves(prev, { key: key, limit: 10 }).forEach(function (m) {
+        push(m.chord, m.label, 'fits both sides', m.kind === 'colour' ? 'flavour' : 'direction');
+      });
+    }
+    if (music.diatonicChords) {
+      music.diatonicChords(key.tonic, key.mode, false).forEach(function (ch) {
+        push(ch, (ch.roman ? ch.roman + ' · ' : '') + ch.name, 'in this key', 'direction');
+      });
+    }
+    if (H.styleExtraColours) {
+      H.styleExtraColours(key.tonic, key.mode).forEach(function (ch) {
+        push(ch, (ch.roman ? ch.roman + ' · ' : '') + ch.name, ch.tag || 'colour', 'flavour');
+      });
+    }
+    if (H.coloursForRoot) {
+      H.coloursForRoot(cur.root, { key: key, limit: 6 }).forEach(function (item) {
+        push(item.chord, item.label, 'same root · ' + (item.tag || 'colour'), 'flavour');
+      });
+    }
+    const C = H.C();
+    if (C && C.secondaryDominantOf) {
+      const v7 = C.secondaryDominantOf(next, cur.duration);
+      if (v7) push(v7, (v7.name || 'V7') + ' of next', 'V7 → ' + (next.name || 'next'), 'secondary');
+      if (v7 && C.tritoneSubOf) {
+        const tt = C.tritoneSubOf(v7);
+        if (tt) push(tt, (tt.name || '♭II7') + ' of next', 'tritone into next', 'tritone');
+      }
+    }
+
+    out.sort(function (a, b) {
+      return (b.score || 0) - (a.score || 0);
+    });
+    return out.slice(0, 10);
+  };
+
+  H.previewStepSandwich = function (prev, cand, next) {
+    if (!cand || !H.A()) return;
+    H.A().ensure();
+    if (H.A().isPlaying && H.A().isPlaying()) {
+      H.A().playChord({ chord: cand, soft: true, duration: 0.4, identify: true });
+      return;
+    }
+    const clone = function (c, beats) {
+      const x = H.M().cloneChord ? H.M().cloneChord(c) : c;
+      x.duration = beats;
+      return x;
+    };
+    const seq = [];
+    if (prev) seq.push(clone(prev, 1.1));
+    seq.push(clone(cand, 1.25));
+    if (next) seq.push(clone(next, 1.25));
+    if (seq.length > 1 && H.A().playSequence) {
+      H.A().playSequence(seq, Math.max(H.state.bpm || 96, 100), { pulse: false, loop: false });
+    } else {
+      H.A().playChord({ chord: cand, soft: true, duration: 0.45, identify: true });
+    }
+  };
+
   // --- Horizon builders
   /**
    * opts.forMap — compact set for canvas constellation (no home satellite; capped)

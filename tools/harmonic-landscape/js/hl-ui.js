@@ -449,6 +449,7 @@ H.refreshAll = function () {
         if (!step || !H.openContextMenu) return;
         H.state.selected = i;
         if (H.map) H.map.current = i;
+        if (H.scheduleHorizonLists) H.scheduleHorizonLists();
         // Light chrome sync without full map thrash
         host.querySelectorAll('.ts-step').forEach((el) => {
           el.classList.toggle('selected', el.dataset.i === String(i));
@@ -1236,6 +1237,7 @@ H.refreshAll = function () {
         H.previewNextFromStep(H.state.selected, { silent: true });
       }, 140);
     }
+    if (H.scheduleHorizonLists) H.scheduleHorizonLists();
   };
 
   /** Update strip + slots selection classes (incl. multi-select). */
@@ -1513,12 +1515,25 @@ H.refreshAll = function () {
     };
     const lens = document.createElement('div');
     lens.className = 'hz-section hz-lens';
+    const focusIdx = H.horizonFocusIndex ? H.horizonFocusIndex() : H.state.selected;
+    const mid =
+      H.isHorizonMidPath ? H.isHorizonMidPath() : focusIdx >= 0 && focusIdx < H.state.chords.length - 1;
+    const focusCh =
+      focusIdx >= 0 && H.state.chords[focusIdx] ? H.state.chords[focusIdx] : null;
     lens.innerHTML =
       '<div class="hz-section-title">Style · ' +
       H.escapeHtml((st && st.label) || 'Neutral') +
       ' · ' +
       H.escapeHtml(goalNames[goalId] || goalId) +
-      '</div><div class="hz-section-hint">Ranks next moves. Pick a goal to override the style default.</div>';
+      '</div><div class="hz-section-hint">' +
+      (mid
+        ? 'Rewriting step ' +
+          (focusIdx + 1) +
+          ' · ' +
+          H.escapeHtml((focusCh && focusCh.name) || '?') +
+          ' · ranked by both neighbours'
+        : 'Last step · Ways home + next moves') +
+      '</div>';
     host.appendChild(lens);
     const goals = ['stay_close', 'get_darker', 'hard_return', 'float', 'balanced'];
     const row = document.createElement('div');
@@ -1541,7 +1556,49 @@ H.refreshAll = function () {
     });
     host.appendChild(row);
 
-    const joins = H.buildLoopJoins ? H.buildLoopJoins() : [];
+    if (mid && H.buildStepReplacements) {
+      const prev = focusIdx > 0 ? H.state.chords[focusIdx - 1] : H.state.chords[H.state.chords.length - 1];
+      const next = H.state.chords[focusIdx + 1];
+      const reps = H.buildStepReplacements(focusIdx);
+      const rh = document.createElement('div');
+      rh.className = 'hz-section';
+      rh.innerHTML =
+        '<div class="hz-section-title">This step</div><div class="hz-section-hint">' +
+        H.escapeHtml((prev && prev.name) || '?') +
+        ' → ? → ' +
+        H.escapeHtml((next && next.name) || '?') +
+        ' · click replaces ' +
+        H.escapeHtml((focusCh && focusCh.name) || 'this') +
+        ' · Shift+click inserts after</div>';
+      host.appendChild(rh);
+      reps.forEach(function (it) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'hz kind-' + (it.kind || 'direction');
+        b.title = 'Click = replace this step · Shift+click = insert after · hover = hear the join';
+        b.innerHTML =
+          '<span class="hz-tag">Swap</span><strong>' +
+          H.escapeHtml(it.label) +
+          '</strong><span>' +
+          H.escapeHtml(it.job || '') +
+          '</span>';
+        b.addEventListener('mouseenter', function () {
+          if (H.previewStepSandwich) H.previewStepSandwich(prev, it.chord, next);
+        });
+        b.addEventListener('click', function (e) {
+          if (e.shiftKey) {
+            H.commitHorizon(it, { insert: true });
+            return;
+          }
+          if (H.applyChordAtIndex) {
+            H.applyChordAtIndex(focusIdx, it.chord, { job: 'swap-step' });
+          }
+        });
+        host.appendChild(b);
+      });
+    }
+
+    const joins = !mid && H.buildLoopJoins ? H.buildLoopJoins() : [];
     if (joins.length) {
       const last = H.state.chords[H.state.chords.length - 1];
       const first = H.state.chords[0];
@@ -1619,10 +1676,12 @@ H.refreshAll = function () {
         (order[a.kind] != null ? order[a.kind] : 9) - (order[b.kind] != null ? order[b.kind] : 9)
     );
 
-    const hasNext = H.state.selected >= 0 && H.state.selected < H.state.chords.length - 1;
-    const tipDefault = hasNext
-      ? 'Click = insert after selection · Shift+click = overwrite what follows · hover = audition'
-      : 'Click = append · Shift+click = overwrite · hover = audition';
+    const hasNext = focusIdx >= 0 && focusIdx < H.state.chords.length - 1;
+    const tipDefault = mid
+      ? 'These add after the selected step · This step (above) replaces the chair · hover = audition'
+      : hasNext
+        ? 'Click = insert after selection · Shift+click = overwrite what follows · hover = audition'
+        : 'Click = append · Shift+click = overwrite last · hover = audition';
     const kindLabel = {
       join: 'Join',
       home: 'Home',

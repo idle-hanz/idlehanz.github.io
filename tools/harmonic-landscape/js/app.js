@@ -110,6 +110,7 @@
         if (H.map) H.map.current = i;
         H.updateMapStatus();
         if (H.renderPlaceReadout) H.renderPlaceReadout();
+        if (H.scheduleHorizonLists) H.scheduleHorizonLists();
         return;
       }
       if (H.selectStep) H.selectStep(i, { play: true });
