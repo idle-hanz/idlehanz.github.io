@@ -894,6 +894,158 @@
     return ch;
   }
 
+  function isMinorMode(modeKey) {
+    const music = M();
+    return (music.MODES[modeKey] || music.MODES.minor).romanBase === 'minor';
+  }
+
+  function sameChord(a, b) {
+    return !!(a && b && a.root === b.root && a.quality === b.quality);
+  }
+
+  function pathSig(chords) {
+    return (chords || [])
+      .map(function (c) {
+        return (c.root != null ? c.root : '?') + ':' + (c.quality || '');
+      })
+      .join('|');
+  }
+
+  function isBrightQuality(q) {
+    q = String(q || '');
+    return (
+      q === 'maj' ||
+      q === 'maj7' ||
+      q === 'add9' ||
+      q === 'sus2' ||
+      q === '6' ||
+      q === 'maj9'
+    );
+  }
+
+  function isAlreadyDarkQuality(q) {
+    q = String(q || '');
+    return (
+      q.indexOf('dim') >= 0 ||
+      q === 'halfdim' ||
+      q === 'dom7b9' ||
+      q === 'dom7alt' ||
+      q === 'dom7b13'
+    );
+  }
+
+  function backdoorDominant(tonic, duration) {
+    const music = M();
+    const t = music.pc(tonic);
+    let ch = music.makeChord((t + 10) % 12, 'dom7', {
+      duration: duration || 2,
+      region: 'interchange',
+      roman: '♭VII7',
+      tag: 'backdoor',
+    });
+    return withBass(ch, ch.root);
+  }
+
+  function closerDominant(tonic, modeKey, duration, escalate) {
+    const music = M();
+    const t = music.pc(tonic);
+    const quality = escalate ? 'dom7b9' : 'dom7';
+    let ch = music.makeChord((t + 7) % 12, quality, {
+      duration: duration || 2,
+      region: escalate ? 'valt' : 'diatonic',
+      roman: escalate ? 'V7♭9' : 'V7',
+      tag: 'closer',
+    });
+    return withBass(ch, ch.root);
+  }
+
+  function closerProgression(chords, tonic, modeKey) {
+    const music = M();
+    if (!chords || !chords.length) return chords;
+    const last = chords[chords.length - 1];
+    const vRoot = (music.pc(tonic) + 7) % 12;
+    const alreadyV7 = last.root === vRoot && last.quality === 'dom7';
+    const alreadyDark = last.root === vRoot && last.quality === 'dom7b9';
+    if (alreadyDark) return chords.map((c) => music.cloneChord(c));
+    return plantLastAs(chords, function (cur) {
+      return closerDominant(tonic, modeKey, cur.duration, alreadyV7);
+    });
+  }
+
+  function backdoorProgression(chords, tonic) {
+    const music = M();
+    if (!chords || !chords.length) return chords;
+    const last = chords[chords.length - 1];
+    const bdRoot = (music.pc(tonic) + 10) % 12;
+    if (last.root === bdRoot && String(last.quality || '').indexOf('dom') === 0) {
+      return chords.map((c) => music.cloneChord(c));
+    }
+    return plantLastAs(chords, function (cur) {
+      return backdoorDominant(tonic, cur.duration);
+    });
+  }
+
+  function plantInnerSecondary(chords, tonic) {
+    const music = M();
+    if (!chords || chords.length < 3) return chords.map((c) => music.cloneChord(c));
+    const copy = chords.map((c) => music.cloneChord(c));
+    const t = tonic != null ? music.pc(tonic) : copy[0].root;
+    let best = null;
+    let bestS = -Infinity;
+    for (let i = 2; i < copy.length; i++) {
+      const tgt = copy[i];
+      const slot = i - 1;
+      if (slot < 1) continue;
+      const q = String(tgt.quality || '');
+      if (q.indexOf('dim') >= 0 || q === 'halfdim') continue;
+      if (q.indexOf('dom') === 0) continue;
+      const cur = copy[slot];
+      const vRoot = (music.pc(tgt.root) + 7) % 12;
+      if (cur.root === vRoot && String(cur.quality || '').indexOf('dom') === 0) continue;
+      const v = secondaryDominantOf(tgt, cur.duration);
+      if (!v) continue;
+      let s = 0.35;
+      if (tgt.root === t) s += 0.7;
+      if (
+        tgt.region === 'diatonic' ||
+        q === 'maj' ||
+        q === 'min' ||
+        q === 'maj7' ||
+        q === 'min7'
+      ) {
+        s += 0.28;
+      }
+      s += (tgt.duration || 2) * 0.04;
+      s -= joinScore(cur, tgt) * 0.25;
+      s += joinScore(copy[slot - 1], v) * 0.55;
+      s += joinScore(v, tgt) * 0.7;
+      if (s > bestS) {
+        bestS = s;
+        best = { slot: slot, ch: v };
+      }
+    }
+    if (best) {
+      copy[best.slot] = best.ch;
+      copy[best.slot].duration = chords[best.slot].duration;
+    }
+    return copy;
+  }
+
+  function plantLastAs(chords, maker) {
+    const music = M();
+    if (!chords || !chords.length) return chords;
+    const copy = chords.map((c) => music.cloneChord(c));
+    const last = copy[copy.length - 1];
+    const ch = maker(last);
+    if (ch) {
+      ch.duration = last.duration;
+      if (last.localTonic != null) ch.localTonic = last.localTonic;
+      if (last.localMode) ch.localMode = last.localMode;
+      copy[copy.length - 1] = ch;
+    }
+    return copy;
+  }
+
   function secondaryDominantOf(target, duration) {
     const music = M();
     if (!target) return null;
@@ -945,104 +1097,320 @@
     return ch;
   }
 
+  function joinScore(a, b) {
+    const music = M();
+    if (!a || !b) return 0.45;
+    const vl = music.voiceLeadingQuality ? music.voiceLeadingQuality(a, b) : 0.5;
+    return vl * 1.25 + bassMotionScore(a, b) * 0.85;
+  }
+
+  function recipeChord(tonic, deg, quality, roman, region, duration) {
+    const music = M();
+    let ch = music.makeChord((music.pc(tonic) + deg) % 12, quality, {
+      duration: duration || 4,
+      region: region || 'interchange',
+      roman: roman || '',
+      tag: 'darken',
+    });
+    return withBass(ch, ch.root);
+  }
+
+  function darkerRecipes(tonic, modeKey, dur) {
+    const t = M().pc(tonic);
+    const minor = isMinorMode(modeKey);
+    if (minor) {
+      // In minor, ♭VI / ♭III / ♭VII are already diatonic — not a darken.
+      return [
+        recipeChord(t, 1, 'maj', '♭II', 'neapolitan', dur),
+        recipeChord(t, 1, 'dom7', '♭II7', 'tritone', dur),
+        recipeChord(t, 7, 'dom7b9', 'V7♭9', 'valt', dur),
+        recipeChord(t, 7, 'dom7alt', 'V7alt', 'valt', dur),
+        recipeChord(t, 11, 'dim7', 'vii°7', 'diminished', dur),
+        recipeChord(t, 6, 'dim7', '♯iv°7', 'diminished', dur),
+        recipeChord(t, 5, 'min', 'iv', 'diatonic', dur),
+        recipeChord(t, 5, 'min7', 'iv7', 'diatonic', dur),
+        recipeChord(t, 10, 'dom7', '♭VII7', 'interchange', dur),
+        recipeChord(t, 8, 'maj7', 'VImaj7', 'diatonic', dur),
+      ];
+    }
+    return [
+      recipeChord(t, 5, 'min', 'iv', 'interchange', dur),
+      recipeChord(t, 8, 'maj', '♭VI', 'interchange', dur),
+      recipeChord(t, 3, 'maj', '♭III', 'interchange', dur),
+      recipeChord(t, 10, 'maj', '♭VII', 'interchange', dur),
+      recipeChord(t, 10, 'dom7', '♭VII7', 'interchange', dur),
+      recipeChord(t, 1, 'dom7', '♭II7', 'tritone', dur),
+      recipeChord(t, 7, 'dom7b9', 'V7♭9', 'valt', dur),
+      recipeChord(t, 8, 'maj7', '♭VImaj7', 'interchange', dur),
+      recipeChord(t, 0, 'min', 'i', 'parallel', dur),
+    ];
+  }
+
+  /** Known darker colour of THIS chord (IV→iv, V→V7♭9). Not “every major → minor”. */
+  function contextualDarken(chord, tonic, modeKey) {
+    const music = M();
+    if (!chord) return [];
+    const t = music.pc(tonic);
+    const r = music.pc(chord.root);
+    const q = String(chord.quality || '');
+    const deg = (r - t + 12) % 12;
+    const dur = chord.duration;
+    const out = [];
+    const minor = isMinorMode(modeKey);
+    if (!minor && deg === 5 && isBrightQuality(q)) {
+      out.push(recipeChord(t, 5, 'min', 'iv', 'interchange', dur));
+    }
+    if (deg === 7 && (isBrightQuality(q) || q === 'dom7')) {
+      out.push(recipeChord(t, 7, 'dom7b9', 'V7♭9', 'valt', dur));
+    }
+    if (!minor && deg === 0 && isBrightQuality(q)) {
+      out.push(recipeChord(t, 0, 'min', 'i', 'parallel', dur));
+    }
+    if (q === 'dom7') {
+      out.push(
+        music.makeChord(r, 'dom7b9', {
+          duration: dur,
+          region: 'valt',
+          roman: (chord.roman || 'V') + '♭9',
+          tag: 'darken',
+        })
+      );
+    }
+    if (q === 'dim') {
+      out.push(
+        music.makeChord(r, 'dim7', {
+          duration: dur,
+          region: 'diminished',
+          roman: (chord.roman || '') + '°7',
+          tag: 'darken',
+        })
+      );
+    }
+    return out.filter(Boolean).map(function (ch) {
+      ch.duration = dur;
+      return withBass(ch, ch.root);
+    });
+  }
+
   /**
-   * Darken a cell as a piece: one or two strategic darker colours.
-   * Not “every chord minor” — keep the shape, drop in ♭VI / borrow / a darker III or VII.
+   * Darken a cell as a piece: ONE classic darker join that still leads.
+   * Major: IV→iv, else plant ♭VI. Minor: plant iv on a bright island, else
+   * last step → V7♭9 / ♭II7. Never “paint every chord minor”.
    */
   function darkenProgression(chords, tonic, modeKey) {
     const music = M();
     if (!chords || !chords.length) return chords;
     const t = music.pc(tonic);
-    const bVI = (t + 8) % 12;
     const copy = chords.map((c) => music.cloneChord(c));
-    const isBVI = function (c) {
-      return c && c.root === bVI && (c.quality === 'maj' || c.quality === 'maj7');
-    };
-    const hasBVI = copy.some(isBVI);
-    const isHome = function (c) {
-      return c && c.root === t;
-    };
-    let changed = 0;
+    const n = copy.length;
+    const minor = isMinorMode(modeKey);
 
-    if (!hasBVI && copy.length >= 3) {
-      let slot = -1;
-      const prefer = Math.min(2, copy.length - 1);
-      if (!isHome(copy[prefer])) slot = prefer;
-      if (slot < 0) {
-        for (let i = 1; i < copy.length - 1; i++) {
-          const q = String(copy[i].quality || '');
-          if (copy[i].root !== t && (q === 'maj' || q === 'maj7' || q === 'add9')) {
-            slot = i;
-            break;
-          }
+    const applyAt = function (i, ch) {
+      if (!ch || i < 1 || i >= n) return false;
+      if (sameChord(copy[i], ch)) return false;
+      const next = withBass(music.cloneChord(ch), ch.root);
+      next.duration = chords[i].duration;
+      if (chords[i].localTonic != null) next.localTonic = chords[i].localTonic;
+      if (chords[i].localMode) next.localMode = chords[i].localMode;
+      copy[i] = next;
+      return true;
+    };
+    const degOf = function (c) {
+      return (music.pc(c.root) - t + 12) % 12;
+    };
+
+    // 1. Same chair: IV→iv, then V→V7♭9
+    for (let i = 1; i < n; i++) {
+      const q = String(copy[i].quality || '');
+      if (!minor && degOf(copy[i]) === 5 && isBrightQuality(q)) {
+        if (applyAt(i, recipeChord(t, 5, 'min', 'iv', 'interchange', copy[i].duration))) {
+          return copy;
         }
       }
-      if (slot < 0) slot = Math.min(2, copy.length - 1);
-      if (slot >= 0 && !isBVI(copy[slot])) {
-        let ch = music.makeChord(bVI, 'maj', {
-          duration: copy[slot].duration,
-          region: 'interchange',
-          roman: '♭VI',
-          tag: 'darken',
-        });
-        ch = withBass(ch, ch.root);
-        ch.duration = copy[slot].duration;
-        if (copy[slot].localTonic != null) ch.localTonic = copy[slot].localTonic;
-        if (copy[slot].localMode) ch.localMode = copy[slot].localMode;
-        copy[slot] = ch;
-        changed += 1;
+    }
+    for (let i = 1; i < n; i++) {
+      const q = String(copy[i].quality || '');
+      if (degOf(copy[i]) === 7 && (isBrightQuality(q) || q === 'dom7')) {
+        if (applyAt(i, recipeChord(t, 7, 'dom7b9', 'V7♭9', 'valt', copy[i].duration))) {
+          return copy;
+        }
       }
     }
 
-    if (changed < 2) {
-      let best = -1;
-      let bestBright = -1;
-      copy.forEach(function (c, i) {
-        if (i === 0) return;
-        if (isBVI(c) || isHome(c)) return;
-        const q = String(c.quality || '');
-        const bright =
-          q === 'maj' || q === 'maj7' || q === 'add9' || q === 'sus2' ? 2 : q.indexOf('dom') === 0 ? 1 : 0;
-        if (bright > bestBright) {
-          bestBright = bright;
-          best = i;
+    // 2. Plant the mode’s classic darker colour on a bright mid chair
+    const plantDeg = minor ? 5 : 8;
+    const plantQ = minor ? 'min' : 'maj';
+    const plantRoman = minor ? 'iv' : '♭VI';
+    const plantRegion = minor ? 'diatonic' : 'interchange';
+    const plant = recipeChord(t, plantDeg, plantQ, plantRoman, plantRegion, 4);
+    const plantAlready = copy.some(function (c) {
+      return sameChord(c, plant);
+    });
+    if (!plantAlready) {
+      let plantSlot = -1;
+      let plantScore = -Infinity;
+      for (let i = 1; i < n; i++) {
+        if (sameChord(copy[i], plant)) continue;
+        const prev = copy[i - 1];
+        const nxt = i + 1 < n ? copy[i + 1] : copy[0];
+        if (sameChord(prev, plant) || sameChord(nxt, plant)) continue;
+        if (isAlreadyDarkQuality(copy[i].quality) && i !== n - 1) continue;
+        let s = joinScore(prev, plant) + joinScore(plant, nxt);
+        if (isBrightQuality(copy[i].quality)) s += 0.35;
+        const d = degOf(copy[i]);
+        if (minor && (d === 3 || d === 10)) s += 0.22;
+        if (!minor && d === 5) s += 0.3;
+        if (i === n - 1) s -= 0.15;
+        if (s > plantScore) {
+          plantScore = s;
+          plantSlot = i;
         }
-      });
-      if (best >= 0 && darkenChord) {
-        const darker = darkenChord(copy[best], tonic, modeKey);
+      }
+      if (plantSlot >= 1) {
+        const ch = recipeChord(
+          t,
+          plantDeg,
+          plantQ,
+          plantRoman,
+          plantRegion,
+          copy[plantSlot].duration
+        );
+        if (applyAt(plantSlot, ch)) return copy;
+      }
+    }
+
+    // 3. Last step: darker cadence into home
+    const lastCads = [
+      recipeChord(t, 7, 'dom7b9', 'V7♭9', 'valt', copy[n - 1].duration),
+      recipeChord(t, 1, 'dom7', '♭II7', 'tritone', copy[n - 1].duration),
+      recipeChord(t, 10, 'dom7', '♭VII7', 'interchange', copy[n - 1].duration),
+    ];
+    for (let c = 0; c < lastCads.length; c++) {
+      if (applyAt(n - 1, lastCads[c])) return copy;
+    }
+
+    // 4. Fallback: best remaining darker join
+    const options = [];
+    for (let i = 1; i < n; i++) {
+      const prev = copy[i - 1];
+      const cur = copy[i];
+      const nxt = i + 1 < n ? copy[i + 1] : copy[0];
+      const last = i === n - 1;
+      if (isAlreadyDarkQuality(cur.quality) && !last) continue;
+      const cands = contextualDarken(cur, t, modeKey).concat(darkerRecipes(t, modeKey, cur.duration));
+      const seen = {};
+      cands.forEach(function (cand) {
+        if (!cand || sameChord(cand, cur)) return;
+        if (last && cand.root === copy[0].root) return;
+        const k = cand.root + ':' + cand.quality;
+        if (seen[k]) return;
+        seen[k] = 1;
+        const deg = (music.pc(cand.root) - t + 12) % 12;
+        const q = String(cand.quality || '');
+        if (minor && isBrightQuality(q) && (deg === 3 || deg === 8 || deg === 10)) return;
         if (
-          darker &&
-          (darker.root !== copy[best].root || darker.quality !== copy[best].quality)
+          isBrightQuality(cur.quality) &&
+          cand.root === cur.root &&
+          String(cand.quality).indexOf('min') === 0 &&
+          deg !== 5 &&
+          deg !== 0
         ) {
-          copy[best] = darker;
-          changed += 1;
+          return;
         }
-      }
+        let s = joinScore(prev, cand) + joinScore(cand, nxt);
+        const already = copy.some(function (c, idx) {
+          return idx !== i && sameChord(c, cand);
+        });
+        if (already) s -= 0.45;
+        options.push({ i: i, ch: cand, score: s });
+      });
     }
-
-    if (!changed && varyOneChord) {
-      return varyOneChord(copy, tonic, modeKey, Math.min(2, copy.length - 1));
-    }
+    options.sort(function (a, b) {
+      return b.score - a.score;
+    });
+    if (options.length) applyAt(options[0].i, options[0].ch);
     return copy;
   }
 
   function brightenProgression(chords, tonic, modeKey) {
     const music = M();
-    if (!chords || chords.length < 2) return chords.map((c) => music.cloneChord(c));
+    if (!chords || !chords.length) return chords.map((c) => music.cloneChord(c));
+    const t = music.pc(tonic);
     const copy = chords.map((c) => music.cloneChord(c));
-    let n = 0;
-    copy.forEach(function (c, i) {
-      if (i === 0 || n >= 2) return;
-      const q = String(c.quality || '');
-      if (q.indexOf('dim') >= 0 || q === 'halfdim' || q === 'min' || q === 'min7') {
-        const br = brightenChord(c, tonic, modeKey);
-        if (br && (br.root !== c.root || br.quality !== c.quality)) {
-          copy[i] = br;
-          n += 1;
+    const n = copy.length;
+    const minor = isMinorMode(modeKey);
+    const recipes = function (dur) {
+      if (minor) {
+        return [
+          recipeChord(t, 3, 'maj', 'III', 'diatonic', dur),
+          recipeChord(t, 5, 'maj', 'IV', 'interchange', dur),
+          recipeChord(t, 7, 'maj', 'V', 'interchange', dur),
+          recipeChord(t, 0, 'maj', 'I', 'parallel', dur),
+        ];
+      }
+      return [
+        recipeChord(t, 5, 'maj', 'IV', 'diatonic', dur),
+        recipeChord(t, 7, 'maj', 'V', 'diatonic', dur),
+        recipeChord(t, 0, 'maj', 'I', 'diatonic', dur),
+        recipeChord(t, 9, 'min', 'vi', 'diatonic', dur),
+      ];
+    };
+    const options = [];
+    for (let i = 1; i < n; i++) {
+      const prev = copy[i - 1];
+      const cur = copy[i];
+      const nxt = i + 1 < n ? copy[i + 1] : copy[0];
+      const q = String(cur.quality || '');
+      const dur = cur.duration;
+      const cands = recipes(dur).slice();
+      if (q.indexOf('dim') >= 0 || q === 'halfdim') {
+        cands.unshift(
+          music.makeChord(cur.root, 'min', {
+            duration: dur,
+            region: 'diatonic',
+            roman: cur.roman || '',
+            tag: 'brighten',
+          })
+        );
+      }
+      if (q === 'min' || q === 'min7') {
+        if (cur.root === t) {
+          cands.unshift(recipeChord(t, 0, 'maj', 'I', 'parallel', dur));
+        } else if (!minor) {
+          cands.unshift(
+            music.makeChord(cur.root, 'maj', {
+              duration: dur,
+              region: 'parallel',
+              tag: 'brighten',
+            })
+          );
         }
       }
+      const seen = {};
+      cands.forEach(function (cand) {
+        if (!cand || sameChord(cand, cur)) return;
+        const k = cand.root + ':' + cand.quality;
+        if (seen[k]) return;
+        seen[k] = 1;
+        let s = joinScore(prev, cand) + joinScore(cand, nxt) * 1.1;
+        const roman = cand.roman || '';
+        if (roman === 'IV' || roman === 'V' || roman === 'I') s += 0.22;
+        const already = copy.some(function (c, idx) {
+          return idx !== i && sameChord(c, cand);
+        });
+        if (already) s -= 0.4;
+        if (q.indexOf('dim') >= 0 || q === 'halfdim') s += 0.2;
+        options.push({ i: i, ch: cand, score: s });
+      });
+    }
+    options.sort(function (a, b) {
+      return b.score - a.score;
     });
-    return n ? copy : copy;
+    if (!options.length) return copy;
+    const pick = options[0];
+    copy[pick.i] = withBass(music.cloneChord(pick.ch), pick.ch.root);
+    copy[pick.i].duration = chords[pick.i].duration;
+    return copy;
   }
 
   function varyOneChord(chords, tonic, modeKey, index) {
@@ -1051,27 +1419,32 @@
     const i = index != null ? index : Math.min(2, chords.length - 1);
     const copy = chords.map((c) => music.cloneChord(c));
     const prev = i > 0 ? copy[i - 1] : null;
-    const next = i < copy.length - 1 ? copy[i + 1] : null;
+    const next = i < copy.length - 1 ? copy[i + 1] : copy[0];
     const suggestions = suggestNext({
       fromChord: prev || copy[i],
       tonic,
       modeKey,
       goalId: 'get_darker',
-      count: 8,
+      count: 10,
       path: copy.slice(0, i),
     });
-    // Pick first that isn't the same as current
     const cur = copy[i];
-    const pick =
-      suggestions.find(
-        (s) => !(s.chord.root === cur.root && s.chord.quality === cur.quality)
-      ) || suggestions[0];
+    let pick = null;
+    let best = -Infinity;
+    (suggestions || []).forEach(function (s) {
+      if (!s || !s.chord) return;
+      if (sameChord(s.chord, cur)) return;
+      let sc = (s.score || 0) + (next ? joinScore(s.chord, next) : 0);
+      if (sc > best) {
+        best = sc;
+        pick = s;
+      }
+    });
     if (pick) {
       copy[i] = {
         ...music.cloneChord(pick.chord),
         duration: cur.duration,
       };
-      // If next exists, maybe smooth bass into it
       if (next) copy[i] = bestInversion(prev, copy[i]);
     }
     return copy;
@@ -1882,6 +2255,13 @@
     brightenChord,
     darkenProgression,
     brightenProgression,
+    backdoorDominant,
+    closerDominant,
+    closerProgression,
+    backdoorProgression,
+    plantInnerSecondary,
+    plantLastAs,
+    pathSig,
     secondaryDominantOf,
     tritoneSubOf,
     diminishChord,

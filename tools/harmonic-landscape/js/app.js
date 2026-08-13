@@ -902,9 +902,9 @@
     const toolMap = {
       'btn-tool-darker': 'darker',
       'btn-tool-brighter': 'brighter',
-      'btn-tool-secondary': 'secondary',
-      'btn-tool-tritone': 'tritone',
-      'btn-tool-dim': 'dim',
+      'btn-tool-closer': 'closer',
+      'btn-tool-backdoor': 'backdoor',
+      'btn-tool-inner-v': 'inner-v',
       'btn-tool-reharm': 'reharm',
       'btn-tool-rhythm': 'rhythm',
       'btn-tool-bass': 'bass-colour',

@@ -810,49 +810,20 @@ H.refreshAll = function () {
     const m = H.state.mode;
     let next = null;
     const src = H.state.chords.map((c) => H.M().cloneChord(c));
-    const mapAll = function (fn, skipFirst) {
-      const out = src.slice();
-      let n = 0;
-      out.forEach(function (c, idx) {
-        if (skipFirst && idx === 0) return;
-        const ch = fn(c, idx);
-        if (
-          ch &&
-          (ch.root !== c.root || ch.quality !== c.quality)
-        ) {
-          out[idx] = ch;
-          n += 1;
-        }
-      });
-      return n ? out : null;
-    };
     if (kind === 'darker' && C.darkenProgression) {
       next = C.darkenProgression(src, t, m);
     } else if (kind === 'brighter' && C.brightenProgression) {
       next = C.brightenProgression(src, t, m);
-    } else if (kind === 'secondary' && C.secondaryDominantOf) {
-      next = mapAll(function (c, idx) {
-        return C.secondaryDominantOf(src[idx + 1] || src[0], c.duration);
-      }, true);
-    } else if (kind === 'tritone' && C.tritoneSubOf) {
-      next = mapAll(function (c, idx) {
-        const base =
-          String(c.quality || '').indexOf('dom') === 0
-            ? c
-            : C.secondaryDominantOf(src[idx + 1] || src[0], c.duration) || c;
-        return C.tritoneSubOf(base);
-      }, true);
-    } else if (kind === 'dim' && C.diminishChord) {
-      next = mapAll(function (c) {
-        return C.diminishChord(c);
-      });
+    } else if (kind === 'closer' && C.closerProgression) {
+      next = C.closerProgression(src, t, m);
+    } else if (kind === 'backdoor' && C.backdoorProgression) {
+      next = C.backdoorProgression(src, t);
+    } else if (kind === 'inner-v' && C.plantInnerSecondary) {
+      next = C.plantInnerSecondary(src, t);
+    } else if (kind === 'reharm' && C.reharmBar) {
+      next = C.reharmBar(src, t, m);
     } else if (kind === 'reharm' && C.varyOneChord) {
-      next = src.slice();
-      src.forEach(function (c, idx) {
-        if (idx === 0) return;
-        const one = C.varyOneChord(next, t, m, idx);
-        if (one) next = one;
-      });
+      next = C.varyOneChord(src, t, m, Math.min(2, src.length - 1));
     } else if (kind === 'rhythm' && C.varyRhythmOnly) {
       next = C.varyRhythmOnly(src);
     } else if (kind === 'bass-colour' && C.varySameBassNewUpper) {
@@ -863,6 +834,19 @@ H.refreshAll = function () {
     }
     if (!next || !next.length) {
       H.setSyncStatus('Variation not available');
+      return;
+    }
+    const sig = C.pathSig
+      ? C.pathSig
+      : function (arr) {
+          return (arr || [])
+            .map(function (c) {
+              return c.root + ':' + (c.quality || '');
+            })
+            .join('|');
+        };
+    if (sig(next) === sig(src)) {
+      H.setSyncStatus('Already that colour · try another tool or right-click a step');
       return;
     }
     H.pushUndo();
@@ -883,12 +867,12 @@ H.refreshAll = function () {
       H.A().playChord({ chord: H.state.chords[H.state.selected] });
     }
     const labels = {
-      darker: 'Darkened the cell · ♭VI / borrow (not every chord)',
-      brighter: 'Brightened a couple of dark spots',
-      secondary: 'Each step → V7 of the next (home kept)',
-      tritone: 'Tritone across the cell (home kept)',
-      dim: 'Diminished whole cell',
-      reharm: 'Reharmed the cell',
+      darker: 'Darker join · one colour that still leads',
+      brighter: 'Brighter join',
+      closer: 'Closer · last step is V7 into home',
+      backdoor: 'Backdoor · last step is ♭VII7',
+      'inner-v': 'Inner V · one V7 of a later chord',
+      reharm: 'Reharmed one step',
       rhythm: 'Rhythm shape',
       'bass-colour': 'Same bass · new colour',
     };
