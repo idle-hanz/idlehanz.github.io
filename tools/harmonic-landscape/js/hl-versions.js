@@ -267,8 +267,8 @@ H.resolveCompareCell = function (song) {
       '<button type="button" class="btn ghost" id="btn-var-reharm" title="Fork with two reharm joins">+ Reharm</button>' +
       '<button type="button" class="btn ghost" id="btn-var-major" title="Fork: minors become majors. Majors stay. Same roots.">+ Major</button>' +
       '<button type="button" class="btn ghost" id="btn-var-minor" title="Fork: majors become minors. Minors stay. Same roots.">+ Minor</button>' +
-      '<button type="button" class="btn ghost" id="btn-var-in-major" title="Rewrite in the parallel major: same degrees, roots can move (D → D♯m in B). Chromatic steps stay. Uses each step’s local key.">+ In major</button>' +
-      '<button type="button" class="btn ghost" id="btn-var-in-minor" title="Rewrite in the parallel minor: same degrees, roots can move (D♯m → D in B). Chromatic steps stay. Uses each step’s local key.">+ In minor</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-in-major" title="Rewrite in the parallel major: same degrees, roots can move (D → D♯m in B). If already major, lifts remaining minors.">+ In major</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-in-minor" title="Rewrite in the parallel minor: same degrees, roots can move (C–G–Am–F → Cm–Gm–A♭–Fm). If already minor, darkens the major islands.">+ In minor</button>' +
       '<button type="button" class="btn ghost" id="btn-var-darken" title="Fork with one darker join">+ Darken</button>' +
       '<button type="button" class="btn ghost" id="btn-var-brighter" title="Fork with one brighter join">+ Brighten</button>' +
       '<button type="button" class="btn ghost" id="btn-ab-ver" title="Play this then blue compare">A/B listen</button>' +

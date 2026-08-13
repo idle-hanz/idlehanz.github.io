@@ -1719,14 +1719,17 @@
   /**
    * Strict parallel key: same scale-degree functions, new mode.
    * Roots can move (Bm: D as III → D♯m as iii in B major).
-   * Uses each step’s local tonic after a modulation. Chromatic steps stay.
+   * Source mode is inferred from the roots (not only the stamped mode), so
+   * “In minor” still works when write-home is already Natural Minor.
+   * If the cell is already in that key, fall back to a same-root colour wash
+   * so the button is never a silent no-op.
    */
   function parallelKeyProgression(chords, tonic, modeKey, toward) {
     const music = M();
     if (!chords || !chords.length) return chords.map((c) => music.cloneChord(c));
     const targetMode = toward === 'maj' ? 'major' : 'minor';
+    const oppositeMode = toward === 'maj' ? 'minor' : 'major';
     const fallbackT = tonic != null ? music.pc(tonic) : music.pc(chords[0].root);
-    const fallbackM = modeKey || 'minor';
     const wantSeventh = function (q) {
       q = String(q || '');
       return (
@@ -1736,33 +1739,70 @@
         q === 'maj9'
       );
     };
-    return chords.map(function (src) {
-      const c = music.cloneChord(src);
-      if (c.custom || c.quality === 'custom') return c;
-      const t = c.localTonic != null ? music.pc(c.localTonic) : fallbackT;
-      const fromKey = c.localMode || fallbackM;
+    const remapOne = function (src, t, fromKey) {
+      if (src.custom || src.quality === 'custom') return null;
       const from = music.MODES[fromKey] || music.MODES.minor;
-      const to = music.MODES[targetMode] || music.MODES.major;
-      if (from.romanBase === to.romanBase) return c;
-      const deg = (music.pc(c.root) - t + 12) % 12;
+      const deg = (music.pc(src.root) - t + 12) % 12;
       const idx = from.degrees.indexOf(deg);
-      if (idx < 0) return c;
-      const destList = music.diatonicChords(t, targetMode, wantSeventh(c.quality));
+      if (idx < 0) return null;
+      const destList = music.diatonicChords(t, targetMode, wantSeventh(src.quality));
       const dest = destList[idx];
-      if (!dest) return c;
+      if (!dest) return null;
+      if (dest.root === src.root && dest.quality === src.quality) return null;
       let ch = music.makeChord(dest.root, dest.quality, {
-        duration: c.duration,
+        duration: src.duration,
         region: 'parallel',
         roman: dest.roman || '',
         tag: 'parallel-key',
         preferFlat: music.keyPrefersFlat ? music.keyPrefersFlat(t, targetMode) : false,
       });
       ch = withBass(ch, ch.root);
-      ch.duration = c.duration;
+      ch.duration = src.duration;
       ch.localTonic = t;
       ch.localMode = targetMode;
       return ch;
+    };
+
+    const n = chords.length;
+    const homes = chords.map(function (c) {
+      return c.localTonic != null ? music.pc(c.localTonic) : fallbackT;
     });
+    const out = chords.map((c) => music.cloneChord(c));
+    let i = 0;
+    while (i < n) {
+      let j = i + 1;
+      while (j < n && homes[j] === homes[i]) j += 1;
+      const slice = out.slice(i, j);
+      const t = homes[i];
+      const fromKey = oppositeMode;
+      let changed = 0;
+      for (let k = i; k < j; k++) {
+        const mapped = remapOne(out[k], t, fromKey);
+        if (mapped) {
+          out[k] = mapped;
+          changed += 1;
+        }
+      }
+      if (!changed) {
+        const washed = parallelProgression(slice, toward === 'maj' ? 'maj' : 'min');
+        for (let k = 0; k < washed.length; k++) {
+          washed[k].localTonic = t;
+          washed[k].localMode = targetMode;
+          if (
+            washed[k].root !== slice[k].root ||
+            washed[k].quality !== slice[k].quality
+          ) {
+            out[i + k] = washed[k];
+            changed += 1;
+          } else {
+            out[i + k].localTonic = t;
+            out[i + k].localMode = targetMode;
+          }
+        }
+      }
+      i = j;
+    }
+    return out;
   }
 
   /** Two darker/colour joins — a whole-cell reharm take, not one step. */
