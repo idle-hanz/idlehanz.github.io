@@ -717,7 +717,38 @@ H.chordFromChaseSeat = function (seat, key) {
   };
 
   /**
-   * Click a Chase seat: write that scale chord into the path.
+   * Map write gate — Select mode never mutates on a single click.
+   * Write requires: mapGestureMode==='write', or dblClick, or forceWrite.
+   */
+  H.shouldWriteFromMap = function (clickOpts) {
+    clickOpts = clickOpts || {};
+    if (clickOpts.forceWrite) return true;
+    if (clickOpts.dblClick) return true;
+    const mode = H.state.mapGestureMode || 'select';
+    if (mode === 'write') return true;
+    return false;
+  };
+
+  /**
+   * Preview a chord (play + status) without writing the path.
+   */
+  H.previewMapChord = function (ch, hint) {
+    if (!ch) return;
+    if (H.A()) {
+      H.A().ensure();
+      H.A().playChord({ chord: ch, soft: true, duration: 0.4, identify: true });
+    }
+    H.setSyncStatus(
+      (hint || 'Preview') +
+        ' · ' +
+        (ch.name || '') +
+        ' · double-click to add · or switch map to Write'
+    );
+  };
+
+  /**
+   * Click a Chase seat.
+   * Browse (Select): preview only. Write mode / double-click: write path.
    * Seat on inactive disk → write onto that disk and switch write home (no full-path retag).
    */
   H.selectChaseSeat = function (seatInfo, clickOpts) {
@@ -738,13 +769,28 @@ H.chordFromChaseSeat = function (seat, key) {
       ch.duration = H.stepDuration();
       H.stampKey(ch, diskKey);
 
+      // Always soft-play so exploration feels live
+      if (H.A()) {
+        H.A().ensure();
+        H.A().playChord({ chord: ch, soft: true, duration: 0.4, identify: true });
+      }
+
+      if (!H.shouldWriteFromMap(clickOpts)) {
+        H.setSyncStatus(
+          'Preview · ' +
+            (ch.name || '') +
+            (seatInfo.roman ? ' · ' + seatInfo.roman : '') +
+            ' · double-click to add · Write mode = single-click add'
+        );
+        return;
+      }
+
       // Clicking another disk's seat switches gravity so From here / new steps match
       const switched =
         disk &&
         !disk.active &&
         (disk.tonic !== H.state.tonic || (disk.mode || H.state.mode) !== H.state.mode);
 
-      // One undo for home switch + chord (commitHorizon skipUndo when we pre-push)
       if (switched) {
         H.pushUndo();
         H.setWritingHome(disk.tonic, disk.mode || H.state.mode, {
@@ -753,15 +799,10 @@ H.chordFromChaseSeat = function (seat, key) {
         });
       }
 
-      if (H.A()) {
-        H.A().ensure();
-        H.A().playChord({ chord: ch, soft: true, duration: 0.4, identify: true });
-      }
-      // Seat write rules:
+      // Write rules (Write mode / double-click only):
       //   mid-path selected → edit that step
-      //   last step / empty → append (build forward)
-      //   Shift → insert after selection
-      //   Alt → force append at end
+      //   last step / empty → append
+      //   Shift → insert after · Alt → force append
       let intent = 'auto';
       if (clickOpts.altKey) intent = 'append';
       else if (clickOpts.shiftKey) intent = 'insert';
@@ -783,9 +824,16 @@ H.chordFromChaseSeat = function (seat, key) {
           { mode: 'append', skipUndo: switched }
         );
       }
+      if (H.showToast) {
+        H.showToast('Added · ' + (ch.name || 'chord'));
+      }
     } catch (err) {
       console.error('selectChaseSeat failed', err);
-      if (H.setSyncStatus) H.setSyncStatus('Add failed · ' + (err && err.message ? err.message : 'error'));
+      if (H.setSyncStatus) {
+        H.setSyncStatus(
+          'Add failed · ' + (err && err.message ? err.message : 'error')
+        );
+      }
     }
   };
 

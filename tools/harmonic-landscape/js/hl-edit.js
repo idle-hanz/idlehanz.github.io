@@ -63,13 +63,53 @@ H.smoothVoicings = function () {
   }
 
   H.removeSelected = function () {
-    if (H.state.selected < 0 || !H.state.chords.length) return;
+    if (!H.state.chords.length) return;
+    const n = H.state.chords.length;
+    let idxs = H.getSelectedIndices
+      ? H.getSelectedIndices().filter(function (i) {
+          return i >= 0 && i < n;
+        })
+      : [];
+    if (!idxs.length && H.state.selected >= 0 && H.state.selected < n) {
+      idxs = [H.state.selected];
+    }
+    if (!idxs.length) return;
+    idxs = idxs.slice().sort(function (a, b) {
+      return b - a;
+    }); // delete high→low
     H.pushUndo();
-    H.state.chords.splice(H.state.selected, 1);
-    H.state.selected = Math.min(H.state.selected, H.state.chords.length - 1);
+    const removed = idxs.length;
+    idxs.forEach(function (i) {
+      H.state.chords.splice(i, 1);
+    });
+    const keep = Math.min(
+      idxs[idxs.length - 1] || 0,
+      Math.max(0, H.state.chords.length - 1)
+    );
+    H.state.selected = H.state.chords.length ? keep : -1;
+    H.state.selectedIndices = H.state.selected >= 0 ? [H.state.selected] : [];
     H.state.fromPackId = null;
     H.afterEdit();
-  }
+    if (H.showToast) {
+      H.showToast(
+        removed === 1
+          ? 'Deleted step'
+          : 'Deleted ' + removed + ' steps'
+      );
+    } else if (H.setSyncStatus) {
+      H.setSyncStatus(
+        removed === 1 ? 'Deleted step' : 'Deleted ' + removed + ' steps'
+      );
+    }
+  };
+
+  /** Delete a single path index (strip × / map context). */
+  H.removeChordAt = function (index) {
+    if (index == null || index < 0 || index >= H.state.chords.length) return;
+    H.state.selected = index;
+    H.state.selectedIndices = [index];
+    H.removeSelected();
+  };
 
   H.setDuration = function (beats, skipUndo) {
     const indices = H.getSelectedIndices

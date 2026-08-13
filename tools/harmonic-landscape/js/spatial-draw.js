@@ -809,12 +809,57 @@
       }
     }
 
-    // Aim mode: chord stays put; magnet aims at ring of labelled targets
+    // Aim / reorder: chord stays put; magnet follows the pointer
     if (this._mode === 'node' && this._dragNode) {
       const origin = this._dragOrigin || { x: this._dragNode.x, y: this._dragNode.y };
       const magnet = this._dragPos || origin;
       const i = this._dragNode.i;
       const z = this.camera.zoom;
+      const reorderDrag = !!(this._reorderOnly || !this._allowAim);
+
+      if (reorderDrag) {
+        ctx.beginPath();
+        ctx.moveTo(origin.x, origin.y);
+        ctx.lineTo(magnet.x, magnet.y);
+        ctx.strokeStyle = 'rgba(232,201,138,0.45)';
+        ctx.lineWidth = 1.6 / z;
+        ctx.setLineDash([5 / z, 4 / z]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        const dropI = this._reorderDropI;
+        const dropN =
+          dropI >= 0 && this.nodes && this.nodes[dropI] ? this.nodes[dropI] : null;
+        if (dropN) {
+          ctx.beginPath();
+          ctx.arc(dropN.x, dropN.y, (dropN.r || 14) + 10, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(126,184,218,0.95)';
+          ctx.lineWidth = 2.4 / z;
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.arc(magnet.x, magnet.y, (this._dragNode.r || 14) * 0.92, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(232,201,138,0.28)';
+        ctx.fill();
+        ctx.strokeStyle = '#e8c98a';
+        ctx.lineWidth = 1.8 / z;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(232,201,138,0.95)';
+        ctx.font = `bold ${11 / z}px DM Sans, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const nm =
+          (this._dragNode.chord && this._dragNode.chord.name) || 'step';
+        ctx.fillText(nm, magnet.x, magnet.y);
+        ctx.font = `${10 / z}px DM Sans, sans-serif`;
+        ctx.fillStyle = 'rgba(232,201,138,0.8)';
+        ctx.fillText(
+          dropN
+            ? 'Release → position ' + (dropI + 1)
+            : 'Drop on another step to reorder · miss cancels',
+          magnet.x,
+          magnet.y - (this._dragNode.r || 14) - 16 / z
+        );
+      } else {
 
       // Dim everything slightly under aim overlay feel via faint guide rings
       ctx.beginPath();
@@ -957,6 +1002,7 @@
         ? 'Release â†’ ' + this.snapAlt.label + (this.snapAlt.role ? ' Â· ' + this.snapAlt.role : '')
         : 'Drag onto a seat Â· release free = cancel Â· quality in inspector';
       ctx.fillText(hud, magnet.x, magnet.y - 18 / z);
+      }
     }
 
     // Primary path nodes â€” solid, numbered, heavier than hollow options
@@ -1040,6 +1086,30 @@
         ctx.stroke();
       }
 
+      // Delete badge on the selected step (not while dragging)
+      if (isCur && this._mode !== 'node' && this._pathDeleteWorld) {
+        const b = this._pathDeleteWorld(n);
+        if (b) {
+          const zDel = this.camera.zoom || 1;
+          const hovered =
+            this.hover &&
+            this.hover.type === 'pathDelete' &&
+            this.hover.item === n;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+          ctx.fillStyle = hovered ? 'rgba(224,122,106,0.95)' : 'rgba(20,14,12,0.9)';
+          ctx.fill();
+          ctx.strokeStyle = hovered ? '#fff4d6' : 'rgba(224,122,106,0.95)';
+          ctx.lineWidth = 1.3 / zDel;
+          ctx.stroke();
+          ctx.fillStyle = hovered ? '#1a1410' : '#e07a6a';
+          ctx.font = `bold ${12 / zDel}px DM Sans, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('×', b.x, b.y + 0.5 / zDel);
+        }
+      }
+
       ctx.fillStyle = aiming ? 'rgba(232,201,138,0.9)' : '#0a0a0a';
       ctx.font = `bold ${Math.max(9, 11 / this.camera.zoom)}px DM Sans, sans-serif`;
       ctx.textBaseline = 'middle';
@@ -1086,47 +1156,54 @@
     ctx.fillStyle = 'rgba(180,168,150,0.55)';
     ctx.font = '11px Crimson Text, Georgia, serif';
     ctx.textAlign = 'left';
+    const browse = this._isBrowse ? this._isBrowse() : true;
+    const writeHint = browse ? ' · double-click to add · or switch to Write' : ' · click to add';
     let tip =
       this._mode === 'node'
-        ? this.snapAlt
-          ? 'Release to set Â· audition: prev â†’ ' + this.snapAlt.label + ' â†’ next'
-          : 'Drag onto a seat to change Â· release here keeps this bridge chord'
+        ? this._reorderOnly || !this._allowAim
+          ? this._reorderDropI >= 0
+            ? 'Release to reorder · nothing new is added'
+            : 'Drop on another step to reorder · miss cancels · nothing added'
+          : this.snapAlt
+            ? 'Release to set · audition: prev → ' + this.snapAlt.label + ' → next'
+            : 'Drag onto a seat to change · release here cancels'
+        : this.hover && this.hover.type === 'pathDelete'
+          ? 'Delete this step · Backspace / Delete also works'
         : this.hover && this.hover.type === 'edge'
-          ? 'Click edge â†’ insert a step between Â· then drag it onto a chord seat'
+          ? browse
+            ? 'Select a nearby step · switch to Write to insert on the edge'
+            : 'Click edge → insert a step between · then drag it onto a chord seat'
         : this.hover && this.hover.type === 'home'
-          ? 'HOME = write-key tonic (Chase disk centre) â€” click to start/land'
+          ? 'HOME = write-key tonic' + writeHint
           : this.hover && this.hover.type === 'diskHome'
-            ? 'Previous key disk â€” click centre to make it write home again (path keeps ownership)'
+            ? 'Previous key disk — click centre to make it write home again (path keeps ownership)'
             : this.hover && this.hover.type === 'functionNode'
-              ? 'Function chart Â· click to write ' +
+              ? 'In this key · ' +
                 ((this.hover.item && this.hover.item.label) || '') +
-                ' Â· same key neighbourhood'
+                writeHint
               : this.hover && this.hover.type === 'horizon'
-                ? 'Option on/near harmonic scale Â· green ghost = join Â· click to write'
-                : this.hover && this.hover.type === 'edge'
-                  ? 'Click green + on the curve to insert a bridge chord (keeps total length)'
-                  : this.hover && this.hover.type === 'altNode'
-                    ? 'Blue compare path â€” names show where versions differ'
+                ? 'Option on/near the scale' + writeHint
+                : this.hover && this.hover.type === 'altNode'
+                    ? 'Blue compare path — names show where versions differ'
                     : this.hover && this.hover.type === 'seat'
-                      ? 'Click seat to add ' +
+                      ? (browse ? 'Preview ' : 'Add ') +
                         (this.hover.item.roman || '') +
-                        (this.hover.item.activeDisk
-                          ? ' Â· drag a path chord onto a seat to move it'
-                          : ' on other disk Â· switches write home')
+                        writeHint
                       : this.hover && this.hover.type === 'ghostOption'
-                        ? 'Establish home in ' +
-                          ((this.hover.item &&
-                            this.hover.item.ghostDisk &&
-                            this.hover.item.label) ||
-                            'nearby key') +
-                          ' Â· click to land'
+                        ? 'Nearby key · ' +
+                          ((this.hover.item && this.hover.item.label) || '') +
+                          writeHint
                         : this.hover && this.hover.type === 'ghostDisk'
-                          ? 'Nearby key Â· click a pad (I or V7â†’I) to establish home'
+                          ? 'Nearby key · double-click a pad to leave home · Write mode = click'
+                          : this.hover && this.hover.type === 'hoverSuggest'
+                            ? 'Next move · ' +
+                              ((this.hover.item && this.hover.item.label) || '') +
+                              writeHint
                           : this.mapView === 'function'
-                            ? 'Function Â· same-key atlas Â· blue V7 Â· purple borrow Â· Land/mod â†’ Chase'
+                            ? 'In this key · gold diatonic · Select previews · Write adds'
                             : this.nodes && this.nodes.length
-                              ? 'Chase Â· seats = in-key Â· purple ghosts = adjacent keys Â· establish home to travel'
-                              : 'Click HOME or a roman seat (IV, V, viâ€¦) to start';
+                              ? 'Select = preview / drag reorder · × deletes · Write or double-click adds'
+                              : 'Write or double-click HOME / a roman seat to start';
     ctx.fillText(tip, 10, h - 12);
 
     // Map reading legend (top-left)

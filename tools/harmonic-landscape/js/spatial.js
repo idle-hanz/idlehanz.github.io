@@ -124,6 +124,8 @@
     this._last = null;
     this._pendingEdgeInsert = null;
     this._aimFromStrip = false;
+    this._reorderDropI = -1;
+    this._pendingClick = null;
     this.alts = [];
     this.snapAlt = null;
     this._aimPreview = null;
@@ -135,12 +137,69 @@
 
   SpatialMap.prototype._bind = function () {
     const c = this.canvas;
-    c.addEventListener('pointerdown', (e) => this._down(e));
+    try {
+      c.tabIndex = 0;
+    } catch (_) {}
+    c.addEventListener('pointerdown', (e) => {
+      try {
+        c.focus({ preventScroll: true });
+      } catch (_) {
+        try {
+          c.focus();
+        } catch (__) {}
+      }
+      this._down(e);
+    });
     c.addEventListener('pointermove', (e) => this._move(e));
     c.addEventListener('pointerup', (e) => this._up(e));
     c.addEventListener('pointercancel', (e) => this._up(e));
     c.addEventListener('pointerleave', () => {
       if (this._mode !== 'node') this.hover = null;
+    });
+    // Double-click writes in Select/browse mode (single click is preview only)
+    c.addEventListener('dblclick', (e) => {
+      if (e.button != null && e.button !== 0) return;
+      const pt = this._eventCanvasXY(e);
+      let hit = this._hit(pt.sx, pt.sy);
+      if (!hit) hit = this._hitLoose(pt.sx, pt.sy);
+      // Double-clicking a path step must never add — the seat under it used to write
+      if (hit && (hit.type === 'path' || hit.type === 'pathDelete')) return;
+      if (this._nearestPathNode) {
+        const ww = this.screenToWorld(pt.sx, pt.sy);
+        if (this._nearestPathNode(ww, 22)) return;
+      }
+      if (!hit) return;
+      const writeOpts = {
+        dblClick: true,
+        shiftKey: !!e.shiftKey,
+        altKey: !!e.altKey,
+        forceWrite: true,
+      };
+      if (hit.type === 'seat' && this.onSelectSeat) {
+        this.onSelectSeat(hit.item, writeOpts);
+      } else if (hit.type === 'functionNode' && this.onSelectHorizon) {
+        this.onSelectHorizon(hit.item, writeOpts);
+      } else if (hit.type === 'hoverSuggest' && this.onSelectHoverSuggest) {
+        this.onSelectHoverSuggest(hit.item, writeOpts);
+      } else if (hit.type === 'home' && this.onSelectHome) {
+        this.onSelectHome(writeOpts);
+      } else if (hit.type === 'ghostOption' && this.onSelectGhostOption) {
+        this.onSelectGhostOption(hit.item, writeOpts);
+      } else if (hit.type === 'ghostDisk') {
+        const opts = (this.ghostOptions || []).filter(function (o) {
+          return (
+            o.ghostDisk === hit.item ||
+            (o.ghostDisk &&
+              hit.item &&
+              o.ghostDisk.tonic === hit.item.tonic &&
+              o.ghostDisk.mode === hit.item.mode)
+          );
+        });
+        const pick = opts.find(function (o) {
+          return o.id === 'tonic';
+        }) || opts[0];
+        if (pick && this.onSelectGhostOption) this.onSelectGhostOption(pick, writeOpts);
+      }
     });
     // Right-click palette (colours / strong next / packs) â€” not browser menu
     c.addEventListener('contextmenu', (e) => {

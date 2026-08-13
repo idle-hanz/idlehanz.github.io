@@ -10,6 +10,47 @@
   var REGION = HS.REGION;
   var SEAT = HS.SEAT;
 
+  SpatialMap.prototype._appState = function () {
+    return typeof global.HLApp !== 'undefined' && global.HLApp.state
+      ? global.HLApp.state
+      : null;
+  };
+
+  SpatialMap.prototype._gestureMode = function () {
+    const st = this._appState();
+    return (st && st.mapGestureMode) || 'select';
+  };
+
+  /** Select / Aim / Reorder — click never writes. Only Write mode writes on click. */
+  SpatialMap.prototype._isBrowse = function () {
+    return this._gestureMode() !== 'write';
+  };
+
+  SpatialMap.prototype._nearestPathNode = function (w, maxD) {
+    if (!this.nodes || !this.nodes.length || !w) return null;
+    let best = null;
+    let bestD = Infinity;
+    const cap = maxD != null ? maxD : 28;
+    for (let i = 0; i < this.nodes.length; i++) {
+      const n = this.nodes[i];
+      if (!n) continue;
+      const d = Math.hypot(w.x - n.x, w.y - n.y);
+      const grabR = Math.max(cap, (n.r || 14) + 12);
+      if (d <= grabR && d < bestD) {
+        bestD = d;
+        best = n;
+      }
+    }
+    return best;
+  };
+
+  /** World-space × badge on the selected path node. */
+  SpatialMap.prototype._pathDeleteWorld = function (n) {
+    if (!n) return null;
+    const r = n.r || 14;
+    return { x: n.x + r + 9, y: n.y - r - 9, r: 11 };
+  };
+
   SpatialMap.prototype.beginAimAtIndex = function (index, opts) {
     opts = opts || {};
     if (index == null || index < 0) return false;
@@ -257,47 +298,29 @@
     // that target must stay clickable to APPEND another copy (Em Em repeats).
     // Old bias -30 made "click Em again" always re-select the first Em.
     let nearPath = false;
-    const seats = this.scaleSeats || [];
-    const chaseSeats = this.mapView !== 'function';
-    const fnNodes =
-      this.mapView === 'function' && this.functionNodes ? this.functionNodes : [];
     for (let i = 0; i < this.nodes.length; i++) {
       const n = this.nodes[i];
       const d = Math.hypot(w.x - n.x, w.y - n.y);
       const grabR = Math.max(28, (n.r || 14) + 12);
       if (d <= grabR) {
         nearPath = true;
-        let onWriteTarget = false;
-        if (chaseSeats && n.chord) {
-          for (let si = 0; si < seats.length; si++) {
-            const s = seats[si];
-            if (!s.activeDisk) continue;
-            const sd = Math.hypot(w.x - s.x, w.y - s.y);
-            const sr = (s.r || 16) + 5;
-            if (sd <= sr && s.root === n.chord.root) {
-              onWriteTarget = true;
-              break;
-            }
-          }
+        add({ type: 'path', item: n }, d, -30);
+      }
+    }
+
+    // × on the selected step — highest priority so delete is always reachable
+    if (
+      this._mode !== 'node' &&
+      this.current >= 0 &&
+      this.nodes &&
+      this.nodes[this.current]
+    ) {
+      const del = this._pathDeleteWorld(this.nodes[this.current]);
+      if (del) {
+        const dd = Math.hypot(w.x - del.x, w.y - del.y);
+        if (dd <= del.r + 3) {
+          add({ type: 'pathDelete', item: this.nodes[this.current] }, dd, -50);
         }
-        if (!onWriteTarget && fnNodes.length && n.chord) {
-          for (let fi = 0; fi < fnNodes.length; fi++) {
-            const fn = fnNodes[fi];
-            const fd = Math.hypot(w.x - fn.x, w.y - fn.y);
-            if (
-              fd <= (fn.r || 12) + 8 &&
-              fn.chord &&
-              fn.chord.root === n.chord.root
-            ) {
-              onWriteTarget = true;
-              break;
-            }
-          }
-        }
-        // Colocated with seat/function node: lose so click can APPEND.
-        // Shift/Ctrl handled in _down to force path select when you need it.
-        const bias = onWriteTarget && d > (n.r || 14) * 0.65 ? 6 : onWriteTarget ? 3 : -30;
-        add({ type: 'path', item: n }, d, bias);
       }
     }
 
@@ -448,7 +471,12 @@
       for (let i = 0; i < this.ghostOptions.length; i++) {
         const g = this.ghostOptions[i];
         const d = Math.hypot(w.x - g.x, w.y - g.y);
-        if (d <= (g.r || 14) + 14) add({ type: 'ghostOption', item: g }, d, -1);
+        if (d <= (g.r || 14) + 14)
+          add(
+            { type: 'ghostOption', item: g },
+            d,
+            this._isBrowse() ? 5 : -1
+          );
       }
     }
     // Ghost disk face (click = land tonic)
@@ -489,6 +517,17 @@
         best = hit;
       }
     };
+    // Prefer a nearby path step so grab/select never misses onto a seat
+    const pathN = this._nearestPathNode(w, 34);
+    if (pathN) {
+      consider(
+        { type: 'path', item: pathN },
+        Math.hypot(w.x - pathN.x, w.y - pathN.y),
+        34
+      );
+    }
+    // Browse: never expand onto write targets (that felt like “look” → add)
+    if (this._isBrowse()) return best;
     if (this.scaleSeats && this.scaleSeats.length) {
       this.scaleSeats.forEach((s) => {
         if (this.mapView === 'function' && !s.activeDisk) return;
@@ -549,6 +588,39 @@
     }
     this._moved = false;
     this.snapAlt = null;
+    // Gesture mode from app (Select never aims unless Shift; Reorder never aims)
+    var gMode =
+      typeof global.HLApp !== 'undefined' && global.HLApp.state
+        ? global.HLApp.state.mapGestureMode || 'select'
+        : 'select';
+    this._allowAim = gMode === 'aim' || (gMode === 'select' && !!e.shiftKey);
+    this._reorderOnly = gMode === 'reorder' || (gMode === 'select' && !e.shiftKey);
+    this._reorderDropI = -1;
+
+    // Browse: a path chord sitting on a seat / arrow / ghost must grab, never write
+    if (
+      this._isBrowse() &&
+      hit &&
+      hit.type !== 'path' &&
+      hit.type !== 'pathDelete' &&
+      hit.type !== 'altNode'
+    ) {
+      const wwGrab = this.screenToWorld(sx, sy);
+      const nearGrab = this._nearestPathNode(wwGrab, 24);
+      if (nearGrab) hit = { type: 'path', item: nearGrab };
+    }
+
+    if (hit && hit.type === 'pathDelete') {
+      const idx = hit.item && hit.item.i;
+      if (
+        typeof global.HLApp !== 'undefined' &&
+        global.HLApp.removeChordAt &&
+        idx != null
+      ) {
+        global.HLApp.removeChordAt(idx);
+      }
+      return;
+    }
 
     // Shift/Ctrl+click a path node on a seat: force select (seat would win otherwise)
     if (
@@ -600,55 +672,54 @@
       this.canvas.style.cursor = 'pointer';
       return;
     }
-    if (hit && hit.type === 'hoverSuggest') {
-      if (this.onSelectHoverSuggest) this.onSelectHoverSuggest(hit.item);
-      return;
-    }
-    if (hit && hit.type === 'seat') {
-      if (this.onSelectSeat) {
-        this.onSelectSeat(hit.item, {
-          shiftKey: !!e.shiftKey,
-          altKey: !!e.altKey,
-          ctrlKey: !!e.ctrlKey,
-          metaKey: !!e.metaKey,
-        });
-      }
-      return;
-    }
-    if (hit && hit.type === 'functionNode') {
-      // Same write path as From here / horizon; pass modifiers for insert vs append
-      if (this.onSelectHorizon) {
-        this.onSelectHorizon(hit.item, {
-          shiftKey: !!e.shiftKey,
-          altKey: !!e.altKey,
-        });
-      }
-      return;
-    }
-    if (hit && hit.type === 'home') {
-      if (this.onSelectHome) this.onSelectHome();
-      return;
-    }
-    if (hit && hit.type === 'diskHome') {
-      // Click centre of a previous-key disk -> re-activate that write home
-      if (this.onSelectDiskHome) this.onSelectDiskHome(hit.item);
-      else if (this.onSelectHome && hit.item && hit.item.active) this.onSelectHome();
-      return;
-    }
-    if (hit && hit.type === 'ghostOption') {
-      if (this.onSelectGhostOption) this.onSelectGhostOption(hit.item);
-      return;
-    }
-    if (hit && hit.type === 'ghostDisk') {
-      // Soft select first establish option (tonic) if present
-      const opts = (this.ghostOptions || []).filter(
-        (o) => o.ghostDisk === hit.item || (o.ghostDisk && hit.item && o.ghostDisk.tonic === hit.item.tonic && o.ghostDisk.mode === hit.item.mode)
-      );
-      const pick = opts.find((o) => o.id === 'tonic') || opts[0];
-      if (pick && this.onSelectGhostOption) this.onSelectGhostOption(pick);
+    // Seats / arrows / ghosts: wait for pointerup. Press+drag used to add a chord
+    // before the grab even started.
+    if (
+      hit &&
+      (hit.type === 'hoverSuggest' ||
+        hit.type === 'seat' ||
+        hit.type === 'functionNode' ||
+        hit.type === 'home' ||
+        hit.type === 'diskHome' ||
+        hit.type === 'ghostOption' ||
+        hit.type === 'ghostDisk')
+    ) {
+      this._pendingClick = {
+        hit: hit,
+        shiftKey: !!e.shiftKey,
+        altKey: !!e.altKey,
+        ctrlKey: !!e.ctrlKey,
+        metaKey: !!e.metaKey,
+      };
+      this._mode = 'pan';
+      this._moved = false;
+      this._ptrDown = { x: e.clientX, y: e.clientY };
+      this._last = { x: e.clientX, y: e.clientY };
+      this.canvas.setPointerCapture(e.pointerId);
       return;
     }
     if (hit && hit.type === 'edge' && this.onInsertBetween) {
+      var edgeMode =
+        typeof global.HLApp !== 'undefined' && global.HLApp.state
+          ? global.HLApp.state.mapGestureMode || 'select'
+          : 'select';
+      if (edgeMode !== 'write' && !e.shiftKey) {
+        // Browse: edge click only selects nearer step — never inserts
+        const ww0 = this.screenToWorld(sx, sy);
+        const a0 = this.nodes[hit.afterIndex];
+        const b0 = this.nodes[hit.afterIndex + 1];
+        const nearer0 =
+          a0 && b0
+            ? Math.hypot(ww0.x - a0.x, ww0.y - a0.y) <=
+              Math.hypot(ww0.x - b0.x, ww0.y - b0.y)
+              ? a0
+              : b0
+            : a0 || b0;
+        if (nearer0 && this.onSelectPath) {
+          this.onSelectPath(nearer0.i, nearer0.chord, { deferUI: true });
+        }
+        return;
+      }
       // IMPORTANT: do NOT insert on mousedown. That made short chords (G7 0.5b)
       // insert a bridge the instant you tried to drag the node.
       // Wait for a real drag; plain click selects the nearer endpoint instead.
@@ -732,6 +803,11 @@
     }
 
     if (this._mode === 'pan' && this._last) {
+      const pd =
+        this._ptrDown
+          ? Math.hypot(e.clientX - this._ptrDown.x, e.clientY - this._ptrDown.y)
+          : 99;
+      if (this._pendingClick && pd < 10) return;
       this.camera.tx -= (e.clientX - this._last.x) / this.camera.zoom;
       this.camera.ty -= (e.clientY - this._last.y) / this.camera.zoom;
       this.camera.x = this.camera.tx;
@@ -752,8 +828,26 @@
           this._dragPos = { x: w.x, y: w.y };
           return;
         }
-        this._aimArmed = true;
         this._moved = true;
+        if (this._reorderOnly || !this._allowAim) {
+          this._aimArmed = false;
+          this._dragPos = { x: w.x, y: w.y };
+          this._reorderDropI = -1;
+          let bestDrop = Infinity;
+          for (let ni = 0; ni < (this.nodes || []).length; ni++) {
+            if (this._dragNode && ni === this._dragNode.i) continue;
+            const nn = this.nodes[ni];
+            if (!nn) continue;
+            const dd = Math.hypot(w.x - nn.x, w.y - nn.y);
+            if (dd <= (nn.r || 14) + 18 && dd < bestDrop) {
+              bestDrop = dd;
+              this._reorderDropI = ni;
+            }
+          }
+          this.canvas.style.cursor = 'grabbing';
+          return;
+        }
+        this._aimArmed = true;
         if (typeof global.HLApp !== 'undefined' && global.HLApp.cancelHoverPreview) {
           global.HLApp.cancelHoverPreview();
         }
@@ -838,7 +932,9 @@
     const hit = this._hit(sx, sy);
     const prev = this.hover;
     this.hover = hit;
-    if (hit && hit.type === 'edge') this.canvas.style.cursor = 'copy';
+    if (hit && hit.type === 'edge')
+      this.canvas.style.cursor = this._gestureMode() === 'write' ? 'copy' : 'pointer';
+    else if (hit && hit.type === 'pathDelete') this.canvas.style.cursor = 'pointer';
     else this.canvas.style.cursor = hit ? 'pointer' : 'grab';
 
     // Path chord hover â†’ suggest next moves (hollow rings)
@@ -933,7 +1029,62 @@
     }
   };
 
+  SpatialMap.prototype._dispatchPendingClick = function (pending) {
+    if (!pending || !pending.hit) return;
+    const hit = pending.hit;
+    const opts = {
+      shiftKey: !!pending.shiftKey,
+      altKey: !!pending.altKey,
+      ctrlKey: !!pending.ctrlKey,
+      metaKey: !!pending.metaKey,
+    };
+    if (hit.type === 'hoverSuggest' && this.onSelectHoverSuggest) {
+      this.onSelectHoverSuggest(hit.item, opts);
+    } else if (hit.type === 'seat' && this.onSelectSeat) {
+      this.onSelectSeat(hit.item, opts);
+    } else if (hit.type === 'functionNode' && this.onSelectHorizon) {
+      this.onSelectHorizon(hit.item, opts);
+    } else if (hit.type === 'home' && this.onSelectHome) {
+      this.onSelectHome(opts);
+    } else if (hit.type === 'diskHome') {
+      if (this.onSelectDiskHome) this.onSelectDiskHome(hit.item);
+      else if (this.onSelectHome && hit.item && hit.item.active) this.onSelectHome(opts);
+    } else if (hit.type === 'ghostOption' && this.onSelectGhostOption) {
+      this.onSelectGhostOption(hit.item, opts);
+    } else if (hit.type === 'ghostDisk') {
+      const gopts = (this.ghostOptions || []).filter(
+        (o) =>
+          o.ghostDisk === hit.item ||
+          (o.ghostDisk &&
+            hit.item &&
+            o.ghostDisk.tonic === hit.item.tonic &&
+            o.ghostDisk.mode === hit.item.mode)
+      );
+      const pick = gopts.find((o) => o.id === 'tonic') || gopts[0];
+      if (pick && this.onSelectGhostOption) this.onSelectGhostOption(pick, opts);
+    }
+  };
+
   SpatialMap.prototype._up = function (e) {
+    if (this._pendingClick) {
+      const pending = this._pendingClick;
+      this._pendingClick = null;
+      const wasPan = this._mode === 'pan';
+      if (!this._moved && wasPan) {
+        this._mode = null;
+        this._dispatchPendingClick(pending);
+        this.clearInteraction();
+        return;
+      }
+      // Dragged away — treat as pan, do not write
+      this._mode = null;
+      this.clearInteraction();
+      if (typeof global.HLApp !== 'undefined' && global.HLApp.setSyncStatus) {
+        global.HLApp.setSyncStatus('Cancelled · drag left the target · nothing added');
+      }
+      return;
+    }
+
     // Edge press without drag â†’ no insert, just keep nearer endpoint selected
     if (this._mode === 'edgePending') {
       this._pendingEdgeInsert = null;
@@ -979,19 +1130,17 @@
         }
       } else if (this._moved && travelPx >= 28) {
         // Drop on another path step → reorder (no new chords). Drop on seat = above.
-        let dropI = -1;
+        let dropI = this._reorderDropI != null ? this._reorderDropI : -1;
         if (e && this.nodes && this.nodes.length) {
-          const rect = this.canvas.getBoundingClientRect();
-          const sx = e.clientX - rect.left;
-          const sy = e.clientY - rect.top;
-          const ww = this.screenToWorld(sx, sy);
+          const ptUp = this._eventCanvasXY(e);
+          const ww = this.screenToWorld(ptUp.sx, ptUp.sy);
           let bestD = Infinity;
           for (let ni = 0; ni < this.nodes.length; ni++) {
             if (ni === dragI) continue;
             const n = this.nodes[ni];
             if (!n) continue;
             const d = Math.hypot(ww.x - n.x, ww.y - n.y);
-            const hitR = (n.r || 14) + 16;
+            const hitR = (n.r || 14) + 18;
             if (d <= hitR && d < bestD) {
               bestD = d;
               dropI = ni;

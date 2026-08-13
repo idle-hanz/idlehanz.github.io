@@ -1373,10 +1373,9 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       return;
     }
 
-    // Re-root purple leave-home ghosts only when pivot changes (avoid rebuild thrash)
-    const pivotChanged = H.map.current !== pathIndex;
+    // Do not rebuild purple ghosts on hover/select — that was slow and
+    // planted extra click targets that accidentally wrote the path.
     H.map.current = pathIndex;
-    if (pivotChanged && H.map._rebuildGhostHalo) H.map._rebuildGhostHalo();
 
     const diskKey = H.keyOf ? H.keyOf(ch) : { tonic: H.state.tonic, mode: H.state.mode };
     const home = H.makeHomeChord ? H.makeHomeChord({ duration: 1 }) : null;
@@ -1537,7 +1536,7 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
         (isLast ? 'Next from last · ' : 'Next from step ' + (pathIndex + 1) + ' · ') +
           (ch.name || '?') +
           (names ? ' → ' + names : '') +
-          ' · thicker = stronger function · click tip to add'
+          ' · thicker = stronger · double-click tip to add · Write mode = click'
       );
     }
   };

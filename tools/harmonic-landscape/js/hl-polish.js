@@ -205,5 +205,31 @@
       });
     });
     H.syncFunctionPresetUI();
+    document.querySelectorAll('[data-map-mode]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        H.setMapGestureMode(btn.getAttribute('data-map-mode'));
+      });
+    });
+    H.syncMapGestureModeUI();
+  };
+
+  H.setMapGestureMode = function (mode) {
+    var allowed = { select: 1, write: 1, aim: 1, reorder: 1 };
+    H.state.mapGestureMode = allowed[mode] ? mode : 'select';
+    H.syncMapGestureModeUI();
+    var labels = {
+      select: 'Select · preview only · drag reorders · × / Delete removes · double-click adds',
+      write: 'Write · click seats / arrows / chart to add',
+      aim: 'Aim · drag a step onto a seat to reassign · miss cancels',
+      reorder: 'Reorder · drag steps only · never adds',
+    };
+    H.setSyncStatus(labels[H.state.mapGestureMode] || labels.select);
+  };
+
+  H.syncMapGestureModeUI = function () {
+    var mode = H.state.mapGestureMode || 'select';
+    document.querySelectorAll('[data-map-mode]').forEach(function (btn) {
+      btn.classList.toggle('active', btn.getAttribute('data-map-mode') === mode);
+    });
   };
 })(typeof window !== 'undefined' ? window : globalThis);

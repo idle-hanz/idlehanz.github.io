@@ -354,6 +354,9 @@
       color: #f0a090;
       background: rgba(232, 93, 76, 0.15);
     }
+    .btn-danger { color: #e07a6a; }
+    .btn.btn-danger:hover { color: #fff4d6; background: rgba(196,90,76,0.35); }
+    #map:focus { outline: 1px solid rgba(232,201,138,0.35); outline-offset: -1px; }
     .ver-actions .btn-danger {
       border-color: rgba(232, 93, 76, 0.45);
       color: #e8a090;
@@ -706,6 +709,15 @@
       border-radius: 3px;
       background: transparent;
     }
+    .ts-del {
+      position: absolute; top: 2px; right: 8px; z-index: 4;
+      border: 0; background: rgba(20,14,12,0.55); color: #d4786a;
+      font-size: 1rem; line-height: 1; cursor: pointer;
+      padding: 0 5px 2px; border-radius: 4px; opacity: 0.85;
+    }
+    .ts-step:hover .ts-del,
+    .ts-step.selected .ts-del { opacity: 1; background: rgba(20,14,12,0.82); }
+    .ts-del:hover { color: #fff4d6; background: #c45a4c; }
     .ts-handle:hover,
     .ts-step.resizing .ts-handle,
     .ts-handle.active {
@@ -1105,6 +1117,44 @@
       border-color: rgba(126,184,218,0.65); color: #9ec9e8;
       background: rgba(30,50,80,0.55);
     }
+    .map-gesture-modes { display: inline-flex; gap: 0.15rem; align-items: center; }
+    .map-gesture-modes .btn { padding: 0.15rem 0.4rem; font-size: 0.65rem; }
+    .map-gesture-modes .btn.active {
+      border-color: rgba(232,201,138,0.55); color: var(--gold2);
+      background: rgba(60,45,20,0.55);
+    }
+    .route-confirm-overlay {
+      position: fixed; inset: 0; z-index: 1100;
+      background: rgba(8,7,6,0.72); display: flex; align-items: center; justify-content: center;
+      padding: 1rem;
+    }
+    .route-confirm-overlay[hidden] { display: none !important; }
+    .route-confirm-card {
+      max-width: 24rem; width: 100%; background: var(--panel); border: 1px solid var(--line);
+      border-radius: 12px; padding: 1rem 1.1rem; box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    .route-confirm-card h3 { margin: 0 0 0.35rem; font-family: var(--display); color: var(--gold2); font-size: 1rem; }
+    .route-confirm-card .rc-route { font-size: 0.9rem; color: var(--text); margin: 0.4rem 0 0.75rem; line-height: 1.4; }
+    .route-confirm-card .rc-job { font-size: 0.75rem; color: var(--muted); margin: 0 0 0.75rem; }
+    .insp-typeahead { width: 100%; margin-bottom: 0.4rem; }
+    .insp-typeahead input {
+      width: 100%; background: var(--elev); border: 1px solid var(--line); color: var(--text);
+      border-radius: 6px; padding: 0.3rem 0.45rem; font: inherit; font-size: 0.85rem;
+    }
+    .insp-typeahead-list {
+      max-height: 8rem; overflow: auto; margin: 0.2rem 0 0; padding: 0; list-style: none;
+      border: 1px solid var(--line); border-radius: 6px; background: var(--bg);
+    }
+    .insp-typeahead-list[hidden] { display: none !important; }
+    .insp-typeahead-list button {
+      display: block; width: 100%; text-align: left; border: 0; background: transparent;
+      color: var(--text); padding: 0.35rem 0.5rem; font: inherit; font-size: 0.8rem; cursor: pointer;
+    }
+    .insp-typeahead-list button:hover { background: rgba(196,165,116,0.12); color: var(--gold2); }
+    .insp-advanced summary {
+      cursor: pointer; color: var(--muted); font-size: 0.72rem; margin: 0.45rem 0 0.25rem;
+    }
+    .insp-advanced[open] summary { color: var(--gold); }
     .empty-start {
       display: flex; flex-direction: column; gap: 0.55rem;
       padding: 0.85rem 0.75rem; margin-bottom: 0.55rem;
@@ -1262,9 +1312,9 @@
       <strong>Start here</strong>
       <ol>
         <li><strong>1.</strong> Write home = key</li>
-        <li><strong>2.</strong> Click seats or + Start on I</li>
-        <li><strong>3.</strong> Right-click a step to pivot keys</li>
-        <li><strong>4.</strong> ⋮⋮ on timeline reorders · drop node on node reorders</li>
+        <li><strong>2.</strong> Select previews · Write or double-click adds · + Start on I</li>
+        <li><strong>3.</strong> Right-click a step to pivot keys · × or Delete removes</li>
+        <li><strong>4.</strong> Drag a step onto another to reorder · nothing new is added</li>
       </ol>
       <div class="coach-actions">
         <button type="button" class="btn primary" id="coach-start-i" title="Plant the tonic and start">+ Start on I</button>
@@ -1274,12 +1324,25 @@
 
     <div id="gesture-legend" class="gesture-legend" role="region" aria-label="Map gestures">
       <strong>Map</strong>
-      <span class="gl-item"><kbd>Click seat</kbd> add / edit</span>
-      <span class="gl-item"><kbd>Drag → seat</kbd> reassign step</span>
-      <span class="gl-item"><kbd>Drop on step</kbd> reorder</span>
-      <span class="gl-item"><kbd>⋮⋮ strip</kbd> reorder</span>
+      <span class="gl-item"><kbd>Select</kbd> preview · drag reorders · never adds</span>
+      <span class="gl-item"><kbd>Write</kbd> click to add</span>
+      <span class="gl-item"><kbd>×</kbd> / <kbd>Del</kbd> delete</span>
+      <span class="gl-item"><kbd>Double-click</kbd> add from Select</span>
       <span class="gl-item"><kbd>Right-click</kbd> colours · pivot</span>
       <button type="button" class="btn ghost" id="gesture-legend-dismiss" style="margin-left:auto;padding:0.15rem 0.45rem;font-size:0.68rem">Got it</button>
+    </div>
+
+    <div id="route-confirm" class="route-confirm-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="rc-title">
+      <div class="route-confirm-card">
+        <h3 id="rc-title">Insert package?</h3>
+        <p class="rc-route" id="rc-route">—</p>
+        <p class="rc-job" id="rc-job"></p>
+        <div class="row" style="gap:0.35rem;flex-wrap:wrap">
+          <button type="button" class="btn ghost" id="rc-hear">Hear</button>
+          <button type="button" class="btn primary" id="rc-insert">Insert</button>
+          <button type="button" class="btn ghost" id="rc-cancel">Cancel</button>
+        </div>
+      </div>
     </div>
 
     <main>
@@ -1300,7 +1363,7 @@
           <h2>Build</h2>
           <div class="empty-start" id="empty-start" hidden>
             <p class="empty-title">Empty path</p>
-            <p class="empty-hint">Three ways in — then write on the Journey wheel. In this key opens theory layers when you need them.</p>
+            <p class="empty-hint">Stay in Select to browse. Switch to Write (or double-click) to add. In this key opens theory layers when you need them.</p>
             <div class="empty-actions">
               <button type="button" class="btn primary" id="btn-empty-home" title="Start the path on the tonic">+ Start on I</button>
               <button type="button" class="btn" id="btn-empty-demo" title="Load Speed of Pain colour demo">Demo: SoP</button>
@@ -1315,6 +1378,7 @@
             <button type="button" class="btn ghost" id="btn-quick-i" title="Append tonic (I / i) of write home">+ I</button>
             <button type="button" class="btn ghost" id="btn-quick-v" title="Append V / V7 of write home">+ V</button>
             <button type="button" class="btn ghost" id="btn-dup" title="Duplicate step · Ctrl+D">Dup</button>
+            <button type="button" class="btn ghost btn-danger" id="btn-del-step" title="Delete selected step · Backspace / Delete">Delete</button>
             <button type="button" class="btn ghost" id="btn-undo" title="Ctrl+Z">Undo</button>
             <button type="button" class="btn ghost" id="btn-redo-edit" title="Ctrl+Y">Redo</button>
             <button type="button" class="btn ghost" id="btn-clear" title="Clear path only — write home and versions stay">Clear</button>
@@ -1357,7 +1421,7 @@
           <details class="fold" id="fold-steps" style="margin-top:0.65rem">
             <summary>Steps — reorder list (optional)</summary>
             <div class="fold-body">
-              <p class="hint" style="margin:0 0 0.35rem">Timeline is the main sequence. Open this to drag-reorder or remove by ×.</p>
+              <p class="hint" style="margin:0 0 0.35rem">Optional list. Delete also works from the timeline ×, the map ×, Delete / Backspace, or the Delete button.</p>
               <div id="slots"></div>
             </div>
           </details>
@@ -1407,6 +1471,13 @@
               <button type="button" class="btn primary active" id="view-chase" title="Journey map: scale seats, multi-disk path, purple nearby keys">Journey</button>
               <button type="button" class="btn ghost" id="view-function" title="Same-key atlas: diatonic, V7s, borrow — not multi-key">In this key</button>
               <span class="map-sep" aria-hidden="true"></span>
+              <div class="map-gesture-modes" id="map-gesture-modes" title="Select never writes. Write = click to add. Aim = drag to seats.">
+                <button type="button" class="btn ghost active" data-map-mode="select" title="Browse: click selects / previews · drag reorders · double-click adds">Select</button>
+                <button type="button" class="btn ghost" data-map-mode="write" title="Click seats, arrows, or chart nodes to add">Write</button>
+                <button type="button" class="btn ghost" data-map-mode="aim" title="Drag path steps onto seats to reassign">Aim</button>
+                <button type="button" class="btn ghost" data-map-mode="reorder" title="Drag only reorders — never adds or reassigns">Reorder</button>
+              </div>
+              <span class="map-sep" aria-hidden="true"></span>
               <button type="button" class="btn primary" id="btn-start-home" title="Start (or land) on the tonic chord">+ Home</button>
               <label class="ctl" title="Show blue path only when a version is set as compare (Alt-click a chip)"><input type="checkbox" id="tog-alt"> Blue</label>
             </div>
@@ -1434,7 +1505,7 @@
             </div>
           </div>
         </div>
-        <canvas id="map" aria-label="Harmonic path and directions"></canvas>
+        <canvas id="map" tabindex="0" aria-label="Harmonic path and directions"></canvas>
         <div class="map-footer">
           <div id="disk-legend" class="disk-legend" hidden></div>
           <div id="map-status" class="map-status">Select a step</div>
@@ -1448,9 +1519,9 @@
           <div id="traj-caption" class="traj-caption">Path shape appears here</div>
           <p class="strip-teach"><strong>Timeline</strong> · <strong>⋮⋮</strong> drag reorder · edge resize · body drag→map reassign · right-click pivot/colours</p>
           <div class="time-strip-wrap" id="time-strip-wrap">
-            <div id="time-strip" class="time-strip" title="⋮⋮ reorder · edge resize · body drag to map · right-click"></div>
+            <div id="time-strip" class="time-strip" title="⋮⋮ reorder · × delete · edge resize · right-click"></div>
           </div>
-          <p class="foot" style="margin:0.15rem 0 0">Click select · <kbd>Ctrl</kbd> multi · <kbd>Shift</kbd> range · double-click split</p>
+          <p class="foot" style="margin:0.15rem 0 0">Click select · × / <kbd>Del</kbd> delete · <kbd>Ctrl</kbd> multi · <kbd>Shift</kbd> range · double-click split</p>
         </div>
       </div>
 
@@ -1461,7 +1532,7 @@
           <button type="button" class="btn ghost btn-sidebar-toggle" id="btn-toggle-horizon" title="Collapse From here panel (more map space)" aria-expanded="true" aria-controls="horizon-body">›</button>
         </div>
         <div class="horizon-body" id="horizon-body">
-          <p class="foot" style="margin:0 0 0.45rem;padding:0">From the <strong>selected</strong> step. Click = <strong>add after</strong>. <kbd>Shift</kbd>+click = overwrite. Hover = audition. <strong>Mod</strong> = new key disk.</p>
+          <p class="foot" style="margin:0 0 0.45rem;padding:0">From the <strong>selected</strong> step. Select = preview. Write = click to add. Hover = audition. <strong>Mod</strong> = new key disk.</p>
           <div id="list-from-here"></div>
         </div>
       </aside>
@@ -1477,7 +1548,9 @@
         <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Select previous / next step</dd>
         <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></dt><dd>Undo / redo</dd>
         <dt><kbd>Ctrl</kbd>+<kbd>D</kbd></dt><dd>Duplicate step</dd>
-        <dt><kbd>Del</kbd></dt><dd>Remove selected</dd>
+        <dt><kbd>Del</kbd> / <kbd>Backspace</kbd></dt><dd>Delete selected step (also map × / timeline × / Delete button)</dd>
+        <dt><kbd>Select</kbd></dt><dd>Preview &amp; reorder — never adds</dd>
+        <dt><kbd>Write</kbd></dt><dd>Click map to add</dd>
         <dt><kbd>Esc</kbd></dt><dd>Stop playback</dd>
         <dt><kbd>?</kbd></dt><dd>This help</dd>
       </dl>
@@ -1487,28 +1560,28 @@
     </div>
   </div>
 
-  <script src="../ih-session.js"></script>
-  <script src="js/music.js"></script>
-  <script src="js/compose.js"></script>
-  <script src="js/audio.js"></script>
-  <script src="js/packs.js"></script>
-  <script src="js/spatial.js"></script>
-  <script src="js/spatial-layout.js"></script>
-  <script src="js/spatial-input.js"></script>
-  <script src="js/spatial-draw.js"></script>
+  <script src="../ih-session.js?v=20260813c"></script>
+  <script src="js/music.js?v=20260813c"></script>
+  <script src="js/compose.js?v=20260813c"></script>
+  <script src="js/audio.js?v=20260813c"></script>
+  <script src="js/packs.js?v=20260813c"></script>
+  <script src="js/spatial.js?v=20260813c"></script>
+  <script src="js/spatial-layout.js?v=20260813c"></script>
+  <script src="js/spatial-input.js?v=20260813c"></script>
+  <script src="js/spatial-draw.js?v=20260813c"></script>
   <!-- App modules (shared HLApp namespace) — order matters -->
-  <script src="js/hl-core.js"></script>
-  <script src="js/hl-styles.js"></script>
-  <script src="js/hl-context-menu.js"></script>
-  <script src="js/hl-undo.js"></script>
-  <script src="js/hl-session.js"></script>
-  <script src="js/hl-map-bridge.js"></script>
-  <script src="js/hl-versions.js"></script>
-  <script src="js/hl-edit.js"></script>
-  <script src="js/hl-horizon.js"></script>
-  <script src="js/hl-playback.js"></script>
-  <script src="js/hl-ui.js"></script>
-  <script src="js/hl-polish.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/hl-core.js?v=20260813c"></script>
+  <script src="js/hl-styles.js?v=20260813c"></script>
+  <script src="js/hl-context-menu.js?v=20260813c"></script>
+  <script src="js/hl-undo.js?v=20260813c"></script>
+  <script src="js/hl-session.js?v=20260813c"></script>
+  <script src="js/hl-map-bridge.js?v=20260813c"></script>
+  <script src="js/hl-versions.js?v=20260813c"></script>
+  <script src="js/hl-edit.js?v=20260813c"></script>
+  <script src="js/hl-horizon.js?v=20260813c"></script>
+  <script src="js/hl-playback.js?v=20260813c"></script>
+  <script src="js/hl-ui.js?v=20260813c"></script>
+  <script src="js/hl-polish.js?v=20260813c"></script>
+  <script src="js/app.js?v=20260813c"></script>
 </body>
 </html>

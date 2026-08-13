@@ -49,6 +49,14 @@
       /** In this key density: core | jazz | full */
       functionPreset: 'core',
       gestureLegendDismissed: false,
+      /**
+       * Map gesture mode:
+       * select — browse only: click never writes; drag reorders; Shift+drag aims
+       * write  — single-click seats / next-arrows / function nodes write
+       * aim    — drag path steps onto seats to reassign
+       * reorder — drag only reorders path
+       */
+      mapGestureMode: 'select',
       /** Style lens: neutral | classical | jazz | blues | rock | goth | metal | shoegaze */
       style: 'neutral',
     }

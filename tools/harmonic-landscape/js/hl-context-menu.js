@@ -173,6 +173,19 @@
         if (H.selectStep) H.selectStep(pathIdx, { play: true });
         else H.state.selected = pathIdx;
       });
+      addItem(
+        secAct,
+        'Delete step',
+        'Backspace / Delete',
+        function () {
+          if (H.removeChordAt) H.removeChordAt(pathIdx);
+          else if (H.removeSelected) {
+            H.state.selected = pathIdx;
+            H.removeSelected();
+          }
+        },
+        { danger: true }
+      );
     }
 
     // --- Colours for this root ---
@@ -422,7 +435,7 @@
           : 'append / build',
         function () {
           if (payload.kind === 'seat' && payload.seatInfo && H.selectChaseSeat) {
-            H.selectChaseSeat(payload.seatInfo, {});
+            H.selectChaseSeat(payload.seatInfo, { forceWrite: true });
           } else if (H.writeChordToPath) {
             H.writeChordToPath(chord, {
               intent: 'auto',

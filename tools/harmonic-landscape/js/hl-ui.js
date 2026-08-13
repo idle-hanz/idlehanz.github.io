@@ -273,7 +273,8 @@ H.refreshAll = function () {
         `<span class="ts-grip" title="Drag to reorder steps" draggable="true">⋮⋮</span>` +
         `<span class="ts-n">${i + 1}</span>` +
         `<span class="ts-name">${ch.name}</span>` +
-        `<span class="ts-dur">${beats}b</span>`;
+        `<span class="ts-dur">${beats}b</span>` +
+        `<button type="button" class="ts-del" title="Delete step (Backspace / Delete)" aria-label="Delete step">×</button>`;
 
       // Grip drag = reorder in the strip (body drag still aims to the map)
       const grip = btn.querySelector('.ts-grip');
@@ -351,6 +352,17 @@ H.refreshAll = function () {
         H.beginStripResize(i, e, host);
       });
       btn.appendChild(handle);
+      const delBtn = btn.querySelector('.ts-del');
+      if (delBtn) {
+        delBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (H.removeChordAt) H.removeChordAt(i);
+        });
+        delBtn.addEventListener('pointerdown', (e) => {
+          e.stopPropagation();
+        });
+      }
 
       // Drag body of step → map aim (reassign stacked steps). Edge handle = resize.
       btn.addEventListener('pointerdown', (e) => {
@@ -524,6 +536,9 @@ H.refreshAll = function () {
         if (!st || st.armed) return;
         const d = Math.hypot(e.clientX - st.x, e.clientY - st.y);
         if (d < 10) return;
+        const mode = (H.state && H.state.mapGestureMode) || 'select';
+        // Only Aim mode (or Shift) reassigns from the strip — Select drag was adding/swapping
+        if (mode !== 'aim' && !e.shiftKey) return;
         st.armed = true;
         const host = H.$('#time-strip');
         H.beginStripMapAim(st.i, e, host);
@@ -1077,11 +1092,8 @@ H.refreshAll = function () {
       });
     }
     if (H.map) {
-      const pivotChanged = H.map.current !== H.state.selected;
       H.map.current = H.state.selected;
-      if (pivotChanged && H.map._mode !== 'node' && H.map._rebuildGhostHalo) {
-        H.map._rebuildGhostHalo();
-      }
+      // Don't rebuild ghost halo on every select — that made browse feel laggy
     }
     H.syncSelectionChrome();
     H.renderInspector();
@@ -1094,9 +1106,15 @@ H.refreshAll = function () {
       H.previewNextFromStep &&
       H.map &&
       H.map.mapView !== 'function' &&
-      !opts.additive
+      !opts.additive &&
+      !opts.skipPreview
     ) {
-      H.previewNextFromStep(H.state.selected, { silent: true });
+      if (H._previewSelTimer) clearTimeout(H._previewSelTimer);
+      H._previewSelTimer = setTimeout(function () {
+        H._previewSelTimer = null;
+        if (H.map && H.map._mode === 'node') return;
+        H.previewNextFromStep(H.state.selected, { silent: true });
+      }, 140);
     }
   };
 
@@ -1499,8 +1517,12 @@ H.refreshAll = function () {
         }
       });
       b.addEventListener('click', (e) => {
-        // Click = safe add after; Shift = overwrite continuation
         const shift = !!(e && e.shiftKey);
+        if (!H.shouldWriteFromMap || !H.shouldWriteFromMap({})) {
+          const ch = it.chord || (it.route && it.route[0]);
+          if (H.previewMapChord) H.previewMapChord(ch, 'Preview next');
+          return;
+        }
         H.commitHorizon(it, {
           insert: !shift,
           replace: shift,

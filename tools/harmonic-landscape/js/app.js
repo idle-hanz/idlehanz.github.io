@@ -168,14 +168,26 @@
         if (H.previewNextFromStep) H.previewNextFromStep(pathIndex);
       }, 90);
     };
-    H.map.onSelectHoverSuggest = (pad) => {
+    H.map.onSelectHoverSuggest = (pad, clickOpts) => {
       if (!pad || !pad.item) return;
-      // Commit from the hovered step (usually the last chord you entered)
+      clickOpts = clickOpts || {};
       if (pad.pathIndex != null && pad.pathIndex >= 0) {
         H.state.selected = pad.pathIndex;
       }
+      const previewCh =
+        pad.item.chord ||
+        (pad.item.route && pad.item.route[0]) ||
+        null;
+      if (!H.shouldWriteFromMap(clickOpts)) {
+        if (H.previewMapChord) {
+          H.previewMapChord(
+            previewCh,
+            pad.item.modulateTo ? 'Preview leave-home' : 'Preview next'
+          );
+        }
+        return;
+      }
       if (H.clearNextPreview) H.clearNextPreview();
-      // Leave-home packages use establish path when modulateTo is set
       if (pad.item.modulateTo && pad.item.route && H.leaveHomeToKey) {
         H.leaveHomeToKey(
           pad.item.modulateTo,
@@ -186,16 +198,19 @@
       }
       H.commitHorizon(pad.item, { insert: true });
     };
-    // In-this-key node click: same rules as seats (edit mid-path, append at end).
-    // Shift = insert after · Alt = force append.
+    // In-this-key: Select = preview; Write / double-click = write
     H.map.onSelectHorizon = (item, clickOpts) => {
       clickOpts = clickOpts || {};
       if (!item) return;
+      if (!H.shouldWriteFromMap(clickOpts)) {
+        const ch = item.chord || (item.route && item.route[0]);
+        if (H.previewMapChord) H.previewMapChord(ch, 'Preview');
+        return;
+      }
       let intent = 'auto';
       if (clickOpts.altKey) intent = 'append';
       else if (clickOpts.shiftKey) intent = 'insert';
       if (item.route && item.route.length > 1) {
-        // Multi-step packages (V7→I): still commit as package after selection
         H.state.selected =
           H.state.selected >= 0 ? H.state.selected : H.state.chords.length - 1;
         H.commitHorizon(item, {
@@ -235,8 +250,17 @@
         });
       }
     };
-    // Click the gold home disc to start (or land) on the tonic
-    H.map.onSelectHome = () => H.startAtHome();
+    // Gold home disc: Select = preview tonic; Write / double-click = plant
+    H.map.onSelectHome = (clickOpts) => {
+      clickOpts = clickOpts || {};
+      if (!H.shouldWriteFromMap(clickOpts)) {
+        if (H.makeHomeChord && H.previewMapChord) {
+          H.previewMapChord(H.makeHomeChord(), 'Preview home');
+        }
+        return;
+      }
+      if (H.startAtHome) H.startAtHome();
+    };
     let _hoverHomeAt = 0;
     H.map.onHoverHome = () => {
       const now = Date.now();
@@ -264,7 +288,22 @@
       );
     };
     // Ghost adjacent-key wheel: establish home (V7→I or tonic)
-    H.map.onSelectGhostOption = (opt) => H.establishKeyFromGhost(opt);
+    H.map.onSelectGhostOption = (opt, clickOpts) => {
+      clickOpts = clickOpts || {};
+      if (!opt) return;
+      if (!H.shouldWriteFromMap(clickOpts)) {
+        const ch = opt.route && opt.route[0];
+        if (H.previewMapChord) {
+          H.previewMapChord(ch, 'Preview new key');
+        }
+        H.setSyncStatus(
+          (opt.label || 'New key') +
+            ' · preview · double-click to leave home · or switch to Write'
+        );
+        return;
+      }
+      H.establishKeyFromGhost(opt);
+    };
     H.map.onHoverGhostOption = (opt) => {
       if (!opt) return;
       H.A().ensure();
@@ -284,7 +323,7 @@
           (opt.label || '') +
           ' · ' +
           (opt.character || opt.job || 'establish home') +
-          ' · click to land'
+          ' · preview · double-click to leave home · Write mode = click'
       );
     };
     H.map.onRequestAlts = (pathIndex, chord) => H.buildAimTargets(pathIndex, chord);
@@ -532,13 +571,18 @@
     H.setSyncStatus(
       loaded
         ? 'Loaded shared session'
-        : 'Empty · pick Write home · click seats / From here / a feel pack to start'
+        : 'Empty · pick Write home · Write mode or double-click a seat / + Home to start'
     );
 
     document.body.addEventListener('pointerdown', () => H.A().ensure(), { once: true });
     requestAnimationFrame(() => {
       H.map.resize();
       H.refreshMap();
+      if (H.map && H.map.canvas) {
+        try {
+          H.map.canvas.focus({ preventScroll: true });
+        } catch (_) {}
+      }
     });
   }
 
@@ -631,6 +675,11 @@
     if (H.$('#btn-add')) H.$('#btn-add').addEventListener('click', () => H.addChordFromPicker('end'));
     if (H.$('#btn-insert')) H.$('#btn-insert').addEventListener('click', () => H.addChordFromPicker('after'));
     if (H.$('#btn-dup')) H.$('#btn-dup').addEventListener('click', H.duplicateSelected);
+    if (H.$('#btn-del-step')) {
+      H.$('#btn-del-step').addEventListener('click', () => {
+        if (H.removeSelected) H.removeSelected();
+      });
+    }
     if (H.$('#btn-undo')) H.$('#btn-undo').addEventListener('click', H.undo);
     if (H.$('#btn-redo-edit')) H.$('#btn-redo-edit').addEventListener('click', H.redo);
     if (H.updateUndoButtons) H.updateUndoButtons();
@@ -971,22 +1020,34 @@
     H.syncCamButtons();
 
     document.addEventListener('keydown', (e) => {
-      if (e.target.matches('input, textarea, select')) return;
+      const typing =
+        e.target &&
+        (e.target.matches('input, textarea, select') || e.target.isContentEditable);
       if (e.key === ' ' && !e.ctrlKey && !e.metaKey) {
+        if (typing) return;
         e.preventDefault();
         if (e.shiftKey) H.playFromSelection();
         else if (H.A().isPlaying()) H.stopPlaybackUI();
         else H.playSeq({ fromIndex: 0, force: true });
       } else if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        if (typing) return;
         e.preventDefault();
         H.undo();
       } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        if (typing) return;
         e.preventDefault();
         H.redo();
       } else if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+        if (typing) return;
         e.preventDefault();
         H.duplicateSelected();
       } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        if (typing && e.target && e.target.matches('select')) {
+          e.preventDefault();
+          H.removeSelected();
+          return;
+        }
+        if (typing) return;
         e.preventDefault();
         H.removeSelected();
       } else if (e.key === 'ArrowUp' && e.altKey) {
