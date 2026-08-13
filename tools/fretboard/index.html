@@ -573,7 +573,7 @@
         </div>
     </div>
 
-    <script src="../ih-session.js?v=20260814j"></script>
+    <script src="../ih-session.js?v=20260814l"></script>
     <script>
     const NOTES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     const NOTES_FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
@@ -948,6 +948,7 @@
     let progressionFocus = 0;
     let fretClipStart = 0;
     let fretClipWindow = 8;
+    let sessionWriteKey = null;
     // Morph: exclusive tones pulse current↔next; shared stay lit
     // morphMode: null | 'pair' (Next eye, red/blue) | 'mono' (Current eye, greyscale)
     let morphMode = null;
@@ -2984,13 +2985,14 @@
         }
         sel.value = String(keep);
     }
-    function populateScaleRoot() {
+    function populateScaleRoot(forceRoot) {
         const sel = document.getElementById('scale-root');
         if (!sel) return;
-        // Prefer what's currently selected in the UI (don't wipe a user change)
-        const keep = (sel.value !== '' && sel.options.length)
-            ? +sel.value
-            : scaleRoot;
+        const keep = forceRoot != null
+            ? forceRoot
+            : (sel.value !== '' && sel.options.length)
+              ? +sel.value
+              : scaleRoot;
         // Sync globals first so getNoteName / prefersFlats match the new choice
         scaleRoot = keep;
         const typeSel = document.getElementById('scale-type');
@@ -5116,8 +5118,11 @@
             else if (mode === 'major' || mode === 'ionian') scaleType = 'Major (Ionian)';
             else if (mode === 'mixolydian') scaleType = 'Mixolydian';
             else if (mode === 'lydian') scaleType = 'Lydian';
-            populateScaleRoot();
+            sessionWriteKey = { tonic: scaleRoot, mode: mode };
+            populateScaleRoot(scaleRoot);
             populateScaleTypes();
+            const typeSel = document.getElementById('scale-type');
+            if (typeSel) typeSel.value = scaleType;
         }
         if (meta.bpm != null) {
             audioTempo = +meta.bpm;
@@ -5151,8 +5156,8 @@
             });
             IHSession.clearHandoffHash();
             if (ok) {
-                // Persist into full song session
-                pushProgressionToSongSession('fretboard', handoff.cellId, handoff.cellName || handoff.title);
+                // Do not rewrite the song on arrival — Landscape already saved.
+                // Auto-push was stomping song.key to C and stripping disk stamps.
                 setIhSyncStatus('Loaded from Landscape');
                 setInstanceStatus('Progression from Harmonic Landscape', true);
                 return true;
@@ -5196,10 +5201,8 @@
         if (prev && prev.chords && prev.chords.length && IHSession.mergeClipIntoChords) {
             const ho = IHSession.readHandoffStorage && IHSession.readHandoffStorage();
             const start = fretClipStart || (ho && ho.clipStart) || 0;
-            const win = fretClipWindow || (ho && (ho.clipMax || ho.windowLen)) || null;
-            if (prev.chords.length > chords.length || start > 0) {
-                nextChords = IHSession.mergeClipIntoChords(prev.chords, chords, start, win);
-            }
+            const win = fretClipWindow || (ho && (ho.clipMax || ho.windowLen)) || chords.length;
+            nextChords = IHSession.mergeClipIntoChords(prev.chords, chords, start, win);
         }
         song.cells[id] = {
             id,
@@ -5218,12 +5221,6 @@
             chordIndex: progressionFocus,
         };
         song.bpm = audioTempo;
-        if (!song.arrangement || !song.arrangement.length) {
-            song.key = {
-                tonic: scaleRoot,
-                mode: /minor|dorian|phrygian|locrian|aeolian/i.test(scaleType) ? 'minor' : 'major',
-            };
-        }
         IHSession.saveSong(song, by || 'fretboard');
         setIhSyncStatus('Session saved');
         return song;
@@ -5242,12 +5239,15 @@
         const cellName = ((document.getElementById('instance-name') || {}).value || 'From fretboard').slice(0, 48);
         const song = pushProgressionToSongSession('fretboard', null, cellName);
         const cellId = song && song.focus && song.focus.cellId;
+        const keepKey =
+            sessionWriteKey ||
+            (song && song.key && song.key.tonic != null ? song.key : null);
         const payload = IHSession.buildHandoffPayload({
             by: 'fretboard',
             to: 'landscape',
             title: cellName,
             bpm: audioTempo,
-            key: {
+            key: keepKey || {
                 tonic: scaleRoot,
                 mode: /minor|dorian|phrygian|locrian|aeolian/i.test(scaleType) ? 'minor' : 'major',
             },

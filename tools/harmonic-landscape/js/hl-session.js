@@ -84,12 +84,24 @@ H.setSyncStatus = function (msg) {
           handoff.clipMax || handoff.windowLen || null
         );
       }
+      const firstStamp = chords && chords[0];
+      const songKey = song0 && song0.key;
       H.applySessionChords(chords, {
         title: handoff.cellName || (prev0 && prev0.name) || handoff.title,
         cellId: handoff.cellId,
         packId: prev0 && prev0.packId,
-        tonic: handoff.key && handoff.key.tonic,
-        mode: handoff.key && handoff.key.mode,
+        tonic:
+          firstStamp && firstStamp.localTonic != null
+            ? firstStamp.localTonic
+            : songKey && songKey.tonic != null
+              ? songKey.tonic
+              : handoff.key && handoff.key.tonic,
+        mode:
+          firstStamp && firstStamp.localMode
+            ? firstStamp.localMode
+            : songKey && songKey.mode
+              ? songKey.mode
+              : handoff.key && handoff.key.mode,
         bpm: handoff.bpm,
         focusIndex: handoff.focus || 0,
       });
@@ -504,6 +516,7 @@ H.setSyncStatus = function (msg) {
       chords: clip.chords,
       ephemeral: true,
       clipStart: clip.start || 0,
+      clipMax: clip.max || clip.chords.length,
     });
     const ok = H.S().openWithHandoff(H.S().PATHS.fretboardFromLandscape, payload);
     const clipMsg = H.S().fretboardClipMessage
