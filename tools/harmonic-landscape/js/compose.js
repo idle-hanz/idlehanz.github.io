@@ -1640,6 +1640,82 @@
     return copy;
   }
 
+  /**
+   * One-way parallel colour. toward 'maj' lifts minors → majors (majors stay).
+   * toward 'min' drops majors → minors (minors stay). Dim / dom / sus untouched.
+   * Same roots — not a key change.
+   */
+  function parallelProgression(chords, toward) {
+    const music = M();
+    if (!chords || !chords.length) return chords.map((c) => music.cloneChord(c));
+    const toMaj = toward === 'maj';
+    const lift = {
+      min: 'maj',
+      min7: 'maj7',
+      min9: 'maj9',
+      minmaj7: 'maj7',
+      madd9: 'add9',
+    };
+    const drop = {
+      maj: 'min',
+      maj7: 'min7',
+      maj9: 'min9',
+      add9: 'min',
+      '6': 'min',
+    };
+    const table = toMaj ? lift : drop;
+    return chords.map(function (src) {
+      const c = music.cloneChord(src);
+      if (c.custom || c.quality === 'custom') {
+        const r = music.pc(c.root);
+        const set = {};
+        (c.notes || []).forEach(function (n) {
+          set[((n - r) % 12 + 12) % 12] = 1;
+        });
+        const has3 = !!set[3];
+        const has4 = !!set[4];
+        if (toMaj && has3 && !has4) {
+          let ch = music.makeChord(r, 'maj', {
+            duration: c.duration,
+            region: 'parallel',
+            roman: c.roman || '',
+            tag: 'parallel',
+          });
+          ch = withBass(ch, r);
+          if (c.localTonic != null) ch.localTonic = c.localTonic;
+          if (c.localMode) ch.localMode = c.localMode;
+          return ch;
+        }
+        if (!toMaj && has4 && !has3) {
+          let ch = music.makeChord(r, 'min', {
+            duration: c.duration,
+            region: 'parallel',
+            roman: c.roman || '',
+            tag: 'parallel',
+          });
+          ch = withBass(ch, r);
+          if (c.localTonic != null) ch.localTonic = c.localTonic;
+          if (c.localMode) ch.localMode = c.localMode;
+          return ch;
+        }
+        return c;
+      }
+      const nextQ = table[String(c.quality || '')];
+      if (!nextQ || nextQ === c.quality) return c;
+      let ch = music.makeChord(c.root, nextQ, {
+        duration: c.duration,
+        region: 'parallel',
+        roman: c.roman || '',
+        tag: 'parallel',
+      });
+      ch = withBass(ch, c.root);
+      ch.duration = c.duration;
+      if (c.localTonic != null) ch.localTonic = c.localTonic;
+      if (c.localMode) ch.localMode = c.localMode;
+      return ch;
+    });
+  }
+
   /** Two darker/colour joins — a whole-cell reharm take, not one step. */
   function reharmProgression(chords, tonic, modeKey) {
     const music = M();
@@ -2457,6 +2533,7 @@
     varyRhythmOnly,
     seventhizeProgression,
     pedalProgression,
+    parallelProgression,
     reharmProgression,
     reharmBar,
     varySameBassNewUpper,

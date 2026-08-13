@@ -265,7 +265,8 @@ H.resolveCompareCell = function (song) {
       '<button type="button" class="btn ghost" id="btn-var-pedal" title="Fork with a held common-tone bass. Uses each step’s own key after a modulation. Never adds a bass that is not in the chord.">+ Pedal</button>' +
       '<button type="button" class="btn ghost" id="btn-var-rhythm" title="Fork with a new rhythm shape, same chords">+ Rhythm</button>' +
       '<button type="button" class="btn ghost" id="btn-var-reharm" title="Fork with two reharm joins">+ Reharm</button>' +
-      '<button type="button" class="btn ghost" id="btn-var-parallel" title="Fork parallel maj/min on every step">+ Parallel</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-major" title="Fork: minors become majors. Majors stay. Same roots.">+ Major</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-minor" title="Fork: majors become minors. Minors stay. Same roots.">+ Minor</button>' +
       '<button type="button" class="btn ghost" id="btn-var-darken" title="Fork with one darker join">+ Darken</button>' +
       '<button type="button" class="btn ghost" id="btn-var-brighter" title="Fork with one brighter join">+ Brighten</button>' +
       '<button type="button" class="btn ghost" id="btn-ab-ver" title="Play this then blue compare">A/B listen</button>' +
@@ -395,7 +396,8 @@ H.resolveCompareCell = function (song) {
     bind('#btn-var-pedal', () => H.createVariation('pedal'));
     bind('#btn-var-rhythm', () => H.createVariation('rhythm'));
     bind('#btn-var-reharm', () => H.createVariation('reharm'));
-    bind('#btn-var-parallel', () => H.createVariation('parallel'));
+    bind('#btn-var-major', () => H.createVariation('parallel-major'));
+    bind('#btn-var-minor', () => H.createVariation('parallel-minor'));
     bind('#btn-var-darken', () => H.createVariation('darken'));
     bind('#btn-var-brighter', () => H.createVariation('brighter'));
     bind('#btn-ab-ver', () => H.playAB());
@@ -559,6 +561,8 @@ H.resolveCompareCell = function (song) {
     const map = {
       copy: 'Copy',
       parallel: 'Parallel',
+      'parallel-major': 'Major',
+      'parallel-minor': 'Minor',
       darken: 'Darken',
       brighter: 'Brighten',
       reharm: 'Reharm',
@@ -652,31 +656,18 @@ H.resolveCompareCell = function (song) {
 
     if (kind === 'copy') {
       // Exact fork — keep notes/custom as-is
-    } else if (kind === 'parallel') {
-      newChords = newChords.map((c) => {
-        const q2 = H.parallelFromNotes(c.root, c.notes, c.quality);
-        if (!q2 || q2 === c.quality) {
-          // Still strip notes if quality was already "maj" with stale custom notes
-          if (c.custom || (c.notes && c.notes.length)) {
-            // try hard flip from notes only
-            const forced = H.parallelFromNotes(c.root, c.notes, c.quality === 'custom' ? '' : c.quality);
-            if (forced) {
-              changed += 1;
-              return H.sessionChordWithQuality(c, forced, { tag: 'parallel', region: 'parallel' });
-            }
-          }
-          return H.sessionChordWithQuality(c, c.quality || 'maj', {
-            tag: c.tag || 'parallel',
-            region: c.region || 'diatonic',
-          });
-        }
-        changed += 1;
-        return H.sessionChordWithQuality(c, q2, { tag: 'parallel', region: 'parallel' });
-      });
-      if (!changed) {
-        H.setSyncStatus('Parallel: nothing to flip (need maj/min family chords)');
-        // Still create the version so the button does something visible
-      }
+    } else if (kind === 'parallel-major' && C && C.parallelProgression) {
+      changed = applyLand(function (land) {
+        return C.parallelProgression(land, 'maj');
+      }, 'parallel')
+        ? 1
+        : 0;
+    } else if (kind === 'parallel-minor' && C && C.parallelProgression) {
+      changed = applyLand(function (land) {
+        return C.parallelProgression(land, 'min');
+      }, 'parallel')
+        ? 1
+        : 0;
     } else if (kind === 'voice') {
       changed = applyLand(C && C.smoothCellVoicings, 'voice') ? 1 : 0;
     } else if (kind === 'sevenths' && C && C.seventhizeProgression) {
@@ -728,7 +719,7 @@ H.resolveCompareCell = function (song) {
       }
     }
 
-    if (kind !== 'copy' && kind !== 'parallel' && !changed) {
+    if (kind !== 'copy' && !changed) {
       H.setSyncStatus(
         H.variationKindLabel(kind) + ' · already that take · try another fork or edit a step'
       );
@@ -766,7 +757,8 @@ H.resolveCompareCell = function (song) {
     H.refreshAll();
     const details = {
       copy: ' (exact copy — tweak freely)',
-      parallel: ' · parallel maj↔min (' + changed + ' flipped)',
+      'parallel-major': ' · minors → majors (majors kept)',
+      'parallel-minor': ' · majors → minors (minors kept)',
       voice: ' · inversions smoothed through the cell',
       sevenths: ' · 7ths on every step',
       pedal: ' · common-tone bass · local home, only if it belongs',
