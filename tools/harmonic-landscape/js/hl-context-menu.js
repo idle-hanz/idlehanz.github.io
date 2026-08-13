@@ -186,6 +186,19 @@
         },
         { danger: true }
       );
+      const secCol = addSection(el, 'This step only');
+      [
+        ['darker', 'Darken', 'maj→min, min→ø/°'],
+        ['brighter', 'Brighten', 'dim→min, min→maj'],
+        ['secondary', 'V7 of next', 'this step becomes V7 of the following chord'],
+        ['tritone', 'Tritone', '♭II7 stand-in'],
+        ['dim', 'Diminish', 'this step → ° / °7'],
+      ].forEach(function (row) {
+        addItem(secCol, row[1], row[2], function () {
+          H.state.selected = pathIdx;
+          if (H.applyStepColour) H.applyStepColour(row[0], pathIdx);
+        });
+      });
     }
 
     // --- Colours for this root ---

@@ -771,7 +771,38 @@ H.refreshAll = function () {
     H.setSyncStatus('Arch home · V7 → tonic');
   };
 
-  /** Apply a compose variation to the whole path (or selected steps when noted). */
+  /** Recolour one path index. Used by right-click. */
+  H.applyStepColour = function (kind, index) {
+    if (!H.state.chords.length || !H.C()) return;
+    const C = H.C();
+    const n = H.state.chords.length;
+    const i = index != null && index >= 0 && index < n ? index : H.state.selected;
+    if (i == null || i < 0 || i >= n) return;
+    const cur = H.state.chords[i];
+    const t = H.state.tonic;
+    const m = H.state.mode;
+    let ch = null;
+    if (kind === 'darker' && C.darkenChord) ch = C.darkenChord(cur, t, m);
+    else if (kind === 'brighter' && C.brightenChord) ch = C.brightenChord(cur, t, m);
+    else if (kind === 'secondary' && C.secondaryDominantOf) {
+      ch = C.secondaryDominantOf(H.state.chords[i + 1] || H.state.chords[0], cur.duration);
+    } else if (kind === 'tritone' && C.tritoneSubOf) {
+      const base =
+        String(cur.quality || '').indexOf('dom') === 0
+          ? cur
+          : C.secondaryDominantOf(H.state.chords[i + 1] || H.state.chords[0], cur.duration) ||
+            cur;
+      ch = C.tritoneSubOf(base);
+    } else if (kind === 'dim' && C.diminishChord) ch = C.diminishChord(cur);
+    if (!ch) {
+      H.setSyncStatus('No change for this step');
+      return;
+    }
+    H.applyChordAtIndex(i, ch, { job: kind });
+    if (H.showToast) H.showToast('Step ' + (i + 1) + ' · ' + (ch.name || kind));
+  };
+
+  /** Apply a compose variation to the WHOLE path. Single-step colour is right-click. */
   H.applyPathVariation = function (kind) {
     if (!H.state.chords.length || !H.C()) return;
     const C = H.C();
@@ -779,50 +810,53 @@ H.refreshAll = function () {
     const m = H.state.mode;
     let next = null;
     const src = H.state.chords.map((c) => H.M().cloneChord(c));
-    const i =
-      H.state.selected >= 0 && H.state.selected < src.length
-        ? H.state.selected
-        : src.length - 1;
-    const cur = src[i];
+    const mapAll = function (fn, skipFirst) {
+      const out = src.slice();
+      let n = 0;
+      out.forEach(function (c, idx) {
+        if (skipFirst && idx === 0) return;
+        const ch = fn(c, idx);
+        if (
+          ch &&
+          (ch.root !== c.root || ch.quality !== c.quality)
+        ) {
+          out[idx] = ch;
+          n += 1;
+        }
+      });
+      return n ? out : null;
+    };
     if (kind === 'darker' && C.darkenChord) {
-      const ch = C.darkenChord(cur, t, m);
-      if (ch) {
-        next = src.slice();
-        next[i] = ch;
-      }
+      next = mapAll(function (c) {
+        return C.darkenChord(c, t, m);
+      });
     } else if (kind === 'brighter' && C.brightenChord) {
-      const ch = C.brightenChord(cur, t, m);
-      if (ch) {
-        next = src.slice();
-        next[i] = ch;
-      }
+      next = mapAll(function (c) {
+        return C.brightenChord(c, t, m);
+      });
     } else if (kind === 'secondary' && C.secondaryDominantOf) {
-      const tgt = src[i + 1] || src[0];
-      const ch = C.secondaryDominantOf(tgt, cur.duration);
-      if (ch) {
-        next = src.slice();
-        next[i] = ch;
-      }
+      next = mapAll(function (c, idx) {
+        return C.secondaryDominantOf(src[idx + 1] || src[0], c.duration);
+      }, true);
     } else if (kind === 'tritone' && C.tritoneSubOf) {
-      const base =
-        String(cur.quality || '').indexOf('dom') === 0
-          ? cur
-          : C.secondaryDominantOf(src[i + 1] || src[0], cur.duration) || cur;
-      const ch = C.tritoneSubOf(base);
-      if (ch) {
-        next = src.slice();
-        next[i] = ch;
-      }
+      next = mapAll(function (c, idx) {
+        const base =
+          String(c.quality || '').indexOf('dom') === 0
+            ? c
+            : C.secondaryDominantOf(src[idx + 1] || src[0], c.duration) || c;
+        return C.tritoneSubOf(base);
+      }, true);
     } else if (kind === 'dim' && C.diminishChord) {
-      const ch = C.diminishChord(cur);
-      if (ch) {
-        next = src.slice();
-        next[i] = ch;
-      }
-    } else if (kind === 'darker' && C.varyOneChord) {
-      next = C.varyOneChord(src, t, m, i);
-    } else if (kind === 'reharm' && C.reharmBar) {
-      next = C.reharmBar(src, t, m, i);
+      next = mapAll(function (c) {
+        return C.diminishChord(c);
+      });
+    } else if (kind === 'reharm' && C.varyOneChord) {
+      next = src.slice();
+      src.forEach(function (c, idx) {
+        if (idx === 0) return;
+        const one = C.varyOneChord(next, t, m, idx);
+        if (one) next = one;
+      });
     } else if (kind === 'rhythm' && C.varyRhythmOnly) {
       next = C.varyRhythmOnly(src);
     } else if (kind === 'bass-colour' && C.varySameBassNewUpper) {
@@ -847,16 +881,18 @@ H.refreshAll = function () {
     H.setSelectedIndices([H.state.selected], H.state.selected);
     H.afterEdit();
     H.A().ensure();
-    if (H.state.chords[H.state.selected]) {
+    if (H.A().playSeq || H.playSeq) {
+      if (H.playSeq) H.playSeq({ once: true, force: true, label: 'Hear variation' });
+    } else if (H.state.chords[H.state.selected]) {
       H.A().playChord({ chord: H.state.chords[H.state.selected] });
     }
     const labels = {
-      darker: 'Darker · ' + ((next[i] && next[i].name) || ''),
-      brighter: 'Brighter · ' + ((next[i] && next[i].name) || ''),
-      secondary: 'V7 of next · ' + ((next[i] && next[i].name) || ''),
-      tritone: 'Tritone · ' + ((next[i] && next[i].name) || ''),
-      dim: 'Dim · ' + ((next[i] && next[i].name) || ''),
-      reharm: 'Reharm step',
+      darker: 'Darkened whole cell',
+      brighter: 'Brightened whole cell',
+      secondary: 'Each step → V7 of the next (home kept)',
+      tritone: 'Tritone across the cell (home kept)',
+      dim: 'Diminished whole cell',
+      reharm: 'Reharmed the cell',
       rhythm: 'Rhythm shape',
       'bass-colour': 'Same bass · new colour',
     };

@@ -627,20 +627,20 @@ H.resolveCompareCell = function (song) {
       }
     } else if (kind === 'darken' || kind === 'reharm') {
       const C = H.C();
-      const i =
-        H.state.selected >= 0 && H.state.selected < newChords.length
-          ? H.state.selected
-          : Math.min(2, newChords.length - 1);
-      const land = H.sessionChordToLandscape
-        ? H.sessionChordToLandscape(newChords[i])
-        : newChords[i];
       if (kind === 'darken' && C && C.darkenChord) {
-        const ch = C.darkenChord(land, H.state.tonic, H.state.mode);
-        if (ch) {
-          newChords[i] = H.S().fromLandscapeChord(ch);
-          newChords[i].tag = 'darken';
+        newChords = newChords.map(function (sc) {
+          const land = H.sessionChordToLandscape
+            ? H.sessionChordToLandscape(sc)
+            : sc;
+          const ch = C.darkenChord(land, H.state.tonic, H.state.mode);
+          if (!ch || (ch.root === land.root && ch.quality === land.quality)) {
+            return sc;
+          }
           changed += 1;
-        }
+          const out = H.S().fromLandscapeChord(ch);
+          out.tag = 'darken';
+          return out;
+        });
       } else if (newChords.length >= 3) {
         const t = H.state.tonic;
         newChords[i] = {
