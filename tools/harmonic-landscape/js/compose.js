@@ -1544,21 +1544,100 @@
     });
   }
 
-  /** Hold tonic (or first bass) under every step. */
+  function chordTonePcs(chord) {
+    const music = M();
+    if (!chord) return [];
+    let notes = (chord.notes || []).map(function (n) {
+      return music.pc(n);
+    });
+    if (!notes.length && chord.root != null) {
+      const q = music.QUALITIES[chord.quality];
+      const r = music.pc(chord.root);
+      notes = ((q && q.intervals) || [0, 4, 7]).map(function (iv) {
+        return (r + ((iv % 12) + 12) % 12) % 12;
+      });
+    }
+    const out = [];
+    notes.forEach(function (n) {
+      if (out.indexOf(n) < 0) out.push(n);
+    });
+    return out;
+  }
+
+  /**
+   * Common-tone bass, per local key. Never invents a slash note that is not
+   * in the chord. Local tonic wins when it actually belongs; otherwise the
+   * pitch that covers the most chords in that island. A held bass can
+   * continue across a modulation if the next island still contains it.
+   */
   function pedalProgression(chords, tonic) {
     const music = M();
     if (!chords || !chords.length) return chords.map((c) => music.cloneChord(c));
-    const bass =
-      tonic != null ? music.pc(tonic) : effectiveBass(chords[0]);
-    return chords.map(function (src) {
-      const c = music.cloneChord(src);
-      const next = withBass(c, bass);
+    const copy = chords.map((c) => music.cloneChord(c));
+    const n = copy.length;
+    const fallback = tonic != null ? music.pc(tonic) : music.pc(copy[0].root);
+    const homeOf = function (c) {
+      return c.localTonic != null ? music.pc(c.localTonic) : fallback;
+    };
+    const islands = [];
+    let start = 0;
+    for (let i = 1; i <= n; i++) {
+      if (i === n || homeOf(copy[i]) !== homeOf(copy[start])) {
+        islands.push({ start: start, end: i, home: homeOf(copy[start]) });
+        start = i;
+      }
+    }
+
+    const pickPedal = function (from, to, home, prefer) {
+      const counts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+      for (let i = from; i < to; i++) {
+        chordTonePcs(copy[i]).forEach(function (p) {
+          counts[p] += 1;
+        });
+      }
+      let best = -1;
+      let bestS = -1;
+      for (let p = 0; p < 12; p++) {
+        if (!counts[p]) continue;
+        let sc = counts[p];
+        if (p === home) sc += 1.2;
+        if (prefer != null && p === prefer) sc += 0.9;
+        if (sc > bestS) {
+          bestS = sc;
+          best = p;
+        }
+      }
+      return best;
+    };
+
+    const stamp = function (i, bass, tag) {
+      const src = chords[i];
+      const next = withBass(copy[i], bass);
       next.duration = src.duration;
-      next.tag = 'pedal';
+      next.tag = tag || src.tag || 'pedal';
       if (src.localTonic != null) next.localTonic = src.localTonic;
       if (src.localMode) next.localMode = src.localMode;
-      return next;
+      copy[i] = next;
+    };
+
+    let held = null;
+    islands.forEach(function (isl) {
+      const pedal = pickPedal(isl.start, isl.end, isl.home, held);
+      if (pedal < 0) return;
+      for (let i = isl.start; i < isl.end; i++) {
+        const tones = chordTonePcs(copy[i]);
+        if (tones.indexOf(pedal) >= 0) {
+          // Keep the first step of the whole cell in root position (home).
+          if (i === 0) stamp(i, copy[i].root, copy[i].tag);
+          else stamp(i, pedal, 'pedal');
+          held = pedal;
+        } else {
+          stamp(i, copy[i].root, copy[i].tag);
+        }
+      }
+      held = pedal;
     });
+    return copy;
   }
 
   /** Two darker/colour joins — a whole-cell reharm take, not one step. */

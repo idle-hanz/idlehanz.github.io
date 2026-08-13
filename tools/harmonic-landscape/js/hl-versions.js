@@ -262,7 +262,7 @@ H.resolveCompareCell = function (song) {
       '<button type="button" class="btn ghost" id="btn-var-copy" title="Exact copy as next version">+ Duplicate</button>' +
       '<button type="button" class="btn ghost" id="btn-var-voice" title="Fork with smooth inversions through the whole cell">+ Voice lead</button>' +
       '<button type="button" class="btn ghost" id="btn-var-sevenths" title="Fork with 7ths on every step — same roots, richer colour">+ 7ths</button>' +
-      '<button type="button" class="btn ghost" id="btn-var-pedal" title="Fork with home bass held under the whole cell">+ Pedal</button>' +
+      '<button type="button" class="btn ghost" id="btn-var-pedal" title="Fork with a held common-tone bass. Uses each step’s own key after a modulation. Never adds a bass that is not in the chord.">+ Pedal</button>' +
       '<button type="button" class="btn ghost" id="btn-var-rhythm" title="Fork with a new rhythm shape, same chords">+ Rhythm</button>' +
       '<button type="button" class="btn ghost" id="btn-var-reharm" title="Fork with two reharm joins">+ Reharm</button>' +
       '<button type="button" class="btn ghost" id="btn-var-parallel" title="Fork parallel maj/min on every step">+ Parallel</button>' +
@@ -769,7 +769,7 @@ H.resolveCompareCell = function (song) {
       parallel: ' · parallel maj↔min (' + changed + ' flipped)',
       voice: ' · inversions smoothed through the cell',
       sevenths: ' · 7ths on every step',
-      pedal: ' · home bass held under the cell',
+      pedal: ' · common-tone bass · local home, only if it belongs',
       rhythm: ' · new rhythm shape',
       darker: ' · one darker join',
       darken: ' · one darker join',
