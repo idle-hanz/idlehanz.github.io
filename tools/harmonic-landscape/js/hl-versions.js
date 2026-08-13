@@ -308,38 +308,37 @@ H.resolveCompareCell = function (song) {
   H.renderVersionBar = function () {
     const host = H.$('#version-bar');
     if (!host) return;
-    if (!H.S()) {
-      host.hidden = true;
-      host.innerHTML = '';
-      return;
-    }
-    const song = H.S().loadSong();
-    if (!song || !song.cells) {
-      host.hidden = true;
-      host.innerHTML = '';
-      return;
-    }
-
-    const cellIds = Object.keys(song.cells);
-    const cur = H.state.cellId && song.cells[H.state.cellId] ? song.cells[H.state.cellId] : null;
-    const family = cur && cur.familyId ? H.S().siblingsOfCell(song, H.state.cellId) : cur ? [cur] : [];
+    const fold = H.$('#fold-versions');
+    const hideFold = function (on) {
+      if (fold) fold.hidden = !!on;
+      host.hidden = !!on;
+    };
+    const song = H.S() && H.S().loadSong ? H.S().loadSong() : null;
+    const cells = (song && song.cells) || {};
+    const cellIds = Object.keys(cells);
+    const cur = H.state.cellId && cells[H.state.cellId] ? cells[H.state.cellId] : null;
+    const family =
+      song && cur && cur.familyId && H.S().siblingsOfCell
+        ? H.S().siblingsOfCell(song, H.state.cellId)
+        : cur
+          ? [cur]
+          : [];
     const hasFamily = family.length > 1;
     const hasManyCells = cellIds.length > 1;
 
-    // Always show when editing a cell or a sequence (so Duplicate / Vary are reachable)
     if (!cur && !H.state.chords.length && !hasManyCells) {
-      host.hidden = true;
+      hideFold(true);
       host.innerHTML = '';
       return;
     }
 
-    host.hidden = false;
+    hideFold(false);
     let html = '';
 
     // Always show version actions
     const compareName =
-      H.state.compareCellId && song.cells[H.state.compareCellId]
-        ? song.cells[H.state.compareCellId].name || 'compare'
+      H.state.compareCellId && cells[H.state.compareCellId]
+        ? cells[H.state.compareCellId].name || 'compare'
         : null;
     const blueOnThis = H.state.compareCellId && H.state.compareCellId === H.state.cellId;
     html +=
@@ -352,7 +351,7 @@ H.resolveCompareCell = function (song) {
       '</div>';
     if (hasFamily || cur) {
       const famName =
-        cur && cur.familyId && song.families[cur.familyId]
+        song && cur && cur.familyId && song.families && song.families[cur.familyId]
           ? song.families[cur.familyId].name
           : (cur && cur.name ? cur.name.replace(/\s*v\d+\s*$/i, '') : '') || 'Theme';
       const chips = hasFamily ? family : cur ? [cur] : [];

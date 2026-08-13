@@ -1341,6 +1341,7 @@ H.chordFromChaseSeat = function (seat, key) {
       H.refreshMap();
       if (H.updatePlayBtn) H.updatePlayBtn();
     }
+    if (H.renderVersionBar) H.renderVersionBar();
     if (H.map) {
       const m = H.map;
       setTimeout(() => {

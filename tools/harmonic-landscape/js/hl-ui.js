@@ -916,6 +916,7 @@ H.refreshAll = function () {
     H.renderPlaceReadout();
     H.updateEmptyStart();
     H.updateCoach();
+    if (H.renderVersionBar) H.renderVersionBar();
     if (H.syncDurationBar) H.syncDurationBar();
     if (H.syncSelectionChrome) H.syncSelectionChrome();
   };

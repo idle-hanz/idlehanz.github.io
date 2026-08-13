@@ -284,10 +284,10 @@
     }
     /* Version / cell switcher */
     .version-bar {
-      margin-top: 0.55rem;
-      padding-top: 0.5rem;
-      border-top: 1px solid var(--line);
+      margin-top: 0.15rem;
+      padding-top: 0;
     }
+    #fold-versions[hidden] { display: none !important; }
     .version-bar-label {
       font-size: 0.62rem;
       text-transform: uppercase;
@@ -1407,8 +1407,15 @@
           <div id="canonical-badge" class="badge" hidden></div>
           <p id="seq-why"></p>
           <div id="path-text"></div>
-          <div id="version-bar" class="version-bar" hidden></div>
         </div>
+
+        <details class="fold" id="fold-versions" open>
+          <summary>Versions — takes of this cell</summary>
+          <div class="fold-body">
+            <p class="hint" style="margin:0 0 0.35rem">Fork a full take. While looping, click a chip to play it next. Alt-click or Blue compares.</p>
+            <div id="version-bar" class="version-bar"></div>
+          </div>
+        </details>
 
         <div class="section">
           <h2>Build</h2>
@@ -1627,28 +1634,28 @@
     </div>
   </div>
 
-  <script src="../ih-session.js?v=20260813y"></script>
-  <script src="js/music.js?v=20260813y"></script>
-  <script src="js/compose.js?v=20260813y"></script>
-  <script src="js/audio.js?v=20260813y"></script>
-  <script src="js/packs.js?v=20260813y"></script>
-  <script src="js/spatial.js?v=20260813y"></script>
-  <script src="js/spatial-layout.js?v=20260813y"></script>
-  <script src="js/spatial-input.js?v=20260813y"></script>
-  <script src="js/spatial-draw.js?v=20260813y"></script>
+  <script src="../ih-session.js?v=20260813z"></script>
+  <script src="js/music.js?v=20260813z"></script>
+  <script src="js/compose.js?v=20260813z"></script>
+  <script src="js/audio.js?v=20260813z"></script>
+  <script src="js/packs.js?v=20260813z"></script>
+  <script src="js/spatial.js?v=20260813z"></script>
+  <script src="js/spatial-layout.js?v=20260813z"></script>
+  <script src="js/spatial-input.js?v=20260813z"></script>
+  <script src="js/spatial-draw.js?v=20260813z"></script>
   <!-- App modules (shared HLApp namespace) — order matters -->
-  <script src="js/hl-core.js?v=20260813y"></script>
-  <script src="js/hl-styles.js?v=20260813y"></script>
-  <script src="js/hl-context-menu.js?v=20260813y"></script>
-  <script src="js/hl-undo.js?v=20260813y"></script>
-  <script src="js/hl-session.js?v=20260813y"></script>
-  <script src="js/hl-map-bridge.js?v=20260813y"></script>
-  <script src="js/hl-versions.js?v=20260813y"></script>
-  <script src="js/hl-edit.js?v=20260813y"></script>
-  <script src="js/hl-horizon.js?v=20260813y"></script>
-  <script src="js/hl-playback.js?v=20260813y"></script>
-  <script src="js/hl-ui.js?v=20260813y"></script>
-  <script src="js/hl-polish.js?v=20260813y"></script>
-  <script src="js/app.js?v=20260813y"></script>
+  <script src="js/hl-core.js?v=20260813z"></script>
+  <script src="js/hl-styles.js?v=20260813z"></script>
+  <script src="js/hl-context-menu.js?v=20260813z"></script>
+  <script src="js/hl-undo.js?v=20260813z"></script>
+  <script src="js/hl-session.js?v=20260813z"></script>
+  <script src="js/hl-map-bridge.js?v=20260813z"></script>
+  <script src="js/hl-versions.js?v=20260813z"></script>
+  <script src="js/hl-edit.js?v=20260813z"></script>
+  <script src="js/hl-horizon.js?v=20260813z"></script>
+  <script src="js/hl-playback.js?v=20260813z"></script>
+  <script src="js/hl-ui.js?v=20260813z"></script>
+  <script src="js/hl-polish.js?v=20260813z"></script>
+  <script src="js/app.js?v=20260813z"></script>
 </body>
 </html>
