@@ -812,6 +812,139 @@
 
   // ─── Variations ──────────────────────────────────────────
 
+  /**
+   * Force a darker colour on one chord. Always returns a different chord.
+   */
+  function darkenChord(chord, tonic, modeKey) {
+    const music = M();
+    if (!chord) return null;
+    const q = String(chord.quality || 'maj');
+    const r = music.pc(chord.root);
+    const t = music.pc(tonic);
+    const steps = [];
+    const push = function (root, quality, roman, region) {
+      if (root === r && quality === q) return;
+      steps.push({ root: root, quality: quality, roman: roman || '', region: region || 'interchange' });
+    };
+    if (q === 'maj' || q === 'maj7' || q === 'add9' || q === 'sus2' || q === '6') {
+      push(r, 'min', chord.roman || '', 'interchange');
+      push(r, 'min7', '', 'interchange');
+    }
+    if (q === 'min' || q === 'min7' || q === 'madd9') {
+      push(r, 'halfdim', '', 'diminished');
+      push(r, 'dim', '', 'diminished');
+    }
+    if (q.indexOf('dom') === 0 || q === '7') {
+      push(r, 'dom7b9', (chord.roman || 'V') + '♭9', 'valt');
+      push(r, 'dom7alt', (chord.roman || 'V') + 'alt', 'valt');
+    }
+    if (q.indexOf('dim') >= 0 && q !== 'dim7') {
+      push(r, 'dim7', '', 'diminished');
+    }
+    if (q === 'sus4' || q === '7sus4') push(r, 'min', '', 'diatonic');
+    push((t + 8) % 12, 'maj', '♭VI', 'interchange');
+    push((t + 3) % 12, 'maj', '♭III', 'interchange');
+    push((t + 1) % 12, 'dom7', '♭II7', 'tritone');
+    push((t + 10) % 12, 'dom7', '♭VII7', 'interchange');
+    push(r, 'dim7', '', 'diminished');
+    const pick = steps[0];
+    if (!pick) return music.cloneChord(chord);
+    let ch = music.makeChord(pick.root, pick.quality, {
+      duration: chord.duration,
+      region: pick.region,
+      roman: pick.roman,
+      tag: 'darken',
+    });
+    ch = withBass(ch, ch.root);
+    ch.duration = chord.duration;
+    if (chord.localTonic != null) ch.localTonic = chord.localTonic;
+    if (chord.localMode) ch.localMode = chord.localMode;
+    return ch;
+  }
+
+  function brightenChord(chord, tonic, modeKey) {
+    const music = M();
+    if (!chord) return null;
+    const q = String(chord.quality || 'min');
+    const r = music.pc(chord.root);
+    const t = music.pc(tonic);
+    const steps = [];
+    const push = function (root, quality, roman, region) {
+      if (root === r && quality === q) return;
+      steps.push({ root: root, quality: quality, roman: roman || '', region: region || 'diatonic' });
+    };
+    if (q.indexOf('dim') >= 0 || q === 'halfdim') push(r, 'min', '', 'diatonic');
+    if (q === 'min' || q === 'min7' || q === 'min9') push(r, 'maj', '', 'parallel');
+    if (q === 'maj' || q === 'min') push(r, 'maj7', '', 'flavour');
+    if (q.indexOf('dom') === 0) push(r, 'maj', '', 'diatonic');
+    push((t + 5) % 12, 'maj', 'IV', 'diatonic');
+    push((t + 7) % 12, 'maj', 'V', 'diatonic');
+    const pick = steps[0];
+    if (!pick) return music.cloneChord(chord);
+    let ch = music.makeChord(pick.root, pick.quality, {
+      duration: chord.duration,
+      region: pick.region,
+      roman: pick.roman,
+      tag: 'brighten',
+    });
+    ch = withBass(ch, ch.root);
+    ch.duration = chord.duration;
+    if (chord.localTonic != null) ch.localTonic = chord.localTonic;
+    if (chord.localMode) ch.localMode = chord.localMode;
+    return ch;
+  }
+
+  function secondaryDominantOf(target, duration) {
+    const music = M();
+    if (!target) return null;
+    const root = (music.pc(target.root) + 7) % 12;
+    let ch = music.makeChord(root, 'dom7', {
+      duration: duration != null ? duration : target.duration || 2,
+      region: 'secondary',
+      roman: 'V7/',
+      tag: 'secondary',
+    });
+    ch = withBass(ch, ch.root);
+    return ch;
+  }
+
+  function tritoneSubOf(chord) {
+    const music = M();
+    if (!chord) return null;
+    const root = (music.pc(chord.root) + 6) % 12;
+    let ch = music.makeChord(root, 'dom7', {
+      duration: chord.duration,
+      region: 'tritone',
+      roman: '♭II7',
+      tag: 'tritone',
+    });
+    ch = withBass(ch, ch.root);
+    if (chord.localTonic != null) ch.localTonic = chord.localTonic;
+    if (chord.localMode) ch.localMode = chord.localMode;
+    return ch;
+  }
+
+  function diminishChord(chord) {
+    const music = M();
+    if (!chord) return null;
+    const q = String(chord.quality || '');
+    const nextQ = q === 'dim' || q === 'dim7' ? 'dim7' : q.indexOf('min') === 0 ? 'dim' : 'dim';
+    const quality = q === 'dim' ? 'dim7' : nextQ;
+    if (quality === q) {
+      return darkenChord(chord, chord.localTonic, chord.localMode);
+    }
+    let ch = music.makeChord(chord.root, quality, {
+      duration: chord.duration,
+      region: 'diminished',
+      roman: (chord.roman || '') + '°',
+      tag: 'dim',
+    });
+    ch = withBass(ch, ch.root);
+    if (chord.localTonic != null) ch.localTonic = chord.localTonic;
+    if (chord.localMode) ch.localMode = chord.localMode;
+    return ch;
+  }
+
   function varyOneChord(chords, tonic, modeKey, index) {
     const music = M();
     if (!chords.length) return chords.slice();
@@ -1645,6 +1778,11 @@
     suggestDirectionPaths,
     analyzeCell,
     varyOneChord,
+    darkenChord,
+    brightenChord,
+    secondaryDominantOf,
+    tritoneSubOf,
+    diminishChord,
     varyRhythmOnly,
     reharmBar,
     varySameBassNewUpper,

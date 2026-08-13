@@ -779,13 +779,49 @@ H.refreshAll = function () {
     const m = H.state.mode;
     let next = null;
     const src = H.state.chords.map((c) => H.M().cloneChord(c));
-    if (kind === 'darker' && C.varyOneChord) {
-      const i =
-        H.state.selected >= 0 ? H.state.selected : Math.min(2, src.length - 1);
+    const i =
+      H.state.selected >= 0 && H.state.selected < src.length
+        ? H.state.selected
+        : src.length - 1;
+    const cur = src[i];
+    if (kind === 'darker' && C.darkenChord) {
+      const ch = C.darkenChord(cur, t, m);
+      if (ch) {
+        next = src.slice();
+        next[i] = ch;
+      }
+    } else if (kind === 'brighter' && C.brightenChord) {
+      const ch = C.brightenChord(cur, t, m);
+      if (ch) {
+        next = src.slice();
+        next[i] = ch;
+      }
+    } else if (kind === 'secondary' && C.secondaryDominantOf) {
+      const tgt = src[i + 1] || src[0];
+      const ch = C.secondaryDominantOf(tgt, cur.duration);
+      if (ch) {
+        next = src.slice();
+        next[i] = ch;
+      }
+    } else if (kind === 'tritone' && C.tritoneSubOf) {
+      const base =
+        String(cur.quality || '').indexOf('dom') === 0
+          ? cur
+          : C.secondaryDominantOf(src[i + 1] || src[0], cur.duration) || cur;
+      const ch = C.tritoneSubOf(base);
+      if (ch) {
+        next = src.slice();
+        next[i] = ch;
+      }
+    } else if (kind === 'dim' && C.diminishChord) {
+      const ch = C.diminishChord(cur);
+      if (ch) {
+        next = src.slice();
+        next[i] = ch;
+      }
+    } else if (kind === 'darker' && C.varyOneChord) {
       next = C.varyOneChord(src, t, m, i);
     } else if (kind === 'reharm' && C.reharmBar) {
-      const i =
-        H.state.selected >= 0 ? H.state.selected : Math.min(2, src.length - 1);
       next = C.reharmBar(src, t, m, i);
     } else if (kind === 'rhythm' && C.varyRhythmOnly) {
       next = C.varyRhythmOnly(src);
@@ -815,7 +851,11 @@ H.refreshAll = function () {
       H.A().playChord({ chord: H.state.chords[H.state.selected] });
     }
     const labels = {
-      darker: 'Darker colour',
+      darker: 'Darker · ' + ((next[i] && next[i].name) || ''),
+      brighter: 'Brighter · ' + ((next[i] && next[i].name) || ''),
+      secondary: 'V7 of next · ' + ((next[i] && next[i].name) || ''),
+      tritone: 'Tritone · ' + ((next[i] && next[i].name) || ''),
+      dim: 'Dim · ' + ((next[i] && next[i].name) || ''),
       reharm: 'Reharm step',
       rhythm: 'Rhythm shape',
       'bass-colour': 'Same bass · new colour',

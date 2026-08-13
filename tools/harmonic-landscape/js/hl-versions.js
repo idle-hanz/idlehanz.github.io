@@ -626,9 +626,23 @@ H.resolveCompareCell = function (song) {
         // Still create the version so the button does something visible
       }
     } else if (kind === 'darken' || kind === 'reharm') {
-      if (newChords.length >= 3) {
+      const C = H.C();
+      const i =
+        H.state.selected >= 0 && H.state.selected < newChords.length
+          ? H.state.selected
+          : Math.min(2, newChords.length - 1);
+      const land = H.sessionChordToLandscape
+        ? H.sessionChordToLandscape(newChords[i])
+        : newChords[i];
+      if (kind === 'darken' && C && C.darkenChord) {
+        const ch = C.darkenChord(land, H.state.tonic, H.state.mode);
+        if (ch) {
+          newChords[i] = H.S().fromLandscapeChord(ch);
+          newChords[i].tag = 'darken';
+          changed += 1;
+        }
+      } else if (newChords.length >= 3) {
         const t = H.state.tonic;
-        const i = Math.min(2, newChords.length - 1);
         newChords[i] = {
           root: (t + 8) % 12,
           quality: 'maj',
