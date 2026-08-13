@@ -492,7 +492,11 @@
     const cell = song.cells[cellId];
     if (!cell) return;
     const used = (song.arrangement || []).filter(
-      (s) => s.cellId === cellId || (s.chain && s.chain.indexOf(cellId) >= 0)
+      (s) =>
+        s.cellId === cellId ||
+        (s.chain && s.chain.indexOf(cellId) >= 0) ||
+        s.endCellId === cellId ||
+        s.intoCellId === cellId
     );
     const label = cell.name || cellId;
     let msg = 'Delete cell “' + label + '”?';
@@ -3212,13 +3216,22 @@ function spiralCanvasClick(ev) {
     let start = 0;
     if (fromSectionId) {
       const sec = song.arrangement.find((s) => s.id === fromSectionId);
+      const sid = sec && sec.id;
       const name = sec ? sec.name : null;
-      if (name) {
+      const matchSec = function (c) {
+        if (sid && c._sectionId) return c._sectionId === sid;
+        return name && c._section === name;
+      };
+      if (sid || name) {
         if (opts.sectionOnly) {
-          flat = flat.filter((c) => c._section === name);
+          flat = flat.filter(function (c) {
+            return matchSec(c) && !c._seam;
+          });
           start = 0;
         } else {
-          const idx = flat.findIndex((c) => c._section === name && !c._seam);
+          const idx = flat.findIndex(function (c) {
+            return matchSec(c) && !c._seam;
+          });
           if (idx >= 0) start = idx;
         }
       }
@@ -3543,14 +3556,7 @@ function spiralCanvasClick(ev) {
       alert('music.js not loaded.');
       return;
     }
-    const chords = flat.map((c) => {
-      let ch = M().makeChord(c.root, c.quality || 'maj', { duration: c.duration || 4 });
-      if (c.bass != null && window.HLCompose && HLCompose.withBass) {
-        ch = HLCompose.withBass(ch, c.bass);
-        ch.duration = c.duration || 4;
-      }
-      return ch;
-    });
+    const chords = flat.map((c) => sessionChordToPlayable(c));
     const bytes = buildMidi(chords, song.bpm || 96);
     const name = (song.title || 'song').replace(/[^\w\-]+/g, '-') + '-chords.mid';
     const a = document.createElement('a');

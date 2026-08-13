@@ -305,7 +305,11 @@
     }
 
     const used = (song.arrangement || []).filter(
-      (s) => s.cellId === cellId || (s.chain && s.chain.indexOf(cellId) >= 0)
+      (s) =>
+        s.cellId === cellId ||
+        (s.chain && s.chain.indexOf(cellId) >= 0) ||
+        s.endCellId === cellId ||
+        s.intoCellId === cellId
     );
     const sectionsTouched = used.length;
 
@@ -334,12 +338,19 @@
 
     let sectionsRemoved = 0;
     song.arrangement = (song.arrangement || []).filter((s) => {
+      if (s.endCellId === cellId) s.endCellId = null;
+      if (s.intoCellId === cellId) s.intoCellId = null;
       if (s.chain) s.chain = s.chain.filter((id) => id !== cellId);
       if (s.cellId === cellId) {
-        s.cellId = s.chain && s.chain[0] ? s.chain[0] : null;
+        s.cellId =
+          (s.chain && s.chain[0]) || s.endCellId || s.intoCellId || null;
       }
-      // Drop section if nothing left to play
-      if (!s.cellId && !(s.chain && s.chain.length)) {
+      if (
+        !s.cellId &&
+        !(s.chain && s.chain.length) &&
+        !s.endCellId &&
+        !s.intoCellId
+      ) {
         sectionsRemoved += 1;
         return false;
       }
@@ -350,11 +361,6 @@
       song.focus.cellId = nextFocusId;
       song.focus.chordIndex = 0;
     }
-
-    (song.arrangement || []).forEach(function (s) {
-      if (s.endCellId === cellId) s.endCellId = null;
-      if (s.intoCellId === cellId) s.intoCellId = null;
-    });
 
     return {
       ok: true,
@@ -939,11 +945,15 @@
           chordIndex: payload.focus || 0,
         };
       }
-      song.title = payload.title || song.title;
+      if (
+        payload.title &&
+        (!song.title || song.title === 'Untitled')
+      ) {
+        song.title = payload.title;
+      }
       song.bpm = payload.bpm != null ? payload.bpm : song.bpm;
       const songEmpty =
-        !song.arrangement ||
-        !song.arrangement.length ||
+        (!song.arrangement || !song.arrangement.length) &&
         Object.keys(song.cells || {}).length <= 1;
       if (payload.key && songEmpty) song.key = payload.key;
       saveSong(song, payload.by);
@@ -1034,6 +1044,7 @@
       out.push(
         Object.assign({}, ch, {
           _section: meta.section || '',
+          _sectionId: meta.sectionId || '',
           _cell: cell.name || '',
           _rep: meta.rep != null ? meta.rep : 0,
           _version: cell.versionIndex || 1,
@@ -1070,6 +1081,7 @@
         chain.forEach((cid) => {
           pushCellChords(out, song, cid, {
             section: sec.name || '',
+            sectionId: sec.id || '',
             rep: r,
             role: role,
           });
@@ -1079,6 +1091,7 @@
       if (sec.intoCellId) {
         pushCellChords(out, song, sec.intoCellId, {
           section: sec.name || '',
+          sectionId: sec.id || '',
           rep: reps,
           role: 'into',
         });

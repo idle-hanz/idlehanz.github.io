@@ -5208,7 +5208,6 @@
                 mode: /minor|dorian|phrygian|locrian|aeolian/i.test(scaleType) ? 'minor' : 'major',
             };
         }
-        song.title = song.cells[id].name;
         IHSession.saveSong(song, by || 'fretboard');
         setIhSyncStatus('Session saved');
         return song;
