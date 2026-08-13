@@ -1464,9 +1464,30 @@ H.refreshAll = function () {
           H.escapeHtml(it.job || '') +
           '</span>';
         b.addEventListener('mouseenter', function () {
-          if (H.A() && it.chord) {
-            H.A().ensure();
-            H.A().playChord({ chord: it.chord, soft: true, duration: 0.4, identify: true });
+          if (!H.A() || !it.chord) return;
+          H.A().ensure();
+          const home = first || (H.makeHomeChord && H.makeHomeChord({ duration: 1 }));
+          const a = H.M().cloneChord ? H.M().cloneChord(it.chord) : it.chord;
+          a.duration = 1.15;
+          if (H.A().isPlaying && H.A().isPlaying()) {
+            H.A().playChord({ chord: a, soft: true, duration: 0.32 });
+            if (H._joinPrevTimer) clearTimeout(H._joinPrevTimer);
+            H._joinPrevTimer = setTimeout(function () {
+              if (home) {
+                H.A().playChord({ chord: home, soft: true, duration: 0.42 });
+              }
+            }, 340);
+            return;
+          }
+          if (home && H.A().playSequence) {
+            const bch = H.M().cloneChord ? H.M().cloneChord(home) : home;
+            bch.duration = 1.5;
+            H.A().playSequence([a, bch], Math.max(H.state.bpm || 96, 100), {
+              pulse: false,
+              loop: false,
+            });
+          } else {
+            H.A().playChord({ chord: a, soft: true, duration: 0.4, identify: true });
           }
         });
         b.addEventListener('click', function () {

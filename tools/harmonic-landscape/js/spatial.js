@@ -551,11 +551,17 @@
   /** Pan camera so a multi-key disk sits near the viewport centre. */
   SpatialMap.prototype.focusDisk = function (disk) {
     if (!disk) return this.focusHome();
+    // camera.x/y is the world point drawn at the canvas centre (see draw translate)
     this.cameraMode = 'free';
-    // World coords: disk centre should approach view origin under pan
-    this.camera.tx = -(disk.cx || 0);
-    this.camera.ty = -(disk.cy || 0);
+    this._userPanned = true;
+    const cx = disk.cx || 0;
+    const cy = disk.cy || 0;
+    this.camera.tx = cx;
+    this.camera.ty = cy;
+    this.camera.x = cx;
+    this.camera.y = cy;
     if (this.camera.tz == null || this.camera.tz < 0.85) this.camera.tz = 1;
+    this.camera.zoom = this.camera.tz;
     this.draw && this.draw();
   };
 

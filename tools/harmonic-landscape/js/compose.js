@@ -1350,7 +1350,8 @@
         roman: roman || '',
         tag: 'join',
       });
-      if (from && bestInversion) ch = bestInversion(from, ch);
+      // Root position so “A” reads as A (not A/G#) — this is a functional join, not VL
+      if (withBass) ch = withBass(ch, ch.root);
       return { ch: ch, roman: roman, region: region, job: job };
     };
 
@@ -1371,7 +1372,10 @@
     raw.forEach(function (row) {
       const ch = row.ch;
       if (!ch) return;
-      if (ch.root === from.root && ch.quality === from.quality) return;
+      const sameAsFrom = ch.root === from.root && ch.quality === from.quality;
+      const keepVisible =
+        row.roman === 'VII' || row.roman === '♭VII' || row.roman === 'V7';
+      if (sameAsFrom && !keepVisible) return;
       if (ch.root === to.root && (ch.quality === to.quality || (ch.quality || '').indexOf('min') === 0 && (to.quality || '').indexOf('min') === 0)) {
         return;
       }
@@ -1385,13 +1389,16 @@
       let score = vlIn * 0.9 + vlOut * 1.3 + bassIn * 0.4 + bassOut * 0.7;
       if (row.roman === 'V7') score += 0.45;
       if (row.roman === 'V7♭9') score += 0.28;
-      if (row.roman === 'VII' || row.roman === '♭VII') score += 0.22;
+      // Natural-minor VII (A in Bm) is the classic turnaround into i
+      if (row.roman === 'VII' || row.roman === '♭VII') score += 0.62;
       if (row.roman === 'iv' || row.roman === 'IV') score += 0.18;
       if (row.region === 'tritone') score += 0.05;
       scored.push({
         id: 'join-' + k,
-        label: ch.name,
-        job: row.job,
+        label: sameAsFrom ? ch.name + ' · current' : ch.name,
+        job: sameAsFrom
+          ? 'already the last step · ' + (row.job || 'turnaround')
+          : row.job,
         roman: row.roman,
         region: row.region,
         chords: [ch],
@@ -1402,17 +1409,37 @@
     scored.sort(function (a, b) {
       return b.score - a.score;
     });
+    const pin = function (roman) {
+      const hit = scored.find(function (s) {
+        return s.roman === roman;
+      });
+      if (!hit) return;
+      if (
+        scored.slice(0, count).some(function (s) {
+          return s.id === hit.id;
+        })
+      ) {
+        return;
+      }
+      scored.splice(count - 1, 0, hit);
+    };
+    if (isMinor) pin('VII');
+    pin('V7');
     const top = scored.slice(0, count);
-    if (top[0] && top[0].roman === 'V7') {
+    const turn =
+      top.find(function (s) {
+        return s.roman === 'VII' || s.roman === '♭VII' || s.roman === 'V7';
+      }) || top[0];
+    if (turn) {
       top.push({
-        id: 'join-keep-' + top[0].id,
-        label: 'keep + ' + top[0].label,
+        id: 'join-keep-' + turn.id,
+        label: 'keep + ' + turn.label,
         job: 'insert seam · then into ' + (to.name || 'home'),
-        roman: top[0].roman,
-        region: top[0].region,
-        chords: top[0].chords.slice(),
+        roman: turn.roman,
+        region: turn.region,
+        chords: turn.chords.slice(),
         mode: 'insert',
-        score: top[0].score * 0.85,
+        score: turn.score * 0.85,
       });
     }
     return top;

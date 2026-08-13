@@ -169,6 +169,7 @@
       btn.addEventListener('click', function () {
         if (H.map && H.map.focusDisk) {
           H.map.focusDisk(d);
+          if (H.syncCamButtons) H.syncCamButtons();
         } else if (H.setWritingHome) {
           // Soft focus: set write home without transpose
           H.setWritingHome(d.tonic, d.mode || H.state.mode, {
