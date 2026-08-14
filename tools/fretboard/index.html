@@ -227,6 +227,33 @@
             border: 1px solid #cbd5e1; background: #f8fafc; font-family: ui-monospace, monospace;
         }
         html.dark .help-panel kbd { background: #0f172a; border-color: #475569; color: #e2e8f0; }
+        .fb-tour { position: fixed; inset: 0; z-index: 90; pointer-events: none; }
+        .fb-tour.hidden { display: none !important; }
+        .fb-tour-spot {
+            position: fixed; border-radius: 10px;
+            box-shadow: 0 0 0 9999px rgba(6, 4, 2, 0.72), 0 0 0 2px #c9a36e;
+            pointer-events: none;
+            transition: top 0.18s ease, left 0.18s ease, width 0.18s ease, height 0.18s ease;
+        }
+        .fb-tour-card {
+            position: fixed; width: min(22rem, calc(100vw - 20px)); pointer-events: auto;
+            border: 1px solid #3a2f22; border-radius: 12px; background: rgba(16, 12, 8, 0.98);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5); padding: 0.95rem 1rem 0.85rem; color: #e0e0e0;
+        }
+        .fb-tour-arrow { position: absolute; width: 0; height: 0; border: 8px solid transparent; }
+        .fb-tour-arrow.up { top: -16px; border-bottom-color: #c9a36e; }
+        .fb-tour-arrow.down { bottom: -16px; border-top-color: #c9a36e; }
+        .fb-tour-step { font-size: 0.7rem; letter-spacing: 0.14em; text-transform: uppercase; color: #c9a36e; margin-bottom: 0.3rem; }
+        .fb-tour-card h3 { margin: 0 0 0.35rem; font-size: 1.15rem; font-weight: 600; color: #d4bea3; }
+        .fb-tour-card p { margin: 0 0 0.85rem; font-size: 0.95rem; line-height: 1.45; color: #c8bfa8; }
+        .fb-tour-nav { display: flex; align-items: center; gap: 0.4rem; }
+        .fb-tour-nav-gap { flex: 1; }
+        .fb-tour-nav button {
+            border: 1px solid #3a2f22; background: transparent; color: #c8bfa8;
+            border-radius: 999px; padding: 0.32rem 0.8rem; font-size: 0.85rem; cursor: pointer;
+        }
+        .fb-tour-nav button:disabled { opacity: 0.35; cursor: default; }
+        .fb-tour-nav #fb-tour-next { background: #8b6f4e; border-color: #8b6f4e; color: #fff; }
     </style>
 </head>
 <body class="py-4">
@@ -265,7 +292,7 @@
                     <span id="instance-status" class="text-[9px] max-w-[8rem] truncate" style="color:var(--text-muted)"></span>
                     <input type="file" id="instance-file-input" accept="application/json,.json" class="hidden" onchange="importInstanceFile(event)">
                 </div>
-                <div class="flex flex-wrap items-center gap-1.5 chip rounded-2xl px-2 py-1 shadow-sm" title="Landscape / Arrangement">
+                <div id="ih-handoff-bar" class="flex flex-wrap items-center gap-1.5 chip rounded-2xl px-2 py-1 shadow-sm" title="Landscape / Arrangement">
                     <i class="fa-solid fa-route text-amber-500"></i>
                     <button type="button" class="chip text-[10px] px-2 py-1 rounded-xl font-semibold" onclick="sendToLandscape()">? Landscape</button>
                     <button type="button" class="chip text-[10px] px-2 py-1 rounded-xl font-semibold" onclick="openArrangement()">Arrangement</button>
@@ -289,7 +316,7 @@
         <div class="main-grid grid grid-cols-1 lg:grid-cols-12 gap-3 xl:gap-4 items-start">
             <!-- LEFT: tuning / display -->
             <div class="side-panel lg:col-span-2 card-panel rounded-3xl shadow-sm p-4 space-y-4 order-1 max-h-[calc(100vh-6rem)] overflow-y-auto">
-                <div>
+                <div id="tuning-panel">
                     <div class="section-header flex items-center gap-x-2 mb-3"><i class="fa-solid fa-sliders-h w-4"></i><span>TUNING</span></div>
                     <div class="grid grid-cols-2 gap-1.5 mb-2">
                         <div>
@@ -362,7 +389,8 @@
             <div class="center-panel lg:col-span-8 space-y-2 order-2 min-w-0">
                 <div id="coach-bar" class="coach-bar">
                     <i class="fa-solid fa-lightbulb text-amber-500"></i>
-                    <span><strong>Tips:</strong> <strong>Shift+click</strong> = chord shape · <strong>Shift+right-click</strong> = scale extras · DETECT applies separately · <kbd class="text-[10px]">?</kbd> help</span>
+                    <span><strong>Tips:</strong> <strong>Shift+click</strong> = chord shape · <strong>Shift+right-click</strong> = scale extras · <kbd class="text-[10px]">?</kbd> tour</span>
+                    <button type="button" class="chip text-[10px] px-2 py-0.5 rounded-lg font-semibold" onclick="startFretboardTour()" title="Spotlight tour">Take the tour</button>
                     <button type="button" class="coach-dismiss chip" onclick="dismissCoachBar()" title="Hide tips">Got it</button>
                 </div>
                 <div id="help-panel" class="help-panel">
@@ -384,7 +412,7 @@
                     <canvas id="fretboard" width="1200" height="340" class="w-full touch-none block"></canvas>
                 </div>
 
-                <div class="board-legend space-y-1 px-1 text-[10px]" style="color:var(--text-muted)">
+                <div id="board-legend" class="board-legend space-y-1 px-1 text-[10px]" style="color:var(--text-muted)">
                     <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
                         <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:#EF4444"></span>Current</span>
                         <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:#3B82F6"></span>Next</span>
@@ -405,7 +433,7 @@
                             <button type="button" class="morph-speed-btn chip text-[9px] px-1.5 py-0.5 rounded-md" data-rate="2" onclick="setMorphSpeed(2)">2×</button>
                         </span>
                         <span id="morph-status" class="font-medium"></span>
-                        <button type="button" class="chip text-[9px] px-1.5 py-0.5 rounded-md" onclick="toggleHelpPanel()" title="Help"><i class="fa-solid fa-circle-question"></i></button>
+                        <button type="button" class="chip text-[9px] px-1.5 py-0.5 rounded-md" onclick="startFretboardTour()" title="Tour"><i class="fa-solid fa-circle-question"></i></button>
                     </div>
                     <div id="interval-legend" class="flex flex-wrap items-center gap-x-2.5 gap-y-1 opacity-90">
                         <span class="font-semibold mr-0.5" style="color:var(--text-secondary)">Intervals:</span>
@@ -424,7 +452,7 @@
                 </div>
 
                 <!-- Path spotlight + arpeggio run controls -->
-                <div class="path-controls flex flex-wrap items-center gap-1.5 px-1">
+                <div id="path-controls" class="path-controls flex flex-wrap items-center gap-1.5 px-1">
                     <button type="button" id="path-set-btn" class="chip text-[10px] px-2.5 py-1.5 rounded-xl font-semibold" onclick="togglePathButton()" title="Set a start→end run, or clear it">
                         <i id="path-set-icon" class="fa-solid fa-route mr-1"></i><span id="path-set-label">Set path</span>
                     </button>
@@ -461,7 +489,7 @@
                 </div>
 
                 <!-- PROGRESSION sits under the board, still between side columns -->
-                <div class="progression-panel card-panel rounded-3xl shadow-sm p-2.5 sm:p-3">
+                <div id="progression-panel" class="progression-panel card-panel rounded-3xl shadow-sm p-2.5 sm:p-3">
                     <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                         <div class="flex items-center gap-x-2">
                             <div class="w-7 h-7 bg-violet-500 rounded-xl flex items-center justify-center shrink-0">
@@ -485,7 +513,7 @@
 
             <!-- RIGHT: scale / audio / detect -->
             <div class="side-panel lg:col-span-2 card-panel rounded-3xl shadow-sm p-4 space-y-4 order-3 max-h-[calc(100vh-6rem)] overflow-y-auto">
-                <div>
+                <div id="scale-panel">
                     <div class="section-header flex items-center gap-x-2 mb-2"><i class="fa-solid fa-music w-4"></i><span>SCALE / KEY</span></div>
                     <div class="grid grid-cols-2 gap-2">
                         <select id="scale-root" class="field w-full text-sm rounded-xl px-2 py-2"></select>
@@ -493,7 +521,7 @@
                     </div>
                 </div>
 
-                <div>
+                <div id="audio-panel">
                     <div class="section-header flex items-center gap-x-2 mb-2"><i class="fa-solid fa-volume-high w-4"></i><span>AUDIO</span></div>
                     <div class="space-y-2 text-sm">
                         <div class="flex gap-1">
@@ -533,7 +561,7 @@
                     </div>
                 </div>
 
-                <div>
+                <div id="detect-panel">
                     <div class="section-header flex items-center gap-x-2 mb-2">
                         <i class="fa-solid fa-magnifying-glass w-4"></i><span>DETECT</span>
                         <span id="detect-link-badge" class="hidden text-[9px] px-1.5 py-0.5 rounded-md font-semibold ml-auto" style="background:#e0e7ff;color:#3730a3">Following shape</span>
@@ -573,6 +601,21 @@
         </div>
     </div>
 
+    <div id="fb-tour" class="fb-tour hidden" role="dialog" aria-modal="true" aria-labelledby="fb-tour-title">
+        <div id="fb-tour-spot" class="fb-tour-spot"></div>
+        <div id="fb-tour-card" class="fb-tour-card">
+            <div id="fb-tour-arrow" class="fb-tour-arrow up"></div>
+            <div id="fb-tour-step" class="fb-tour-step">1 / 9</div>
+            <h3 id="fb-tour-title"></h3>
+            <p id="fb-tour-body"></p>
+            <div class="fb-tour-nav">
+                <button type="button" id="fb-tour-back">Back</button>
+                <span class="fb-tour-nav-gap"></span>
+                <button type="button" id="fb-tour-skip">Skip</button>
+                <button type="button" id="fb-tour-next">Next</button>
+            </div>
+        </div>
+    </div>
     <script src="../ih-session.js?v=20260814l"></script>
     <script>
     const NOTES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -4988,6 +5031,10 @@
 
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape') {
+                if (window.FbTour && FbTour.on) {
+                    FbTour.close();
+                    return;
+                }
                 if (document.getElementById('help-panel')?.classList.contains('open')) {
                     toggleHelpPanel(false);
                     return;
@@ -5000,6 +5047,7 @@
             // Arrow keys step progression when not typing in a field
             const tag = (e.target && e.target.tagName) || '';
             if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+            if (window.FbTour && FbTour.on) return;
             if (e.key === 'ArrowLeft') { e.preventDefault(); stepProgression(-1); }
             if (e.key === 'ArrowRight') { e.preventDefault(); stepProgression(1); }
             if (e.key === ' ') {
@@ -5010,7 +5058,10 @@
             // ? = help
             if (e.key === '?' || (e.shiftKey && e.key === '/')) {
                 e.preventDefault();
-                toggleHelpPanel();
+                if (window.FbTour) {
+                    if (FbTour.on) FbTour.close();
+                    else FbTour.start();
+                } else toggleHelpPanel();
             }
             // M = toggle pair morph (next-eye style)
             if (e.key === 'm' || e.key === 'M') {
@@ -5349,6 +5400,157 @@
     window.setScaleDisplay = setScaleDisplay;
     window.dismissCoachBar = dismissCoachBar;
     window.toggleHelpPanel = toggleHelpPanel;
+    window.startFretboardTour = function () {
+        if (window.FbTour) FbTour.start();
+        else toggleHelpPanel(true);
+    };
+
+    var FbTour = {
+        on: false,
+        i: 0,
+        STEPS: [
+            {
+                target: '#fretboard',
+                title: 'The neck',
+                body: 'Thick string at the bottom. Red is the chord you focused. Blue is the next slot. Split markers are shared tones. Click a fret to hear it.'
+            },
+            {
+                target: '#progression-panel',
+                title: 'Eight chairs, no more',
+                body: 'Click a slot to make it current. The next slot is blue on the board. This is a practice window — Landscape can hold a longer cell.'
+            },
+            {
+                target: '#board-legend',
+                title: 'Read the paint',
+                body: 'White rings are a grip you pinned (Shift+click). Cyan rings are extra notes (Shift+right-click). Amber diamonds are the scale map. Gold is a root.'
+            },
+            {
+                target: '#scale-panel',
+                title: 'Scale is a lens',
+                body: 'This colours the neck. It is not the song key. Opening Fretboard must not flip Landscape to C or shove the path onto the wrong wheel.'
+            },
+            {
+                target: '#audio-panel',
+                title: 'Hear the cell',
+                body: 'Play walks the visible slots. Pattern is strum, arp, block, or root. Space also plays. Click the board once if the browser muted you.'
+            },
+            {
+                target: '#path-controls',
+                title: 'A corridor on the neck',
+                body: 'Set path, click A then B. Play path runs an arp or scale along that beam. P sets or clears it. Drag the ends.'
+            },
+            {
+                target: '#detect-panel',
+                title: 'Name a grip',
+                body: 'Shift+click each fretted note of a shape. DETECT offers a name. Apply as chord writes the focused slot. Apply as scale only changes this lens.'
+            },
+            {
+                target: '#ih-handoff-bar',
+                title: 'One song, three tools',
+                body: 'Landscape composes any length. Fretboard shows a window of 8 around the step you had selected. Send back splices that window — the rest of the cell stays.'
+            },
+            {
+                target: '#tuning-panel',
+                title: 'Guitar or bass',
+                body: 'Presets follow the real open tuning. Shape pins keep sounding notes if you change tuning. ? anytime restarts this tour. Full guide is under Studio Tools → Fretboard guide.'
+            }
+        ],
+        start: function () {
+            this.on = true;
+            this.i = 0;
+            var el = document.getElementById('fb-tour');
+            if (el) el.classList.remove('hidden');
+            this.show();
+        },
+        close: function () {
+            this.on = false;
+            var el = document.getElementById('fb-tour');
+            if (el) el.classList.add('hidden');
+        },
+        next: function () {
+            if (!this.on) return;
+            if (this.i >= this.STEPS.length - 1) {
+                this.close();
+                return;
+            }
+            this.i += 1;
+            this.show();
+        },
+        back: function () {
+            if (!this.on || this.i <= 0) return;
+            this.i -= 1;
+            this.show();
+        },
+        show: function () {
+            var step = this.STEPS[this.i];
+            if (!step) return;
+            var title = document.getElementById('fb-tour-title');
+            var body = document.getElementById('fb-tour-body');
+            var num = document.getElementById('fb-tour-step');
+            var next = document.getElementById('fb-tour-next');
+            var back = document.getElementById('fb-tour-back');
+            if (title) title.textContent = step.title;
+            if (body) body.textContent = step.body;
+            if (num) num.textContent = this.i + 1 + ' / ' + this.STEPS.length;
+            if (next) next.textContent = this.i >= this.STEPS.length - 1 ? 'Got it' : 'Next';
+            if (back) back.disabled = this.i <= 0;
+            this.place();
+        },
+        place: function () {
+            if (!this.on) return;
+            var step = this.STEPS[this.i];
+            var spot = document.getElementById('fb-tour-spot');
+            var card = document.getElementById('fb-tour-card');
+            var arrow = document.getElementById('fb-tour-arrow');
+            if (!spot || !card) return;
+            var el = step && document.querySelector(step.target);
+            var pad = 8;
+            var r;
+            if (el) {
+                r = el.getBoundingClientRect();
+                spot.style.display = 'block';
+                spot.style.top = Math.max(4, r.top - pad) + 'px';
+                spot.style.left = Math.max(4, r.left - pad) + 'px';
+                spot.style.width = Math.min(window.innerWidth - 8, r.width + pad * 2) + 'px';
+                spot.style.height = Math.min(window.innerHeight - 8, r.height + pad * 2) + 'px';
+            } else {
+                spot.style.display = 'none';
+                r = { top: 80, left: 24, width: 280, height: 40, bottom: 120 };
+            }
+            var below = r.bottom + 180 < window.innerHeight;
+            card.style.left = Math.max(10, Math.min(window.innerWidth - 370, r.left)) + 'px';
+            if (below) {
+                card.style.top = r.bottom + 16 + 'px';
+                card.style.bottom = 'auto';
+            } else {
+                card.style.top = 'auto';
+                card.style.bottom = Math.max(10, window.innerHeight - r.top + 12) + 'px';
+            }
+            if (arrow) arrow.className = 'fb-tour-arrow ' + (below ? 'up' : 'down');
+        }
+    };
+    window.FbTour = FbTour;
+    (function bindTour() {
+        var n = document.getElementById('fb-tour-next');
+        var b = document.getElementById('fb-tour-back');
+        var s = document.getElementById('fb-tour-skip');
+        if (n) n.addEventListener('click', function () { FbTour.next(); });
+        if (b) b.addEventListener('click', function () { FbTour.back(); });
+        if (s) s.addEventListener('click', function () { FbTour.close(); });
+        window.addEventListener('resize', function () { if (FbTour.on) FbTour.place(); });
+        window.addEventListener('scroll', function () { if (FbTour.on) FbTour.place(); }, true);
+        document.addEventListener('keydown', function (e) {
+            if (!FbTour.on) return;
+            if (e.key === 'ArrowRight' || e.key === 'Enter') {
+                e.preventDefault();
+                FbTour.next();
+            }
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                FbTour.back();
+            }
+        });
+    })();
     </script>
 </body>
 </html>
