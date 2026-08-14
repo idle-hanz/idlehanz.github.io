@@ -3,48 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Guitar Fretboard User Guide • Idle Hanz</title>
-    <meta name="description" content="How to use the Idle Hanz Guitar Fretboard — neck, progressions, morph, detect, path arps, and handoff with Harmonic Landscape and Arrangement.">
-    <meta property="og:title" content="Guitar Fretboard User Guide • Idle Hanz">
-    <meta property="og:description" content="Practice shapes on the neck. Landscape keeps the song. Max 8 chords.">
+    <title>How to use the Guitar Fretboard • Idle Hanz</title>
+    <meta name="description" content="A first-time guide: this page is a guitar. C–G–Am–F is already on it. See a chord, hear it, change it, watch it become the next one.">
+    <meta property="og:title" content="How to use the Guitar Fretboard • Idle Hanz">
+    <meta property="og:description" content="See a chord on a guitar neck, hear it, change it, and watch it become the next one.">
     <meta property="og:url" content="https://idlehanz.com/tools/fretboard/guide/">
     <link rel="stylesheet" href="../../../assets/styles.css">
     <style>
-        .guide-wrap { max-width: 760px; }
-        .guide-toc {
-            background: rgba(15, 12, 8, 0.65);
-            border: 1px solid #3a2f22;
-            border-radius: 10px;
-            padding: 1.25rem 1.5rem;
-            margin: 0 0 2.5rem;
-        }
-        .guide-toc h2 {
-            font-family: 'Cinzel', serif;
-            color: #c9a36e;
-            font-size: 1.1em;
-            margin: 0 0 0.75rem;
-        }
-        .guide-toc ol { margin: 0; padding-left: 1.25rem; color: #c8b8a0; }
-        @media (min-width: 560px) {
-            .guide-toc ol { columns: 2; column-gap: 1.5rem; }
-        }
-        .guide-toc li { margin: 0.35rem 0; break-inside: avoid; }
-        .guide-toc a { text-decoration: none; }
-        .guide-toc a:hover { text-decoration: underline; }
+        .guide-wrap { max-width: 740px; }
         .art-bg .card h2 {
             font-family: 'Cinzel', serif;
             color: #d4bea3;
-            font-size: 1.45em;
+            font-size: 1.4em;
             margin: 0 0 0.75rem;
             scroll-margin-top: 1.25rem;
         }
-        .art-bg .card h3 { font-size: 1.1em; margin: 1.25rem 0 0.5rem; }
+        .art-bg .card h3 { font-size: 1.08em; margin: 1.2rem 0 0.45rem; color: #d4bea3; }
         .art-bg .card ul, .art-bg .card ol {
             color: #c8b8a0;
             padding-left: 1.25rem;
             margin: 0.5rem 0 1rem;
         }
-        .art-bg .card li { margin: 0.35rem 0; }
+        .art-bg .card li { margin: 0.4rem 0; }
         .art-bg kbd {
             font-family: ui-monospace, Consolas, monospace;
             font-size: 0.85em;
@@ -54,10 +34,98 @@
             background: rgba(0,0,0,0.35);
             color: #e8d9b8;
         }
+        .guide-top { text-align: center; margin-bottom: 1.75rem; }
+        .guide-top .subhead { margin-bottom: 1.1rem; max-width: 38rem; margin-left: auto; margin-right: auto; }
+        .guide-cta {
+            display: inline-block;
+            margin: 0.35rem 0.45rem 0.35rem 0;
+            padding: 0.55rem 1.1rem;
+            border: 1px solid #664d2e;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #e8d9b8 !important;
+            font-family: 'Cinzel', serif;
+            font-size: 0.95em;
+            background: rgba(0,0,0,0.35);
+        }
+        .guide-cta:hover { border-color: #c9a36e; color: #fff !important; }
+        .guide-cta.primary { border-color: #c9a36e; background: rgba(201,163,110,0.12); }
+        .guide-callout {
+            border-left: 3px solid #c9a36e;
+            padding: 0.7rem 0 0.7rem 1rem;
+            margin: 1rem 0;
+            background: rgba(0,0,0,0.25);
+            color: #c8b8a0;
+        }
+        .guide-toc {
+            background: rgba(15, 12, 8, 0.65);
+            border: 1px solid #3a2f22;
+            border-radius: 10px;
+            padding: 1.1rem 1.35rem;
+            margin: 0 0 2rem;
+        }
+        .guide-toc h2 {
+            font-family: 'Cinzel', serif;
+            color: #c9a36e;
+            font-size: 1.05em;
+            margin: 0 0 0.6rem;
+        }
+        .guide-toc ol { margin: 0; padding-left: 1.2rem; color: #c8b8a0; }
+        .guide-toc li { margin: 0.3rem 0; }
+        .guide-toc a { text-decoration: none; }
+        .guide-toc a:hover { text-decoration: underline; }
+        .screen-map {
+            display: grid;
+            gap: 0.65rem;
+            margin: 1rem 0 0.25rem;
+        }
+        .screen-map .zone {
+            border: 1px solid #3a2f22;
+            border-radius: 10px;
+            padding: 0.75rem 0.9rem;
+            background: rgba(0,0,0,0.28);
+        }
+        .screen-map .zone strong { color: #e8d9b8; display: block; margin-bottom: 0.2rem; }
+        .screen-map .zone span { color: #c8b8a0; font-size: 0.95em; }
+        .screen-map .neck { border-color: #664d2e; }
+        .dot {
+            display: inline-block;
+            width: 0.65em;
+            height: 0.65em;
+            border-radius: 999px;
+            vertical-align: middle;
+            margin-right: 0.25em;
+        }
+        .dot-red { background: #EF4444; }
+        .dot-blue { background: #3B82F6; }
+        .dot-amber { background: #F59E0B; }
+        .steps-how { counter-reset: how; padding-left: 0; list-style: none; }
+        .steps-how li {
+            position: relative;
+            padding-left: 2.15rem;
+            margin: 0.85rem 0;
+            color: #c8b8a0;
+        }
+        .steps-how li::before {
+            counter-increment: how;
+            content: counter(how);
+            position: absolute;
+            left: 0;
+            top: 0.05rem;
+            width: 1.5rem;
+            height: 1.5rem;
+            border-radius: 999px;
+            border: 1px solid #664d2e;
+            color: #c9a36e;
+            font-size: 0.8rem;
+            line-height: 1.45rem;
+            text-align: center;
+            font-family: 'Cinzel', serif;
+        }
         .guide-table {
             width: 100%;
             border-collapse: collapse;
-            margin: 0.75rem 0 1rem;
+            margin: 0.75rem 0 0.25rem;
             font-size: 0.95em;
         }
         .guide-table th, .guide-table td {
@@ -73,47 +141,28 @@
             font-family: 'Cinzel', serif;
             font-weight: 400;
         }
-        .guide-callout {
-            border-left: 3px solid #c9a36e;
-            padding: 0.65rem 0 0.65rem 1rem;
-            margin: 1rem 0;
-            background: rgba(0,0,0,0.25);
-            color: #c8b8a0;
+        details.later {
+            border: 1px solid #3a2f22;
+            border-radius: 10px;
+            padding: 0.15rem 1rem 0.15rem;
+            margin: 0.65rem 0;
+            background: rgba(0,0,0,0.2);
         }
-        .guide-warn {
-            border-left: 3px solid #c45c5c;
-            padding: 0.65rem 0 0.65rem 1rem;
-            margin: 1rem 0;
-            background: rgba(80, 20, 16, 0.28);
-            color: #c8b8a0;
-        }
-        .guide-cta {
-            display: inline-block;
-            margin: 0.35rem 0.5rem 0.35rem 0;
-            padding: 0.55rem 1.1rem;
-            border: 1px solid #664d2e;
-            border-radius: 8px;
-            text-decoration: none;
-            color: #e8d9b8 !important;
+        details.later > summary {
+            cursor: pointer;
+            color: #d4bea3;
             font-family: 'Cinzel', serif;
-            font-size: 0.95em;
-            background: rgba(0,0,0,0.35);
+            padding: 0.7rem 0;
+            list-style: none;
         }
-        .guide-cta:hover { border-color: #c9a36e; color: #fff !important; }
-        .guide-top { text-align: center; margin-bottom: 2rem; }
-        .guide-top .subhead { margin-bottom: 1.25rem; }
-        .dot {
-            display: inline-block;
-            width: 0.65em;
-            height: 0.65em;
-            border-radius: 999px;
-            vertical-align: middle;
-            margin-right: 0.25em;
+        details.later > summary::-webkit-details-marker { display: none; }
+        details.later > summary::after {
+            content: ' ▾';
+            color: #c9a36e;
+            font-size: 0.85em;
         }
-        .dot-red { background: #EF4444; }
-        .dot-blue { background: #3B82F6; }
-        .dot-amber { background: #F59E0B; }
-        .dot-cyan { background: #22d3ee; }
+        details.later[open] > summary::after { content: ' ▴'; }
+        .ignore { color: #95897a; font-size: 0.95em; }
     </style>
 </head>
 <body class="art-bg">
@@ -129,367 +178,227 @@
     <div class="page-content guide-wrap">
 
         <div class="guide-top">
-            <h1>Guitar Fretboard</h1>
-            <p class="subhead">Practice the neck. Landscape keeps the song. Max eight chords.</p>
-            <a class="guide-cta" href="../index.html">Open the app →</a>
-            <a class="guide-cta" href="../../harmonic-landscape/index.html">Harmonic Landscape</a>
-            <a class="guide-cta" href="../../arrangement/index.html">Arrangement</a>
+            <h1>How to use the Fretboard</h1>
+            <p class="subhead">This page is a guitar. It already has four chords on it. You look at a chord, hear it, change it if you want, and watch it become the next one.</p>
+            <a class="guide-cta primary" href="../index.html">Open the app →</a>
         </div>
 
-        <nav class="guide-toc" aria-label="Table of contents">
-            <h2>Contents</h2>
+        <nav class="guide-toc" aria-label="Contents">
+            <h2>Read this in order</h2>
             <ol>
-                <li><a href="#job">What this tool is for</a></li>
-                <li><a href="#tour">In-app tour</a></li>
-                <li><a href="#handoff">Landscape &amp; Arrangement</a></li>
-                <li><a href="#layout">Layout</a></li>
-                <li><a href="#legend">Reading the board</a></li>
-                <li><a href="#progression">Progression (max 8)</a></li>
-                <li><a href="#scale">Scale / key is a lens</a></li>
-                <li><a href="#tuning">Tuning &amp; instrument</a></li>
-                <li><a href="#display">Display &amp; neck zoom</a></li>
-                <li><a href="#audio">Audio</a></li>
-                <li><a href="#morph">Voice-leading morph</a></li>
-                <li><a href="#detect">Detect &amp; shape capture</a></li>
-                <li><a href="#path">Path spotlight &amp; arps</a></li>
-                <li><a href="#sessions">Save, load &amp; export</a></li>
-                <li><a href="#keys">Keyboard</a></li>
-                <li><a href="#tips">Practice recipes</a></li>
-                <li><a href="#faq">FAQ</a></li>
+                <li><a href="#what">What this is</a></li>
+                <li><a href="#screen">The three parts of the screen</a></li>
+                <li><a href="#first">Your first session</a></li>
+                <li><a href="#colours">Red, blue, and the other marks</a></li>
+                <li><a href="#change">Change a chord and hear the row</a></li>
+                <li><a href="#key">See the key (it does not move your chords)</a></li>
+                <li><a href="#morph">Watch one chord become the next</a></li>
+                <li><a href="#shape">Pin a shape you already play</a></li>
+                <li><a href="#more">When you want more</a></li>
+                <li><a href="#faq">If something looks wrong</a></li>
             </ol>
         </nav>
 
-        <section class="card" id="job">
-            <h2>1. What this tool is for</h2>
-            <p>
-                The Fretboard is the <strong>practice neck</strong>. It shows where a short progression sits
-                on guitar or bass, how one chord moves to the next, and how a grip names itself.
-            </p>
-            <p>It is not the song editor. The three tools share one song:</p>
-            <table class="guide-table">
-                <thead><tr><th>Tool</th><th>Job</th></tr></thead>
-                <tbody>
-                    <tr><td><strong>Harmonic Landscape</strong></td><td>Compose the <em>cell</em> — any length, multi-key, versions, From here.</td></tr>
-                    <tr><td><strong>Arrangement</strong></td><td>Order cells into form (verse / chorus, reps, seams).</td></tr>
-                    <tr><td><strong>Fretboard</strong></td><td>Frets for a window of at most <strong>8</strong> chords.</td></tr>
-                </tbody>
-            </table>
-            <div class="guide-callout">
-                <strong>Quick start (alone):</strong> Open the app → leave C–G–Am–F → click frets to hear notes →
-                watch <span class="dot dot-red"></span>current vs <span class="dot dot-blue"></span>next.
-                Press <kbd>?</kbd> for the spotlight tour.
-            </div>
-            <div class="guide-callout">
-                <strong>Quick start (from a song):</strong> In Landscape, select a step near the bit you want to fret →
-                open Fretboard. You get a window of up to 8 chords around that step. Edit shapes here; send back when done.
-            </div>
-        </section>
-
-        <section class="card" id="tour">
-            <h2>2. In-app tour</h2>
-            <p>
-                Same idea as Help on the ear trainer: a spotlight walks the real controls.
-                In the app press <kbd>?</kbd>, or the <strong>?</strong> on the legend, or <strong>Take the tour</strong> on the tip bar.
-            </p>
+        <section class="card" id="what">
+            <h2>1. What this is</h2>
+            <p>Open the app. You do not make an account. You do not pick a key first. You do not need any other tool.</p>
+            <p>Four chords are already loaded: <strong>C, G, Am, F</strong>. The neck is showing C. That is enough to start.</p>
+            <p>You use this when you want to:</p>
             <ul>
-                <li><kbd>→</kbd> / Enter — next · <kbd>←</kbd> — back · <kbd>Esc</kbd> — leave</li>
-                <li>The written page you are on is the full reference. The tour is the five-minute walk.</li>
+                <li>See where a chord sits on a guitar.</li>
+                <li>Hear a short progression.</li>
+                <li>Swap one chord and see the new grip.</li>
+                <li>Watch how the notes move from one chord to the next.</li>
             </ul>
-        </section>
-
-        <section class="card" id="handoff">
-            <h2>3. Landscape &amp; Arrangement</h2>
-            <p>Header row: <strong>Landscape</strong> · <strong>Arrangement</strong> · <strong>Pull session</strong>.</p>
-            <h3>The 8-chord window</h3>
-            <p>
-                Fretboard cannot hold a ninth slot. Landscape / Arrangement send a <strong>window of 8</strong>
-                around the focused step — not always the first eight. Coming back, that window is spliced
-                into the same place in the full cell. The rest of the song stays put.
-            </p>
-            <div class="guide-warn">
-                If you delete a slot here, only that window shortens. The tail of a long Landscape cell is not thrown away.
+            <div class="guide-callout">
+                In the app, press <kbd>?</kbd> or click <strong>Take the tour</strong>. A spotlight points at each control and tells you what to click. <kbd>→</kbd> next, <kbd>←</kbd> back, <kbd>Esc</kbd> leave.
             </div>
-            <h3>Scale / key is a viewing lens</h3>
-            <p>
-                The Scale / Key dropdowns colour the neck (amber diamonds, romans). They are <strong>not</strong>
-                the song’s write-home. Opening Fretboard must not flip Landscape to C major or slide the path
-                onto the wrong Chase disk. If a cell ever looks “moved,” go back to Landscape, set Write home
-                to the real key, and click <strong>On this wheel</strong> (notes stay; only the disk changes).
-            </p>
-            <h3>What each button does</h3>
-            <table class="guide-table">
-                <thead><tr><th>Button</th><th>Result</th></tr></thead>
-                <tbody>
-                    <tr><td><strong>Landscape</strong></td><td>Saves this window into the shared song and opens Landscape on that cell.</td></tr>
-                    <tr><td><strong>Arrangement</strong></td><td>Opens form view. Same session.</td></tr>
-                    <tr><td><strong>Pull session</strong></td><td>Reload the focused Landscape cell (again clipped to 8).</td></tr>
-                </tbody>
-            </table>
-            <p>Shared store: browser <code>localStorage</code> key <code>idlehanz_song_v1</code>. Same origin / Desktop folder layout.</p>
         </section>
 
-        <section class="card" id="layout">
-            <h2>4. Layout</h2>
-            <table class="guide-table">
-                <thead><tr><th>Area</th><th>What it’s for</th></tr></thead>
-                <tbody>
-                    <tr><td><strong>Header</strong></td><td>Session name, save/load/export, Landscape / Arrangement, Focus board, PNG, dark mode</td></tr>
-                    <tr><td><strong>Left</strong></td><td>Instrument, tuning presets, display (neck camera, scale map, labels)</td></tr>
-                    <tr><td><strong>Centre</strong></td><td>Neck, legend, path corridor, progression slots</td></tr>
-                    <tr><td><strong>Right</strong></td><td>Scale/key lens, audio, DETECT</td></tr>
-                </tbody>
-            </table>
-            <p><strong>Focus board</strong> hides the side panels and enlarges the neck. <kbd>Esc</kbd> exits.</p>
+        <section class="card" id="screen">
+            <h2>2. The three parts of the screen</h2>
+            <p>Ignore the left column and the top bar for now. Only three things matter.</p>
+            <div class="screen-map">
+                <div class="zone neck">
+                    <strong>The neck in the middle</strong>
+                    <span>A guitar from the player’s view. Thick string at the bottom. Open strings on the left. Red notes are the chord you are on. Blue notes are the next chord.</span>
+                </div>
+                <div class="zone">
+                    <strong>The cards under the neck</strong>
+                    <span>That is the song: C → G → Am → F. Click a card to study that chord. The red card is “this one.” The blue card is “the next one.”</span>
+                </div>
+                <div class="zone">
+                    <strong>Play, on the right</strong>
+                    <span>Press Play to hear the four chords in order. Pattern changes how they are plucked. Volume and tempo sit under that.</span>
+                </div>
+            </div>
+            <p class="ignore">The left column is tuning and how busy the neck looks. The top bar is save, dark mode, and other tools. Come back to them later.</p>
         </section>
 
-        <section class="card" id="legend">
-            <h2>5. Reading the board</h2>
-            <p>Thickest string is at the <strong>bottom</strong> (low pitch). Open notes sit left of the nut.</p>
+        <section class="card" id="first">
+            <h2>3. Your first session</h2>
+            <p>Do these five things. That is using the software.</p>
+            <ol class="steps-how">
+                <li><strong>Look at the neck.</strong> Red dots are C. Blue dots are G. A split dot is a note both chords share.</li>
+                <li><strong>Click a red or blue dot.</strong> You should hear that note. If you hear nothing, click once more — the browser often waits for a click before it will play.</li>
+                <li><strong>Click the G card</strong> under the neck. The board redraws: G is now red, Am is now blue. Click C to come back.</li>
+                <li><strong>Press Play</strong> on the right (or <kbd>Space</kbd>). It walks C → G → Am → F.</li>
+                <li><strong>Change one chord.</strong> Click the F card. Change the type from major to minor, or the letter to D. Press Play again. That is the whole loop: see, hear, change, hear.</li>
+            </ol>
+            <p>When that feels obvious, the rest of this page is extra.</p>
+        </section>
+
+        <section class="card" id="colours">
+            <h2>4. Red, blue, and the other marks</h2>
+            <p>You only need the first three rows to start.</p>
             <table class="guide-table">
                 <thead><tr><th>Mark</th><th>Meaning</th></tr></thead>
                 <tbody>
-                    <tr><td><span class="dot dot-red"></span> <strong>Red</strong></td><td><strong>Current</strong> slot (the one you focused)</td></tr>
-                    <tr><td><span class="dot dot-blue"></span> <strong>Blue</strong></td><td><strong>Next</strong> slot in the progression</td></tr>
-                    <tr><td><strong>Split red|blue</strong></td><td>Tone shared by current and next</td></tr>
-                    <tr><td><span class="dot dot-amber"></span> <strong>Amber diamond</strong></td><td>Scale tone (Scale map = Full)</td></tr>
-                    <tr><td><strong>Gold ring</strong></td><td>Root emphasis</td></tr>
-                    <tr><td><strong>White hollow ring</strong></td><td>Shape-capture pin (Shift+click) — one per string</td></tr>
-                    <tr><td><span class="dot dot-cyan"></span> <strong>Cyan ring</strong></td><td>Scale extra (Shift+right-click) — melody / colour notes</td></tr>
-                    <tr><td><strong>Amber number</strong></td><td>Arpeggio order on a path (chord mode)</td></tr>
-                    <tr><td><strong>A / B</strong></td><td>Path endpoints (drag when the path is set)</td></tr>
+                    <tr><td><span class="dot dot-red"></span> Red</td><td>This chord — the card with the red border</td></tr>
+                    <tr><td><span class="dot dot-blue"></span> Blue</td><td>The next card</td></tr>
+                    <tr><td>Half red, half blue</td><td>A note that stays when you change chord</td></tr>
+                    <tr><td>Gold ring</td><td>The root of the chord</td></tr>
+                    <tr><td><span class="dot dot-amber"></span> Amber diamond</td><td>A note in the scale, if Scale map is Full</td></tr>
+                    <tr><td>White ring</td><td>A fret you pinned as part of a grip (later)</td></tr>
                 </tbody>
             </table>
             <p>
-                <strong>Interval colours (hybrid):</strong> fill = function (R, 3, ♭3, 5…).
-                Outer ring is still current vs next.
+                Move around the neck: <strong>scroll</strong> to slide,
+                <strong>Ctrl+scroll</strong> (⌘ on a Mac) to zoom,
+                <strong>double-click</strong> a note to centre there.
+                <strong>Reset view</strong> on the left brings you back to frets 0–12.
             </p>
         </section>
 
-        <section class="card" id="progression">
-            <h2>6. Progression (max 8)</h2>
-            <p>Under the board. Default demo is C–G–Am–F if you did not come from Landscape.</p>
+        <section class="card" id="change">
+            <h2>5. Change a chord and hear the row</h2>
+            <p>Click a card, then edit that card:</p>
             <ul>
-                <li><strong>Click a slot</strong> — it becomes current; the following slot is next.</li>
-                <li><strong>Named / Custom</strong> — root + quality, or a free pitch set (round-trips as <code>custom</code> + notes).</li>
-                <li><strong>Bass / slash</strong> — root, a chord tone, or any bass note.</li>
-                <li><strong>Eye</strong> — show / morph / hide (see Morph).</li>
-                <li><strong>Add / Solo / All</strong> — add a slot (stops at 8), solo the focused chord, or show everything again.</li>
+                <li><strong>Named</strong> — pick a letter (C, D, …) and a type (major, minor, 7, sus…).</li>
+                <li><strong>Custom</strong> — turn individual notes on if it is not a named chord.</li>
+                <li><strong>Bass</strong> — leave it on the root, or pick a slash bass (C/E).</li>
             </ul>
-            <p><kbd>←</kbd> <kbd>→</kbd> step focus when you are not typing in a field.</p>
+            <p>The neck updates as soon as you change the card.</p>
+            <p>On the right, under <strong>AUDIO</strong>:</p>
+            <ul>
+                <li><strong>Play</strong> walks every visible card. <kbd>Space</kbd> does the same.</li>
+                <li><strong>◀ ▶</strong> steps one chord and plays it. Arrow keys do that too, if you are not typing in a box.</li>
+                <li><strong>Pattern</strong> — Strum (broken), Arpeggio (one note after another), Block (all at once), Root only.</li>
+                <li>Tempo, Loop, Volume, Octave sit under that.</li>
+            </ul>
+            <p><strong>Add</strong> puts another card on the end. <strong>Solo</strong> hides the others so you only see this grip. <strong>All</strong> brings them back. The trash on a card deletes it.</p>
         </section>
 
-        <section class="card" id="scale">
-            <h2>7. Scale / key is a lens</h2>
-            <p>
-                Right column: root + scale type (major modes, minor, pentatonic, exotic…).
-                That set drives amber diamonds, “in scale” open strings, and roman numerals on slots.
-            </p>
-            <p>
-                Changing Scale / Key here does <strong>not</strong> transpose the song and must not rewrite Landscape’s write-home.
-                Think “what map am I practising on,” not “what key is the piece.”
-            </p>
-        </section>
-
-        <section class="card" id="tuning">
-            <h2>8. Tuning &amp; instrument</h2>
+        <section class="card" id="key">
+            <h2>6. See the key (it does not move your chords)</h2>
+            <p>On the right, <strong>SCALE / KEY</strong> is a map painted on the neck. It is not a transpose.</p>
+            <p>If you change C major to A minor here, C–G–Am–F stay C–G–Am–F. Only the amber diamonds change.</p>
+            <p>On the left, <strong>Scale map</strong>:</p>
             <ul>
-                <li><strong>Instrument:</strong> Guitar or Bass.</li>
-                <li><strong>Strings:</strong> guitar 6–8, bass 4–6.</li>
-                <li><strong>Presets:</strong> Standard, Drop D, Baritone B, and more. Blue highlight matches the <em>actual</em> open tuning.</li>
-                <li><strong>Custom:</strong> pickers are low→high left to right (thick/low on the left). Board top is still the high string.</li>
+                <li><strong>Full</strong> — amber diamonds on every scale fret. Good for learning the key.</li>
+                <li><strong>Chord notes only</strong> — hide the extra diamonds so you only see the two chords.</li>
+                <li><strong>Off</strong> — no diamonds.</li>
             </ul>
-            <div class="guide-callout">
-                Shape-capture pins follow <strong>sounding notes</strong> if you change tuning: they move fret on the same string.
-            </div>
-        </section>
-
-        <section class="card" id="display">
-            <h2>9. Display &amp; neck zoom</h2>
-            <h3>Board</h3>
-            <ul>
-                <li><strong>Show note names</strong> — letters on frets (hidden in “chord notes only” if they would clutter).</li>
-                <li><strong>Scale map — Off / Full / Chord notes only</strong> — no diamonds / all scale tones / only current+next markers.</li>
-                <li><strong>Interval colours</strong> — function fill + current/next ring.</li>
-                <li><strong>Emphasize roots</strong> — gold ring.</li>
-            </ul>
-            <h3>Labels</h3>
-            <p>Flats in flat keys, interval labels, roman numerals, slash-bass emphasis, colour open strings by role.</p>
-            <h3>Camera (no start/end sliders)</h3>
-            <table class="guide-table">
-                <thead><tr><th>Action</th><th>Result</th></tr></thead>
-                <tbody>
-                    <tr><td><strong>Scroll</strong> on the board</td><td>Pan along the neck</td></tr>
-                    <tr><td><strong>Ctrl+scroll</strong> (⌘ on Mac)</td><td>Zoom, pivot under the cursor</td></tr>
-                    <tr><td><strong>Drag fret numbers</strong></td><td>Pan</td></tr>
-                    <tr><td><strong>Double-click</strong> a note</td><td>Centre a ~7-fret window there</td></tr>
-                    <tr><td><strong>Reset view (0–12)</strong></td><td>Back to frets 0–12</td></tr>
-                </tbody>
-            </table>
-            <p>Status under Neck view: e.g. <em>Frets 5–12 · 7 wide</em>.</p>
-        </section>
-
-        <section class="card" id="audio">
-            <h2>10. Audio</h2>
-            <ul>
-                <li><strong>Click a fret</strong> — that pitch.</li>
-                <li><strong>Play / Stop</strong> — walk visible slots with the chosen pattern.</li>
-                <li><strong>◀ ▶</strong> — step and play one chord.</li>
-                <li><strong>Pattern:</strong> Strum, Arpeggio, Block, Root only.</li>
-                <li>Tempo, loop, volume, octave.</li>
-            </ul>
-            <p><kbd>Space</kbd> toggles play when focus is not on a button.</p>
-            <div class="guide-callout">
-                Browsers mute until you click once. Click any fret if you hear nothing.
-            </div>
+            <p>If the neck feels busy, switch to Chord notes only. That is the usual practice view.</p>
         </section>
 
         <section class="card" id="morph">
-            <h2>11. Voice-leading morph</h2>
-            <p>How notes move current → next. Shared tones stay lit. Exclusive tones pulse.</p>
-            <table class="guide-table">
-                <thead><tr><th>Eye</th><th>Cycle</th><th>Look</th></tr></thead>
-                <tbody>
-                    <tr>
-                        <td><strong>Next</strong> slot</td>
-                        <td>Show → <strong>pair morph</strong> → Hide</td>
-                        <td>Red / blue (roles)</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Current</strong> slot</td>
-                        <td>Show → <strong>mono morph</strong> → Hide</td>
-                        <td>Greyscale (shape only)</td>
-                    </tr>
-                </tbody>
-            </table>
-            <ul>
-                <li>Only one morph mode at a time.</li>
-                <li>Speed ½× / 1× / 2× under the legend.</li>
-                <li>Hybrid interval fill and scale diamonds hide while morphing.</li>
-                <li>Stops for Play and Solo.</li>
-            </ul>
-            <p><kbd>M</kbd> toggles pair morph.</p>
-        </section>
-
-        <section class="card" id="detect">
-            <h2>12. Detect &amp; shape capture</h2>
-            <h3>On the board</h3>
-            <ul>
-                <li><strong>Shift+click</strong> a fretted note → white ring. One pin per string (a grip). Same spot again = remove. Another fret on that string = move.</li>
-                <li><strong>Shift+right-click</strong> → cyan extra (melody / colour). Any number of frets.</li>
-            </ul>
-            <h3>DETECT panel</h3>
-            <ul>
-                <li><strong>Chord</strong> mode uses shape pins (or freehand chips).</li>
-                <li><strong>Scale</strong> mode uses shape + extras (or chips). Optional mode-root pin.</li>
-                <li><strong>From pair / From progression</strong> seed chips from the slots (clears pins).</li>
-                <li><strong>Apply as chord</strong> writes the top match into the focused slot.</li>
-                <li><strong>Apply as scale / key</strong> writes the lens (Scale / Key), not Landscape write-home.</li>
-            </ul>
-            <div class="guide-callout">
-                <strong>Example:</strong> Finger a B major grip → Shift+click each fretted note up the strings →
-                DETECT should offer <strong>B Major</strong> → Apply as chord.
-            </div>
-        </section>
-
-        <section class="card" id="path">
-            <h2>13. Path spotlight &amp; arps</h2>
-            <ol>
-                <li><strong>Set path</strong> → click start (A), then end (B).</li>
-                <li>Outside the corridor dims.</li>
-                <li>Width: Narrow / Normal (~3 frets) / Wide.</li>
-                <li>Play mode: Scale run / Chord arp / Scale + arp. Direction: Up / Down / Up-down.</li>
-                <li><strong>Play path</strong> auditions the corridor.</li>
-                <li>Drag A, B, or the beam to move it.</li>
+            <h2>7. Watch one chord become the next</h2>
+            <p>This is the main practice trick. You are not just seeing two grips. You are seeing what stays and what moves.</p>
+            <ol class="steps-how">
+                <li>Click a card that has another card after it (C, then G).</li>
+                <li>On the <strong>next</strong> card (the blue one), click the small <strong>eye</strong>.</li>
+                <li>Notes both chords share stay lit. Notes that leave pulse red. Notes that arrive pulse blue.</li>
+                <li>Click the eye again to stop.</li>
             </ol>
-            <p><kbd>P</kbd> set/clear. Touch-drag works on the handles.</p>
+            <p><kbd>M</kbd> starts or stops that same animation. Speed is ½× / 1× / 2× under the neck. Play and Solo stop it so you can hear the sequence.</p>
+            <p>The eye on the <em>current</em> (red) card does a greyscale version of the same idea. Only one morph runs at a time.</p>
         </section>
 
-        <section class="card" id="sessions">
-            <h2>14. Save, load &amp; export</h2>
-            <ul>
-                <li><strong>Name</strong> in the header. <strong>Save / Load / Delete</strong> — this browser’s list.</li>
-                <li><strong>Export / Import JSON</strong> — a file you can keep.</li>
-                <li>Last session restores on reopen. Dirty sessions show <strong>*</strong>.</li>
-                <li><strong>Export PNG</strong> — diagram plus caption (chords, key, path/morph flags).</li>
-            </ul>
-            <p>That list is the Fretboard’s own practice snapshots. The <em>song</em> lives in the shared Landscape session.</p>
+        <section class="card" id="shape">
+            <h2>8. Pin a shape you already play</h2>
+            <p>You know a grip on the guitar. You want the app to name it and lock it on the board.</p>
+            <ol class="steps-how">
+                <li>Hold the shape on your guitar.</li>
+                <li>On the screen, <strong>Shift+click</strong> each fretted note. White rings appear. One ring per string. Skip open strings if you like.</li>
+                <li>On the right, <strong>DETECT</strong> should offer a name (for example B Major).</li>
+                <li><strong>Apply as chord</strong> writes that name into the card you have selected.</li>
+            </ol>
+            <p>Same fret again = remove that pin. Another fret on the same string = move the pin.</p>
         </section>
 
-        <section class="card" id="keys">
-            <h2>15. Keyboard</h2>
-            <table class="guide-table">
-                <thead><tr><th>Key</th><th>Action</th></tr></thead>
-                <tbody>
-                    <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step progression</td></tr>
-                    <tr><td><kbd>Space</kbd></td><td>Play / stop progression</td></tr>
-                    <tr><td><kbd>M</kbd></td><td>Pair morph</td></tr>
-                    <tr><td><kbd>P</kbd></td><td>Set / clear path</td></tr>
-                    <tr><td><kbd>?</kbd></td><td>Spotlight tour</td></tr>
-                    <tr><td><kbd>Esc</kbd></td><td>Close tour, then help, then Focus board</td></tr>
-                    <tr><td>Shift+click</td><td>Shape pin</td></tr>
-                    <tr><td>Shift+right-click</td><td>Scale extra</td></tr>
-                </tbody>
-            </table>
-        </section>
+        <section class="card" id="more">
+            <h2>9. When you want more</h2>
+            <p>You can stop at section 7 and use this every day. These are optional.</p>
 
-        <section class="card" id="tips">
-            <h2>16. Practice recipes</h2>
-            <table class="guide-table">
-                <thead><tr><th>Goal</th><th>Try this</th></tr></thead>
-                <tbody>
-                    <tr>
-                        <td>Voice leading</td>
-                        <td>Scale map → Chord notes only · Next eye → pair morph · shared tones stay lit</td>
-                    </tr>
-                    <tr>
-                        <td>See the key on the neck</td>
-                        <td>Scale map → Full · note names on · both chords visible</td>
-                    </tr>
-                    <tr>
-                        <td>Arp a shape</td>
-                        <td>Set path across the grip · Chord arp · Up · Play path</td>
-                    </tr>
-                    <tr>
-                        <td>Name a grip you played</td>
-                        <td>Shift+click fretted notes · DETECT · Apply as chord</td>
-                    </tr>
-                    <tr>
-                        <td>Fret a Landscape cell</td>
-                        <td>Select a step in Landscape · open Fretboard · window of 8 around that step · send back</td>
-                    </tr>
-                    <tr>
-                        <td>Baritone / drop tuning</td>
-                        <td>Pick the preset · existing shape pins follow sounding notes</td>
-                    </tr>
-                </tbody>
-            </table>
+            <details class="later">
+                <summary>Save, load, and a picture of the neck</summary>
+                <p>Top of the page: type a name, then the save icon. The list next to it loads a saved name. Export / Import is a JSON file you can keep on disk.</p>
+                <p>The last thing you were doing comes back when you reopen the page. A <strong>*</strong> on the title means you have not saved since the last change. Nothing is uploaded.</p>
+                <p><strong>Export PNG</strong> is a picture of the neck plus a caption — useful as a practice sheet.</p>
+            </details>
+
+            <details class="later">
+                <summary>Practice a run in one area of the neck</summary>
+                <p>A path is a corridor: “stay in this area.”</p>
+                <ol>
+                    <li>Click <strong>Set path</strong> under the neck.</li>
+                    <li>Click a start fret, then an end fret. The rest of the board dims.</li>
+                    <li>Choose width and whether it plays a scale run, a chord arp, or both.</li>
+                    <li><strong>Play path</strong> walks the notes in that corridor.</li>
+                </ol>
+                <p>Drag the ends or the beam to move it. <kbd>P</kbd> sets or clears the path.</p>
+            </details>
+
+            <details class="later">
+                <summary>Bass, Drop D, other tunings</summary>
+                <p>Left column. Default is a six-string guitar in standard tuning. Change Instrument to bass, or pick Drop D / Baritone / Open G from the presets. The highlighted preset is the one that matches the real open strings.</p>
+                <p>If you already pinned a shape and then change tuning, the pins move on the same strings so they still sound the same notes.</p>
+            </details>
+
+            <details class="later">
+                <summary>Focus board, and the keyboard</summary>
+                <p><strong>Focus board</strong> (top right) hides the side columns so the neck fills the screen. <kbd>Esc</kbd> leaves that view.</p>
+                <table class="guide-table">
+                    <thead><tr><th>Key</th><th>What it does</th></tr></thead>
+                    <tbody>
+                        <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Previous / next chord</td></tr>
+                        <tr><td><kbd>Space</kbd></td><td>Play or stop the progression</td></tr>
+                        <tr><td><kbd>M</kbd></td><td>Start or stop the red/blue morph</td></tr>
+                        <tr><td><kbd>P</kbd></td><td>Set or clear a path</td></tr>
+                        <tr><td><kbd>?</kbd></td><td>Start or stop the spotlight tour</td></tr>
+                        <tr><td><kbd>Esc</kbd></td><td>Leave the tour, then leave Focus board</td></tr>
+                        <tr><td>Shift+click</td><td>Pin a fret in a grip</td></tr>
+                    </tbody>
+                </table>
+            </details>
+
+            <details class="later">
+                <summary>If you also use Harmonic Landscape</summary>
+                <p>You can use the Fretboard forever on its own. Skip this unless you also open Landscape.</p>
+                <p>Landscape is where a longer progression lives. This page shows the chords around the step you had selected. When you send back, those chords go into the same place. The rest of the cell stays.</p>
+                <p>Scale / Key on this page still only paints the neck. Header buttons: <strong>Landscape</strong> opens the cell, <strong>Arrangement</strong> opens the song form, <strong>Pull session</strong> reloads what Landscape last focused.</p>
+            </details>
         </section>
 
         <section class="card" id="faq">
-            <h2>17. FAQ</h2>
-            <h3>No sound?</h3>
-            <p>Click the board once (browser unlock), then raise Volume / check Octave.</p>
-            <h3>Why did Landscape jump to C major / the wrong wheel?</h3>
-            <p>
-                Older builds let Fretboard’s default C lens rewrite the song key. Current builds must not.
-                If a session is already stuck: Landscape → set Write home to the real key → <strong>On this wheel</strong>
-                (notes stay, disk moves).
-            </p>
-            <h3>I only see eight chords of a long cell?</h3>
-            <p>That is the cap. You have a window around the step you had selected. The full cell is still in Landscape.</p>
-            <h3>Why did scale diamonds vanish?</h3>
-            <p>Scale map is Off or Chord notes only — or morph is running.</p>
-            <h3>Shift+click ate a note I already had?</h3>
-            <p>Old builds toggled pitch class globally. Now a pin is one fretted place, one per string.</p>
-            <h3>Is anything uploaded?</h3>
-            <p>No. Sessions stay in this browser unless you export a file.</p>
-            <h3>Phone?</h3>
-            <p>Tablet or desktop is better. Path handles take touch; zoom wants a scroll wheel or trackpad.</p>
+            <h2>10. If something looks wrong</h2>
+            <h3>No sound</h3>
+            <p>Click the neck once, then raise Volume. Check Octave is not all the way down.</p>
+            <h3>The neck is too busy</h3>
+            <p>Click <strong>Solo</strong> on the cards, or set Scale map to <strong>Chord notes only</strong>.</p>
+            <h3>The amber dots vanished</h3>
+            <p>Scale map is Off or Chord notes only, or a morph is running. Stop the morph and set Scale map to Full.</p>
+            <h3>I clicked Play and the morph stopped</h3>
+            <p>That is on purpose so you can hear the sequence. Start the morph again from the eye or <kbd>M</kbd>.</p>
+            <h3>Shift+click removed a pin</h3>
+            <p>Same fret again removes it. Use another fret on that string to move it.</p>
+            <h3>I changed the scale and my chords moved / did not move</h3>
+            <p>They should not move. Scale / Key is a map. To rewrite the row into another key you change each card, or you write in Landscape.</p>
         </section>
 
         <p style="text-align:center;margin:2.5rem 0 1rem;">
-            <a class="guide-cta" href="../index.html">Open Guitar Fretboard →</a>
-            <a class="guide-cta" href="../../harmonic-landscape/index.html">Landscape</a>
+            <a class="guide-cta primary" href="../index.html">Open the Fretboard →</a>
             <a class="guide-cta" href="../../index.html">Studio Tools</a>
         </p>
 

@@ -274,7 +274,7 @@
                 </div>
                 <div>
                     <h1 class="font-display text-3xl tracking-tighter">Guitar Fretboard</h1>
-                    <p class="tagline text-sm -mt-1" style="color:var(--text-muted)">Chord • Scale • Progression Visualizer</p>
+                    <p class="tagline text-sm -mt-1" style="color:var(--text-muted)">See a chord. Hear it. Change it.</p>
                     <div id="session-title" class="tagline" title="Current session">Untitled</div>
                 </div>
             </div>
@@ -389,23 +389,23 @@
             <div class="center-panel lg:col-span-8 space-y-2 order-2 min-w-0">
                 <div id="coach-bar" class="coach-bar">
                     <i class="fa-solid fa-lightbulb text-amber-500"></i>
-                    <span><strong>Tips:</strong> <strong>Shift+click</strong> = chord shape · <strong>Shift+right-click</strong> = scale extras · <kbd class="text-[10px]">?</kbd> tour</span>
+                    <span id="coach-copy"><strong>New here?</strong> The neck already shows <strong>C – G – Am – F</strong>. Take the two-minute tour.</span>
                     <button type="button" class="chip text-[10px] px-2 py-0.5 rounded-lg font-semibold" onclick="startFretboardTour()" title="Spotlight tour">Take the tour</button>
-                    <button type="button" class="coach-dismiss chip" onclick="dismissCoachBar()" title="Hide tips">Got it</button>
+                    <a href="guide/index.html" class="chip text-[10px] px-2 py-0.5 rounded-lg font-semibold" style="text-decoration:none">Guide</a>
+                    <button type="button" class="coach-dismiss chip" onclick="dismissCoachBar()" title="Hide this bar">Got it</button>
                 </div>
                 <div id="help-panel" class="help-panel">
-                    <div class="font-semibold mb-1" style="color:var(--text-secondary)">Quick help</div>
+                    <div class="font-semibold mb-1" style="color:var(--text-secondary)">How to use this</div>
                     <ul class="list-disc pl-4 space-y-0.5">
-                        <li><strong>Next eye:</strong> show → pair morph (red/blue) → hide</li>
-                        <li><strong>Current eye:</strong> show → mono morph (grey) → hide</li>
-                        <li><strong>Shared tones</strong> stay lit during morph; exclusives pulse</li>
-                        <li><strong>Path:</strong> Set path → click A then B · drag ends · Play path run</li>
-                        <li><strong>Shift+click</strong> = chord shape (white ring). One fretted note per string.</li>
-                        <li><strong>Shift+right-click</strong> = scale extras (cyan ring). Any frets — melody / colour notes for scale detect.</li>
-                        <li><strong>DETECT</strong> Chord = shape only · Scale = shape + extras · chips = freehand</li>
-                        <li><strong>Neck zoom:</strong> scroll = pan · Ctrl+scroll = zoom · drag fret numbers · double-click a note to centre · Reset in Display</li>
-                        <li><strong>Keys:</strong> <kbd>←</kbd><kbd>→</kbd> step · <kbd>Space</kbd> play prog · <kbd>M</kbd> toggle pair morph · <kbd>P</kbd> set/clear path · <kbd>Esc</kbd> exit focus · <kbd>?</kbd> this help</li>
+                        <li>Red = this chord. Blue = the next one. Click a dot to hear a note.</li>
+                        <li>The cards under the neck are the song. Click a card to study that chord.</li>
+                        <li><strong>Play</strong> (or <kbd>Space</kbd>) hears the row. Change the letter or type on a card — the neck follows.</li>
+                        <li>Eye on the <em>next</em> (blue) card: watch one chord become the next.</li>
+                        <li>Scale / Key only paints the neck. It does not transpose your chords.</li>
+                        <li><strong>Shift+click</strong> pins a grip you already play. DETECT names it.</li>
+                        <li><kbd>←</kbd><kbd>→</kbd> step · <kbd>M</kbd> morph · <kbd>?</kbd> tour · <kbd>Esc</kbd> close</li>
                     </ul>
+                    <a href="guide/index.html" class="chip text-[10px] mt-2 px-2 py-1 rounded-lg inline-block" style="text-decoration:none">Open the written guide</a>
                     <button type="button" class="chip text-[10px] mt-2 px-2 py-1 rounded-lg" onclick="toggleHelpPanel(false)">Close</button>
                 </div>
                 <div class="fretboard-container">
@@ -596,8 +596,8 @@
         </div>
 
         <div class="app-footer mt-4 px-1 text-xs" style="color:var(--text-muted)">
-            <span class="font-semibold" style="color:var(--text-main)">Tip:</span>
-            Use <strong>Focus board</strong> to hide side panels and fill the screen · Esc exits focus
+            <span class="font-semibold" style="color:var(--text-main)">New here?</span>
+            Press <kbd>?</kbd> for the two-minute tour · <a href="guide/index.html" class="underline">User guide</a> · Focus board hides the side columns
         </div>
     </div>
 
@@ -605,7 +605,7 @@
         <div id="fb-tour-spot" class="fb-tour-spot"></div>
         <div id="fb-tour-card" class="fb-tour-card">
             <div id="fb-tour-arrow" class="fb-tour-arrow up"></div>
-            <div id="fb-tour-step" class="fb-tour-step">1 / 9</div>
+            <div id="fb-tour-step" class="fb-tour-step">1 / 7</div>
             <h3 id="fb-tour-title"></h3>
             <p id="fb-tour-body"></p>
             <div class="fb-tour-nav">
@@ -3423,6 +3423,9 @@
             const isPlaying = progPlaying && isCur;
             const div = document.createElement('div');
             div.className = `prog-slot rounded-xl flex-1 cursor-pointer ${isCur?'role-current':''} ${isNext&&!isCur?'role-next':''} ${!slot.visible?'hidden-slot':''} ${isPlaying?'playing-now':''}`;
+            div.dataset.slotIndex = String(idx);
+            if (isCur) div.dataset.role = 'current';
+            else if (isNext) div.dataset.role = 'next';
             div.onclick = (e) => {
                 if (e.target.closest('select,button,input,.note-chip')) return;
                 setProgressionFocus(idx);
@@ -3481,6 +3484,7 @@
                     : '<i class="fa-solid fa-eye-slash text-[10px]"></i>';
                 eye.title = slot.visible ? 'Hide chord' : 'Show chord';
             }
+            if (isNext && !isCur) eye.id = 'tour-next-eye';
             eye.onclick = (e) => { e.stopPropagation(); cycleSlotEye(idx); };
             const leftB = document.createElement('button');
             leftB.type='button'; leftB.className='icon-btn'; leftB.style.width='1.5rem'; leftB.style.height='1.5rem';
@@ -3608,6 +3612,7 @@
             div.append(head, modeRow, body, name, tones);
             host.appendChild(div);
         });
+        if (window.FbTour && FbTour.on) FbTour.place();
     }
 
     function clampNeckRange(a, b) {
@@ -4470,12 +4475,25 @@
     function dismissCoachBar() {
         const el = document.getElementById('coach-bar');
         if (el) el.style.display = 'none';
-        try { localStorage.setItem('guitarAppCoachDismissed', '1'); } catch (e) {}
+        try { localStorage.setItem('guitarAppWelcomeDismissed_v2', '1'); } catch (e) {}
+    }
+
+    function setCoachCopy() {
+        const el = document.getElementById('coach-copy');
+        if (!el) return;
+        let seen = false;
+        try { seen = localStorage.getItem('guitarAppTourSeen') === '1'; } catch (e) {}
+        if (seen) {
+            el.innerHTML = '<strong>Using it:</strong> click a card · <strong>Play</strong> hears the row · eye on the next card watches the change · <kbd class="text-[10px]">?</kbd> tour';
+        } else {
+            el.innerHTML = '<strong>New here?</strong> The neck already shows <strong>C – G – Am – F</strong>. Take the two-minute tour.';
+        }
     }
 
     function initCoachBar() {
+        setCoachCopy();
         try {
-            if (localStorage.getItem('guitarAppCoachDismissed') === '1') {
+            if (localStorage.getItem('guitarAppWelcomeDismissed_v2') === '1') {
                 const el = document.getElementById('coach-bar');
                 if (el) el.style.display = 'none';
             }
@@ -5411,48 +5429,49 @@
         STEPS: [
             {
                 target: '#fretboard',
-                title: 'The neck',
-                body: 'Thick string at the bottom. Red is the chord you focused. Blue is the next slot. Split markers are shared tones. Click a fret to hear it.'
+                title: 'This is a guitar',
+                body: 'Player\u2019s view \u2014 thick string at the bottom, open strings on the left. You already have C, G, Am, F. Red notes are C, the chord you are on. Blue notes are G, the next chord. Click any red or blue dot. You should hear that note.'
             },
             {
                 target: '#progression-panel',
-                title: 'Eight chairs, no more',
-                body: 'Click a slot to make it current. The next slot is blue on the board. This is a practice window — Landscape can hold a longer cell.'
-            },
-            {
-                target: '#board-legend',
-                title: 'Read the paint',
-                body: 'White rings are a grip you pinned (Shift+click). Cyan rings are extra notes (Shift+right-click). Amber diamonds are the scale map. Gold is a root.'
-            },
-            {
-                target: '#scale-panel',
-                title: 'Scale is a lens',
-                body: 'This colours the neck. It is not the song key. Opening Fretboard must not flip Landscape to C or shove the path onto the wrong wheel.'
+                title: 'These cards are the song',
+                body: 'C, G, Am, F \u2014 already loaded. Click the G card. The neck redraws: G turns red, Am turns blue. Click C to come back. Left and right arrows step the same way.',
+                enter: function () {
+                    if (typeof setProgressionFocus === 'function' && typeof progressionFocus === 'number' && progressionFocus !== 0) {
+                        setProgressionFocus(0);
+                    }
+                }
             },
             {
                 target: '#audio-panel',
-                title: 'Hear the cell',
-                body: 'Play walks the visible slots. Pattern is strum, arp, block, or root. Space also plays. Click the board once if the browser muted you.'
+                title: 'Hear the four chords',
+                body: 'Press Play. It walks C \u2192 G \u2192 Am \u2192 F. Pattern changes how they are plucked. If you heard nothing on the neck, click the board once \u2014 the browser waits for that. Space also plays.'
             },
             {
-                target: '#path-controls',
-                title: 'A corridor on the neck',
-                body: 'Set path, click A then B. Play path runs an arp or scale along that beam. P sets or clears it. Drag the ends.'
+                target: '#progression-panel',
+                title: 'Change a chord',
+                body: 'Click a card, then change the letter or the type (major, minor, 7). The neck updates straight away. Play again to hear the new row. Add makes another card. Solo hides the rest so you only see this grip.'
             },
             {
-                target: '#detect-panel',
-                title: 'Name a grip',
-                body: 'Shift+click each fretted note of a shape. DETECT offers a name. Apply as chord writes the focused slot. Apply as scale only changes this lens.'
+                target: '#scale-panel',
+                title: 'The key is a map',
+                body: 'Amber diamonds (Scale map = Full, on the left) are notes in this key. Change Major to Natural Minor if you want \u2014 your four chords stay put. This only paints the neck. It does not transpose.'
             },
             {
-                target: '#ih-handoff-bar',
-                title: 'One song, three tools',
-                body: 'Landscape composes any length. Fretboard shows a window of 8 around the step you had selected. Send back splices that window — the rest of the cell stays.'
+                target: '#tour-next-eye',
+                title: 'Watch one chord become the next',
+                body: 'This is running now. Shared notes stay lit. Notes that leave pulse red. Notes that arrive pulse blue. That is the main practice trick. Click this eye (or press M) to stop. Speed is \u00bd\u00d7 1\u00d7 2\u00d7 under the neck.',
+                enter: function () {
+                    if (typeof startMorph === 'function') {
+                        startMorph('pair');
+                        if (typeof updateFretboard === 'function') updateFretboard();
+                    }
+                }
             },
             {
-                target: '#tuning-panel',
-                title: 'Guitar or bass',
-                body: 'Presets follow the real open tuning. Shape pins keep sounding notes if you change tuning. ? anytime restarts this tour. Full guide is under Studio Tools → Fretboard guide.'
+                target: '#coach-bar',
+                title: 'That is how you use it',
+                body: 'See a chord, hear it, change it, watch it become the next one. Shift+click pins a grip you already play \u2014 DETECT names it. Save a name at the top if you want this back. Press ? to walk this again. The written guide is in the top bar.'
             }
         ],
         start: function () {
@@ -5462,15 +5481,23 @@
             if (el) el.classList.remove('hidden');
             this.show();
         },
-        close: function () {
+        close: function (finished) {
             this.on = false;
             var el = document.getElementById('fb-tour');
             if (el) el.classList.add('hidden');
+            if (typeof stopMorph === 'function') {
+                stopMorph();
+                if (typeof updateFretboard === 'function') updateFretboard();
+            }
+            if (finished) {
+                try { localStorage.setItem('guitarAppTourSeen', '1'); } catch (e) {}
+                if (typeof setCoachCopy === 'function') setCoachCopy();
+            }
         },
         next: function () {
             if (!this.on) return;
             if (this.i >= this.STEPS.length - 1) {
-                this.close();
+                this.close(true);
                 return;
             }
             this.i += 1;
@@ -5484,6 +5511,9 @@
         show: function () {
             var step = this.STEPS[this.i];
             if (!step) return;
+            if (typeof step.enter === 'function') {
+                try { step.enter(); } catch (e) {}
+            }
             var title = document.getElementById('fb-tour-title');
             var body = document.getElementById('fb-tour-body');
             var num = document.getElementById('fb-tour-step');
@@ -5494,6 +5524,12 @@
             if (num) num.textContent = this.i + 1 + ' / ' + this.STEPS.length;
             if (next) next.textContent = this.i >= this.STEPS.length - 1 ? 'Got it' : 'Next';
             if (back) back.disabled = this.i <= 0;
+            var target = step.target && document.querySelector(step.target);
+            if (target && target.scrollIntoView) {
+                target.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+            }
+            var self = this;
+            window.setTimeout(function () { self.place(); }, 80);
             this.place();
         },
         place: function () {
@@ -5504,6 +5540,10 @@
             var arrow = document.getElementById('fb-tour-arrow');
             if (!spot || !card) return;
             var el = step && document.querySelector(step.target);
+            if (el && el.offsetParent === null) el = null;
+            if (!el && step && (step.target === '#tour-next-eye' || step.target === '#coach-bar')) {
+                el = document.querySelector('#progression-panel');
+            }
             var pad = 8;
             var r;
             if (el) {
