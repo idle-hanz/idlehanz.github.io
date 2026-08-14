@@ -279,13 +279,19 @@
         this.buffer = null;
         this.kind = 'stream';
         this.stream = stream;
+        this.clearProblem();
+        var t = this.ctx.currentTime;
+        this.dry.gain.cancelScheduledValues(t);
+        this.wet.gain.cancelScheduledValues(t);
+        this.dry.gain.setValueAtTime(1, t);
+        this.wet.gain.setValueAtTime(0, t);
         var src = this.ctx.createMediaStreamSource(stream);
         src.connect(this.input);
         this.streamSource = src;
         this.playing = true;
         var self = this;
-        stream.getTracks().forEach(function (t) {
-            t.addEventListener('ended', function () {
+        stream.getTracks().forEach(function (track) {
+            track.addEventListener('ended', function () {
                 if (self.onStreamEnded) self.onStreamEnded();
             });
         });
@@ -374,8 +380,15 @@
             this.eq.gain.setValueAtTime(0, t);
             this.comp.gain.setValueAtTime(1, t);
         }
-        this._snap(this.dry.gain, active ? 0 : 1, t);
-        this._snap(this.wet.gain, active ? 1 : 0, t);
+        if (this.kind === 'stream') {
+            this.dry.gain.cancelScheduledValues(t);
+            this.wet.gain.cancelScheduledValues(t);
+            this.dry.gain.setValueAtTime(active ? 0 : 1, t);
+            this.wet.gain.setValueAtTime(active ? 1 : 0, t);
+        } else {
+            this._snap(this.dry.gain, active ? 0 : 1, t);
+            this._snap(this.wet.gain, active ? 1 : 0, t);
+        }
     };
 
     function defaultStats() {
@@ -449,6 +462,8 @@
         this.deck = [];
         this.lastBandIndex = -1;
         this.watch = false;
+        this.tourOn = false;
+        this.tourIndex = 0;
     }
 
     Ride.prototype.init = function (hooks) {
@@ -515,7 +530,22 @@
         byId('ride-source-library').addEventListener('click', function () { self._setSource('library'); });
         var tapSrc = byId('ride-source-tap');
         if (tapSrc) tapSrc.addEventListener('click', function () { self._setSource('tap'); });
-        byId('ride-source-demo').addEventListener('click', function () { self._setSource('demo'); });
+        var helpBtn = byId('ride-help-btn');
+        if (helpBtn) helpBtn.addEventListener('click', function () { self.openHelp(); });
+        var tourNext = byId('ride-tour-next');
+        if (tourNext) tourNext.addEventListener('click', function () { self._tourNext(); });
+        var tourBack = byId('ride-tour-back');
+        if (tourBack) tourBack.addEventListener('click', function () { self._tourBack(); });
+        var tourSkip = byId('ride-tour-skip');
+        if (tourSkip) tourSkip.addEventListener('click', function () { self.closeHelp(); });
+        document.addEventListener('keydown', function (e) {
+            if (!self.tourOn) return;
+            if (e.key === 'Escape') self.closeHelp();
+            if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); self._tourNext(); }
+            if (e.key === 'ArrowLeft') { e.preventDefault(); self._tourBack(); }
+        });
+        window.addEventListener('resize', function () { if (self.tourOn) self._placeTour(); });
+        window.addEventListener('scroll', function () { if (self.tourOn) self._placeTour(); }, true);
         var tapBtn = byId('ride-tap-btn');
         if (tapBtn) tapBtn.addEventListener('click', function () { self.tapLive(); });
 
@@ -598,7 +628,7 @@
 
     Ride.prototype._setSource = function (source, silent) {
         this.source = source;
-        ['library', 'tap', 'demo'].forEach(function (s) {
+        ['library', 'tap'].forEach(function (s) {
             var btn = document.getElementById('ride-source-' + s);
             if (!btn) return;
             btn.classList.toggle('is-active', s === source);
@@ -721,6 +751,165 @@
         if (!silent) {
             saveStats(this.stats);
             if (this.gameOn) this._beginListen();
+        }
+    };
+
+    Ride.prototype.TOUR = [
+        {
+            target: '#ride-source-tap',
+            source: 'library',
+            title: 'Streaming',
+            body: 'Already playing Amazon Music, Spotify, or YouTube in another tab? Start here.'
+        },
+        {
+            target: '#ride-tap-controls',
+            source: 'tap',
+            title: 'Hook that tab',
+            body: 'Click Choose tab. Pick the player tab — not this page, not a window, not the whole screen. Turn on Also share tab audio. That mutes the player tab so you only hear it here.'
+        },
+        {
+            target: '#ride-library-controls',
+            source: 'library',
+            title: 'Or use files',
+            body: 'Choose folder for albums on this computer. They play in order. Add files if you only want a few tracks.'
+        },
+        {
+            target: '.ride-transport',
+            source: 'library',
+            title: 'Move around the music',
+            body: 'Play, previous, next. Random jumps. Loop repeats the track. Slice 8s loops a short section so comparing is easier.'
+        },
+        {
+            target: '.ride-prompt',
+            title: 'Your cue',
+            body: 'This line tells you what to do. Hold Space to hear clean. Let go to hear the EQ again.'
+        },
+        {
+            target: '.ride-setup-row',
+            title: 'Two games',
+            body: 'Which band? Name the frequency. Band + amount: one tap for the band and the size. 7 bands is simpler. 14 is finer.'
+        },
+        {
+            target: '#ride-level-row',
+            title: 'How hard',
+            body: 'Easy is a big boost, then a big cut. Then it gets smaller. Cuts use more dB than boosts — a cut is harder to hear.'
+        },
+        {
+            target: '#ride-watch-btn',
+            title: 'Learn first, if you want',
+            body: 'Watch lights the right band as the filter hits. No score. Turn it off when you are ready to guess.'
+        },
+        {
+            target: '#ride-game-btn',
+            title: 'Start ride',
+            body: 'Music playing? Press this. A change appears. Tap what you heard.'
+        },
+        {
+            target: '#ride-guess-buttons',
+            title: 'If you miss',
+            body: 'Green is right, red is wrong. A miss plays your guess on this song, then the truth. Click the result to skip.'
+        }
+    ];
+
+    Ride.prototype.openHelp = function () {
+        var el = document.getElementById('ride-tour');
+        if (!el) return;
+        this.tourOn = true;
+        this.tourIndex = 0;
+        this._tourPrevSource = this.source || 'library';
+        if (el.parentNode !== document.body) document.body.appendChild(el);
+        el.classList.remove('hidden');
+        this._showTourStep();
+    };
+
+    Ride.prototype.closeHelp = function () {
+        this.tourOn = false;
+        var el = document.getElementById('ride-tour');
+        if (el) el.classList.add('hidden');
+        if (this._tourPrevSource && this._tourPrevSource !== this.source) {
+            this._setSource(this._tourPrevSource, true);
+        }
+    };
+
+    Ride.prototype._tourNext = function () {
+        if (!this.tourOn) return;
+        if (this.tourIndex >= this.TOUR.length - 1) {
+            this.closeHelp();
+            return;
+        }
+        this.tourIndex += 1;
+        this._showTourStep();
+    };
+
+    Ride.prototype._tourBack = function () {
+        if (!this.tourOn || this.tourIndex <= 0) return;
+        this.tourIndex -= 1;
+        this._showTourStep();
+    };
+
+    Ride.prototype._showTourStep = function () {
+        var step = this.TOUR[this.tourIndex];
+        if (!step) return;
+        if (step.source) this._setSource(step.source, true);
+        var title = document.getElementById('ride-tour-title');
+        var body = document.getElementById('ride-tour-body');
+        var num = document.getElementById('ride-tour-step');
+        var next = document.getElementById('ride-tour-next');
+        var back = document.getElementById('ride-tour-back');
+        if (title) title.textContent = step.title;
+        if (body) body.textContent = step.body;
+        if (num) num.textContent = (this.tourIndex + 1) + ' / ' + this.TOUR.length;
+        if (next) next.textContent = this.tourIndex >= this.TOUR.length - 1 ? 'Got it' : 'Next';
+        if (back) back.disabled = this.tourIndex <= 0;
+        var self = this;
+        var target = document.querySelector(step.target);
+        if (target && target.scrollIntoView) {
+            target.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+        }
+        window.setTimeout(function () { self._placeTour(); }, step.source ? 360 : 220);
+    };
+
+    Ride.prototype._placeTour = function () {
+        if (!this.tourOn) return;
+        var step = this.TOUR[this.tourIndex];
+        var spot = document.getElementById('ride-tour-spot');
+        var card = document.getElementById('ride-tour-card');
+        var arrow = document.getElementById('ride-tour-arrow');
+        if (!step || !spot || !card) return;
+        var target = document.querySelector(step.target);
+        if (!target) {
+            spot.style.display = 'none';
+            card.style.left = '50%';
+            card.style.top = '38%';
+            card.style.transform = 'translate(-50%, -50%)';
+            if (arrow) arrow.style.display = 'none';
+            return;
+        }
+        var r = target.getBoundingClientRect();
+        var pad = 8;
+        var hlW = Math.max(r.width + pad * 2, 52);
+        var hlH = Math.max(r.height + pad * 2, 36);
+        var hlL = r.left + r.width / 2 - hlW / 2;
+        var hlT = r.top + r.height / 2 - hlH / 2;
+        spot.style.display = 'block';
+        spot.style.top = Math.max(6, hlT) + 'px';
+        spot.style.left = Math.max(6, hlL) + 'px';
+        spot.style.width = Math.min(window.innerWidth - 12, hlW) + 'px';
+        spot.style.height = Math.min(window.innerHeight - 12, hlH) + 'px';
+        var cardW = card.offsetWidth || 320;
+        var cardH = card.offsetHeight || 180;
+        var below = r.bottom + 22 + cardH < window.innerHeight - 10 || r.top < cardH + 28;
+        var top = below ? r.bottom + 18 : r.top - 18 - cardH;
+        top = Math.max(10, Math.min(top, window.innerHeight - cardH - 10));
+        var left = r.left + r.width / 2 - cardW / 2;
+        left = Math.max(10, Math.min(left, window.innerWidth - cardW - 10));
+        card.style.transform = 'none';
+        card.style.top = top + 'px';
+        card.style.left = left + 'px';
+        if (arrow) {
+            arrow.style.display = 'block';
+            arrow.className = 'ride-tour-arrow ' + (below ? 'up' : 'down');
+            arrow.style.left = Math.max(18, Math.min(cardW - 28, r.left + r.width / 2 - left - 8)) + 'px';
         }
     };
 
@@ -1630,6 +1819,28 @@
         if (this.gameOn) this._beginListen();
     };
 
+    Ride.prototype._silenceCapturedTab = function (stream) {
+        var tracks = stream.getAudioTracks();
+        var jobs = tracks.map(function (track) {
+            if (!track.applyConstraints) return Promise.resolve();
+            return track.applyConstraints({
+                suppressLocalAudioPlayback: true,
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false
+            }).catch(function () { /* not supported */ });
+        });
+        return Promise.all(jobs).then(function () {
+            var silenced = tracks.some(function (track) {
+                var s = track.getSettings ? track.getSettings() : {};
+                return s.suppressLocalAudioPlayback === true;
+            });
+            var video = stream.getVideoTracks()[0];
+            var surface = video && video.getSettings ? video.getSettings().displaySurface : '';
+            return { silenced: silenced, surface: surface || '' };
+        });
+    };
+
     Ride.prototype.tapLive = function () {
         var self = this;
         if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
@@ -1637,38 +1848,54 @@
             return;
         }
         this._setSource('tap', true);
-        navigator.mediaDevices.getDisplayMedia({
-            video: { width: 320, height: 180, frameRate: 8 },
+        var opts = {
+            video: {
+                displaySurface: 'browser',
+                width: 16,
+                height: 16,
+                frameRate: 1
+            },
             audio: {
                 echoCancellation: false,
                 noiseSuppression: false,
                 autoGainControl: false,
-                channelCount: 2,
                 suppressLocalAudioPlayback: true
             },
             preferCurrentTab: false,
+            selfBrowserSurface: 'exclude',
             systemAudio: 'exclude',
-            monitorTypeSurfaces: 'exclude'
-        }).then(function (stream) {
+            monitorTypeSurfaces: 'exclude',
+            surfaceSwitching: 'exclude'
+        };
+        navigator.mediaDevices.getDisplayMedia(opts).then(function (stream) {
             if (!stream.getAudioTracks().length) {
                 stream.getTracks().forEach(function (t) { t.stop(); });
                 self.setStatus('No audio. Pick the player tab and turn on “Also share tab audio”.');
                 return;
             }
-            self._ensureEngine();
-            if (self.hooks && self.hooks.stopOtherAudio) self.hooks.stopOtherAudio();
-            if (self.captureVideo) {
-                self.captureVideo.srcObject = stream;
-                self.captureVideo.muted = true;
-                var playP = self.captureVideo.play();
-                if (playP && playP.catch) playP.catch(function () { /* autoplay */ });
-            }
-            self.engine.setStream(stream);
-            self.source = 'tap';
-            self._setNowPlaying('Browser tab — live');
-            self._syncPlayBtn();
-            self.setStatus('Hearing that tab. Start ride to train. Hold Space for clean.');
-            if (self.gameOn) self._beginListen();
+            return self._silenceCapturedTab(stream).then(function (info) {
+                if (info.surface === 'monitor' || info.surface === 'window') {
+                    stream.getTracks().forEach(function (t) { t.stop(); });
+                    self.setStatus('Pick a Chrome tab, not a window or the whole screen — otherwise the music plays twice.');
+                    return;
+                }
+                self._ensureEngine();
+                if (self.hooks && self.hooks.stopOtherAudio) self.hooks.stopOtherAudio();
+                if (self.captureVideo) {
+                    self.captureVideo.pause();
+                    self.captureVideo.srcObject = null;
+                    self.captureVideo.muted = true;
+                    self.captureVideo.volume = 0;
+                }
+                self.engine.setStream(stream);
+                self.source = 'tap';
+                self._setNowPlaying('Browser tab — live');
+                self._syncPlayBtn();
+                self.setStatus(info.silenced
+                    ? 'Hearing that tab only through the trainer. Start ride when you want problems.'
+                    : 'Tab connected. If it sounds doubled, pick the player tab again and turn on “Also share tab audio”.');
+                if (self.gameOn) self._beginListen();
+            });
         }).catch(function (err) {
             if (err && err.name === 'AbortError') return;
             self.setStatus('Could not capture the tab.');
