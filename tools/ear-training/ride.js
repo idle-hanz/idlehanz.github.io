@@ -11,6 +11,8 @@
     var REVEAL_MS = 1600;
     var COMPARE_GUESS_MS = 2200;
     var COMPARE_TRUTH_MS = 2400;
+    var COMPARE_GAP_MS = 1200;
+    var SET_TARGET = 24;
     var NARROW_Q = 6;
     var RIDE_Q = 0.85;
     var MAX_LIBRARY = 4000;
@@ -32,11 +34,77 @@
         return Math.pow(10, db / 20);
     }
 
-    function compensationDb(gainDb, q) {
+    function kWeightMag(freq) {
+        var f = Math.max(20, freq || 1000);
+        var hp = (f * f) / (f * f + 38 * 38);
+        var s = f / 1682;
+        var shelf = (1 + 1.58 * s) / (1 + s);
+        return hp * shelf;
+    }
+
+    function detectabilityScale(freq) {
+        if (freq < 70) return 1.5;
+        if (freq < 140) return 1.28;
+        if (freq < 350) return 1.12;
+        if (freq < 1800) return 1.0;
+        if (freq < 4500) return 0.82;
+        if (freq < 7500) return 0.92;
+        return 1.38;
+    }
+
+    function scaleDetectability(gain, freq) {
+        var signed = gain < 0 ? -1 : 1;
+        var g = Math.abs(gain) * detectabilityScale(freq);
+        g = Math.max(1, Math.min(14, g));
+        return signed * g;
+    }
+
+    function compensationDb(gainDb, q, freq) {
         var qClamped = Math.min(Math.max(q || 1.2, 0.5), 10);
         var width = 1.2 / qClamped;
-        var factor = 0.16 * Math.min(1, width + 0.18);
+        var k = kWeightMag(freq);
+        var factor = 0.34 * Math.min(1, width + 0.14) * Math.min(1.35, 0.5 + k);
         return -gainDb * factor;
+    }
+
+    function rmsBuffer(buf) {
+        var d = buf.getChannelData(0);
+        var s = 0;
+        for (var i = 0; i < d.length; i++) s += d[i] * d[i];
+        return Math.sqrt(s / Math.max(1, d.length));
+    }
+
+    function renderKWeighted(buffer, startSec, dur, eq) {
+        var sr = buffer.sampleRate;
+        var frames = Math.max(256, Math.floor(sr * dur));
+        var maxStart = Math.max(0, buffer.length - frames);
+        var off = Math.min(Math.max(0, Math.floor(startSec * sr)), maxStart);
+        var ctx = new OfflineAudioContext(1, frames, sr);
+        var src = ctx.createBufferSource();
+        src.buffer = buffer;
+        var node = src;
+        if (eq && Math.abs(eq.gain) > 0.01) {
+            var p = ctx.createBiquadFilter();
+            p.type = 'peaking';
+            p.frequency.value = eq.freq;
+            p.Q.value = eq.q || 1.2;
+            p.gain.value = eq.gain;
+            node.connect(p);
+            node = p;
+        }
+        var hs = ctx.createBiquadFilter();
+        hs.type = 'highshelf';
+        hs.frequency.value = 1682;
+        hs.gain.value = 4;
+        var hp = ctx.createBiquadFilter();
+        hp.type = 'highpass';
+        hp.frequency.value = 38;
+        hp.Q.value = 0.5;
+        node.connect(hs);
+        hs.connect(hp);
+        hp.connect(ctx.destination);
+        src.start(0, off / sr, dur);
+        return ctx.startRendering().then(rmsBuffer);
     }
 
     function fileBase(name) {
@@ -161,6 +229,10 @@
         this.comp.connect(this.wet);
         this.wet.connect(this.gate);
         this.gate.connect(ctx.destination);
+        this.analyser = ctx.createAnalyser();
+        this.analyser.fftSize = 2048;
+        this.analyser.smoothingTimeConstant = 0.35;
+        this.input.connect(this.analyser);
         this.dry.gain.value = 1;
         this.wet.gain.value = 0;
         this.gate.gain.value = 0.88;
@@ -361,6 +433,61 @@
         this._applyProblemGains();
     };
 
+    RideEngine.prototype.setGate = function (value, seconds) {
+        var t = this.ctx.currentTime;
+        this.gate.gain.cancelScheduledValues(t);
+        this.gate.gain.setValueAtTime(this.gate.gain.value, t);
+        this.gate.gain.linearRampToValueAtTime(value, t + (seconds || 0.04));
+    };
+
+    RideEngine.prototype.bandHasEnergy = function (freq) {
+        if (!this.analyser || !freq) return true;
+        var n = this.analyser.frequencyBinCount;
+        if (!this._spec || this._spec.length !== n) this._spec = new Float32Array(n);
+        this.analyser.getFloatFrequencyData(this._spec);
+        var sr = this.ctx.sampleRate;
+        var binHz = sr / this.analyser.fftSize;
+        var lo = freq / 1.7;
+        var hi = freq * 1.7;
+        var peak = -140;
+        var sum = 0;
+        var count = 0;
+        for (var i = 1; i < n; i++) {
+            var f = i * binHz;
+            var v = this._spec[i];
+            if (f >= 30 && f <= 16000) {
+                sum += v;
+                count++;
+            }
+            if (f >= lo && f <= hi && v > peak) peak = v;
+        }
+        if (!isFinite(peak) || peak < -120) return true;
+        var avg = count ? sum / count : -80;
+        return peak > -62 && peak > avg - 3;
+    };
+
+    RideEngine.prototype.calibrateCompensation = function (problem) {
+        if (!problem) return;
+        var fallback = dbToGain(compensationDb(problem.gain, problem.q, problem.freq));
+        problem.compGain = fallback;
+        this.comp.gain.setValueAtTime(fallback, this.ctx.currentTime);
+        if (this.kind !== 'buffer' || !this.buffer || typeof OfflineAudioContext === 'undefined') return;
+        var start = this.loopEnabled ? this.loopStart + this._nowOffset() : this._nowOffset();
+        var self = this;
+        Promise.all([
+            renderKWeighted(this.buffer, start, 0.45, null),
+            renderKWeighted(this.buffer, start, 0.45, problem)
+        ]).then(function (pair) {
+            if (!self.problem || self.problem.freq !== problem.freq) return;
+            var clean = pair[0];
+            var wet = pair[1];
+            if (!(wet > 1e-8) || !(clean > 1e-8)) return;
+            var g = Math.max(0.32, Math.min(2.6, clean / wet));
+            problem.compGain = g;
+            self.comp.gain.setTargetAtTime(g, self.ctx.currentTime, 0.03);
+        }).catch(function () { /* keep formula */ });
+    };
+
     RideEngine.prototype._snap = function (param, value, t) {
         param.cancelScheduledValues(t);
         param.setValueAtTime(param.value, t);
@@ -375,7 +502,12 @@
             this.eq.frequency.setValueAtTime(this.problem.freq, t);
             this.eq.Q.setValueAtTime(this.problem.q || RIDE_Q, t);
             this.eq.gain.setValueAtTime(this.problem.gain, t);
-            this.comp.gain.setValueAtTime(dbToGain(compensationDb(this.problem.gain, this.problem.q)), t);
+            this.comp.gain.setValueAtTime(
+                this.problem.compGain != null
+                    ? this.problem.compGain
+                    : dbToGain(compensationDb(this.problem.gain, this.problem.q, this.problem.freq)),
+                t
+            );
         } else {
             this.eq.gain.setValueAtTime(0, t);
             this.comp.gain.setValueAtTime(1, t);
@@ -399,6 +531,7 @@
             bandMode: 'few',
             loop: true,
             loopSlice: false,
+            gapAB: false,
             streak: 0,
             correct: 0,
             total: 0,
@@ -423,6 +556,7 @@
             if (raw.bandMode === 'many' || raw.bandMode === 'few') s.bandMode = raw.bandMode;
             if (typeof raw.loop === 'boolean') s.loop = raw.loop;
             if (typeof raw.loopSlice === 'boolean') s.loopSlice = raw.loopSlice;
+            if (typeof raw.gapAB === 'boolean') s.gapAB = raw.gapAB;
             if (typeof raw.streak === 'number') s.streak = raw.streak;
             if (typeof raw.correct === 'number') s.correct = raw.correct;
             if (typeof raw.total === 'number') s.total = raw.total;
@@ -464,6 +598,8 @@
         this.watch = false;
         this.tourOn = false;
         this.tourIndex = 0;
+        this.session = null;
+        this.setTimer = null;
     }
 
     Ride.prototype.init = function (hooks) {
@@ -496,8 +632,12 @@
         this._setSkill(this.stats.skill, true);
         this._setBandMode(this.stats.bandMode, true);
         this._syncLoopUi();
+        this._syncGapUi();
+        this._ensureSession(false);
         this._renderGuess();
         this._renderStats();
+        this._renderWeakMap();
+        this._renderSetBar();
         this.setStatus('Choose a folder, then Start ride.');
         this._tryRestoreFolder();
     };
@@ -567,6 +707,14 @@
         byId('ride-loop-btn').addEventListener('click', function () { self.toggleLoopSlice(); });
         var loopToggle = byId('ride-loop-toggle');
         if (loopToggle) loopToggle.addEventListener('click', function () { self.toggleLoop(); });
+        var gapBtn = byId('ride-gap-btn');
+        if (gapBtn) gapBtn.addEventListener('click', function () { self.toggleGapAB(); });
+        var setNew = byId('ride-set-new');
+        if (setNew) setNew.addEventListener('click', function () { self._ensureSession(true); });
+        var setKeep = byId('ride-set-keep');
+        if (setKeep) setKeep.addEventListener('click', function () { self._dismissSetReport(true); });
+        var setDone = byId('ride-set-done');
+        if (setDone) setDone.addEventListener('click', function () { self._dismissSetReport(false); });
         var levelChips = byId('ride-level-chips');
         if (levelChips) {
             levelChips.addEventListener('click', function (e) {
@@ -754,60 +902,88 @@
         }
     };
 
+    /* One idea per card. A first-time visitor should be able to set up
+       music and play after this, without a manual. */
     Ride.prototype.TOUR = [
+        {
+            target: '.ride-top',
+            source: 'library',
+            skill: 'band',
+            title: 'What this is',
+            html: 'Ride trains your ear for <strong>EQ</strong> — making one part of the sound louder or quieter. Your music keeps playing. A change appears. You name it.'
+        },
         {
             target: '#ride-source-tap',
             source: 'library',
             title: 'Streaming',
-            body: 'Already playing Amazon Music, Spotify, or YouTube in another tab? Start here.'
+            html: 'Already playing Amazon Music, Spotify, or YouTube in another tab? Start here. Click <strong>Browser tab</strong>. Use Chrome or Edge on a computer.'
         },
         {
             target: '#ride-tap-controls',
             source: 'tap',
             title: 'Hook that tab',
-            body: 'Click Choose tab. Pick the player tab — not this page, not a window, not the whole screen. Turn on Also share tab audio. That mutes the player tab so you only hear it here.'
+            html: 'Click <strong>Choose tab</strong>. Pick the music tab — not this page, not a window, not the whole screen. Turn on <strong>Also share tab audio</strong>. That mutes the player so you only hear it here.'
         },
         {
             target: '#ride-library-controls',
             source: 'library',
             title: 'Or use files',
-            body: 'Choose folder for albums on this computer. They play in order. Add files if you only want a few tracks.'
+            html: 'No stream? Stay on <strong>My albums</strong> and click <strong>Choose folder</strong>. Songs play in album order. <strong>Add files</strong> if you only want a few tracks.'
         },
         {
-            target: '.ride-transport',
+            target: '#ride-transport-nav',
             source: 'library',
             title: 'Move around the music',
-            body: 'Play, previous, next. Random jumps. Loop repeats the track. Slice 8s loops a short section so comparing is easier.'
+            html: '<strong>Play</strong>, previous, next. <strong>Random</strong> jumps, then the album continues. <strong>Loop</strong> repeats the track. <strong>Slice 8s</strong> loops a short section so comparing is easier. On a live tab, change songs in the player.'
         },
         {
-            target: '.ride-prompt',
+            target: '.ride-prompt-row',
             title: 'Your cue',
-            body: 'This line tells you what to do. Hold Space to hear clean. Let go to hear the EQ again.'
+            html: 'This line tells you what to do next. Hold <strong>Space</strong> to hear the song clean. Let go to hear the change again. Tap and hold the gold badge for the same thing.'
         },
         {
             target: '.ride-setup-row',
+            skill: 'band',
             title: 'Two games',
-            body: 'Which band? Name the frequency. Band + amount: one tap for the band and the size. 7 bands is simpler. 14 is finer.'
+            html: '<strong>Which band?</strong> Name the part that changed — bass, mids, air. <strong>Band + amount</strong>: one tap for both the band and how much. Start with <strong>7 bands</strong>. Switch to 14 when that feels easy.'
         },
         {
             target: '#ride-level-row',
+            skill: 'band',
             title: 'How hard',
-            body: 'Easy is a big boost, then a big cut. Then it gets smaller. Cuts use more dB than boosts — a cut is harder to hear.'
+            html: 'Easy is a big boost (<strong>+6 dB</strong> — clearly louder). Next is a bigger cut (<strong>−12</strong>), because cuts are harder to hear. Then it gets smaller. Start on Easy.'
+        },
+        {
+            target: '#ride-guess-buttons',
+            skill: 'amount',
+            title: 'Band + amount',
+            html: 'Each column is a band. Pads <strong>above</strong> the name turn it up. Pads <strong>below</strong> turn it down. One tap is your whole answer.'
         },
         {
             target: '#ride-watch-btn',
-            title: 'Learn first, if you want',
-            body: 'Watch lights the right band as the filter hits. No score. Turn it off when you are ready to guess.'
+            skill: 'band',
+            title: 'Learn first',
+            html: '<strong>Watch</strong> lights the right answer as the filter hits. Nothing is scored. Turn it off when you want to guess for real.'
+        },
+        {
+            target: '#ride-progress',
+            title: 'Daily set',
+            html: 'A session is <strong>24 problems</strong>. <strong>New set</strong> starts a fresh 24. The chips under the score are your weakness map — red bands come back more often so you get better.'
         },
         {
             target: '#ride-game-btn',
             title: 'Start ride',
-            body: 'Music playing? Press this. A change appears. Tap what you heard.'
+            html: 'Music playing? Press <strong>Start ride</strong>. After a short listen, a change appears. Tap what you heard. Silent spots are skipped, and loudness is matched, so you hear the EQ — not a volume trick.'
         },
         {
-            target: '#ride-guess-buttons',
+            target: '#ride-gap-btn',
             title: 'If you miss',
-            body: 'Green is right, red is wrong. A miss plays your guess on this song, then the truth. Click the result to skip.'
+            html: 'Green is right. Red is wrong. A miss plays <strong>your guess</strong> on this song, then the <strong>truth</strong>. Click the result to skip. Turn on <strong>Gap A/B</strong> if you want a short silence between them.'
+        },
+        {
+            target: '#ride-help-btn',
+            title: 'You are ready',
+            html: '<strong>Help</strong> is always here. Two extra drills sit below this card if you want them later. Pick music, Start ride, hold Space, tap what you heard.'
         }
     ];
 
@@ -817,6 +993,7 @@
         this.tourOn = true;
         this.tourIndex = 0;
         this._tourPrevSource = this.source || 'library';
+        this._tourPrevSkill = (this.stats && this.stats.skill) || 'band';
         if (el.parentNode !== document.body) document.body.appendChild(el);
         el.classList.remove('hidden');
         this._showTourStep();
@@ -828,6 +1005,9 @@
         if (el) el.classList.add('hidden');
         if (this._tourPrevSource && this._tourPrevSource !== this.source) {
             this._setSource(this._tourPrevSource, true);
+        }
+        if (this._tourPrevSkill && this.stats && this._tourPrevSkill !== this.stats.skill) {
+            this._setSkill(this._tourPrevSkill, true);
         }
     };
 
@@ -851,13 +1031,17 @@
         var step = this.TOUR[this.tourIndex];
         if (!step) return;
         if (step.source) this._setSource(step.source, true);
+        if (step.skill) this._setSkill(step.skill, true);
         var title = document.getElementById('ride-tour-title');
         var body = document.getElementById('ride-tour-body');
         var num = document.getElementById('ride-tour-step');
         var next = document.getElementById('ride-tour-next');
         var back = document.getElementById('ride-tour-back');
         if (title) title.textContent = step.title;
-        if (body) body.textContent = step.body;
+        if (body) {
+            if (step.html) body.innerHTML = step.html;
+            else body.textContent = step.body || '';
+        }
         if (num) num.textContent = (this.tourIndex + 1) + ' / ' + this.TOUR.length;
         if (next) next.textContent = this.tourIndex >= this.TOUR.length - 1 ? 'Got it' : 'Next';
         if (back) back.disabled = this.tourIndex <= 0;
@@ -866,7 +1050,7 @@
         if (target && target.scrollIntoView) {
             target.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
         }
-        window.setTimeout(function () { self._placeTour(); }, step.source ? 360 : 220);
+        window.setTimeout(function () { self._placeTour(); }, (step.source || step.skill) ? 360 : 220);
     };
 
     Ride.prototype._placeTour = function () {
@@ -898,18 +1082,27 @@
         spot.style.height = Math.min(window.innerHeight - 12, hlH) + 'px';
         var cardW = card.offsetWidth || 320;
         var cardH = card.offsetHeight || 180;
-        var below = r.bottom + 22 + cardH < window.innerHeight - 10 || r.top < cardH + 28;
-        var top = below ? r.bottom + 18 : r.top - 18 - cardH;
+        var huge = r.height > window.innerHeight * 0.42;
+        var below = !huge && (r.bottom + 22 + cardH < window.innerHeight - 10 || r.top < cardH + 28);
+        var top = huge
+            ? window.innerHeight - cardH - 16
+            : (below ? r.bottom + 18 : r.top - 18 - cardH);
         top = Math.max(10, Math.min(top, window.innerHeight - cardH - 10));
-        var left = r.left + r.width / 2 - cardW / 2;
+        var left = huge
+            ? (window.innerWidth - cardW) / 2
+            : (r.left + r.width / 2 - cardW / 2);
         left = Math.max(10, Math.min(left, window.innerWidth - cardW - 10));
         card.style.transform = 'none';
         card.style.top = top + 'px';
         card.style.left = left + 'px';
         if (arrow) {
-            arrow.style.display = 'block';
-            arrow.className = 'ride-tour-arrow ' + (below ? 'up' : 'down');
-            arrow.style.left = Math.max(18, Math.min(cardW - 28, r.left + r.width / 2 - left - 8)) + 'px';
+            if (huge) {
+                arrow.style.display = 'none';
+            } else {
+                arrow.style.display = 'block';
+                arrow.className = 'ride-tour-arrow ' + (below ? 'up' : 'down');
+                arrow.style.left = Math.max(18, Math.min(cardW - 28, r.left + r.width / 2 - left - 8)) + 'px';
+            }
         }
     };
 
@@ -933,6 +1126,7 @@
         this.lastBandIndex = -1;
         if (this.engine) this.engine.setBands(this.bands);
         this._renderGuess();
+        this._renderWeakMap();
         if (!silent) {
             saveStats(this.stats);
             if (this.gameOn) this._beginListen();
@@ -979,6 +1173,132 @@
         this.setStatus(this.stats.loopSlice
             ? 'Looping an 8-second slice.'
             : 'Using the full track.');
+    };
+
+    Ride.prototype._syncGapUi = function () {
+        var btn = document.getElementById('ride-gap-btn');
+        if (!btn) return;
+        btn.classList.toggle('is-active', !!this.stats.gapAB);
+    };
+
+    Ride.prototype.toggleGapAB = function () {
+        this.stats.gapAB = !this.stats.gapAB;
+        saveStats(this.stats);
+        this._syncGapUi();
+        this.setStatus(this.stats.gapAB
+            ? 'Gap A/B on — a short silence between your guess and the truth.'
+            : 'Gap A/B off — guess then truth with no gap.');
+    };
+
+    Ride.prototype._todayKey = function () {
+        var d = new Date();
+        return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+    };
+
+    Ride.prototype._ensureSession = function (forceNew) {
+        var today = this._todayKey();
+        if (!forceNew && this.session && this.session.date === today) {
+            this._renderSetBar();
+            this._startSetClock();
+            return;
+        }
+        this.session = {
+            date: today,
+            done: 0,
+            hits: 0,
+            startedAt: Date.now(),
+            finished: false,
+            log: []
+        };
+        this._hideSetReport();
+        this._startSetClock();
+        this._renderSetBar();
+    };
+
+    Ride.prototype._startSetClock = function () {
+        var self = this;
+        if (this.setTimer) clearInterval(this.setTimer);
+        this.setTimer = setInterval(function () { self._renderSetBar(); }, 1000);
+    };
+
+    Ride.prototype._fmtClock = function (ms) {
+        var s = Math.max(0, Math.floor(ms / 1000));
+        var m = Math.floor(s / 60);
+        s = s % 60;
+        return m + ':' + (s < 10 ? '0' : '') + s;
+    };
+
+    Ride.prototype._renderSetBar = function () {
+        var ses = this.session;
+        var prog = document.getElementById('ride-set-progress');
+        var clock = document.getElementById('ride-set-clock');
+        if (!ses) return;
+        if (prog) prog.textContent = 'Daily set ' + ses.done + ' / ' + SET_TARGET;
+        if (clock) {
+            clock.textContent = this._fmtClock(Date.now() - ses.startedAt);
+            clock.classList.toggle('is-long', Date.now() - ses.startedAt > 10 * 60 * 1000);
+        }
+    };
+
+    Ride.prototype._hideSetReport = function () {
+        var el = document.getElementById('ride-set-report');
+        if (el) el.classList.add('hidden');
+    };
+
+    Ride.prototype._endDailySet = function () {
+        if (!this.session || this.session.finished) return;
+        this.session.finished = true;
+        if (this.setTimer) {
+            clearInterval(this.setTimer);
+            this.setTimer = null;
+        }
+        this._renderSetBar();
+        this._renderSetReport();
+        this.stopGame();
+        this.setStatus('Daily set complete.');
+    };
+
+    Ride.prototype._renderSetReport = function () {
+        var el = document.getElementById('ride-set-report');
+        var body = document.getElementById('ride-set-report-body');
+        if (!el || !body || !this.session) return;
+        var ses = this.session;
+        var pct = ses.done ? Math.round((ses.hits / ses.done) * 100) : 0;
+        var elapsed = this._fmtClock(Date.now() - ses.startedAt);
+        var lines = ['<div class="ride-set-hero">' + ses.hits + ' / ' + ses.done + ' · ' + pct + '% · ' + elapsed + '</div>'];
+        var by = {};
+        ses.log.forEach(function (row) {
+            var k = String(row.freq);
+            if (!by[k]) by[k] = { hit: 0, miss: 0, name: row.name };
+            if (row.ok) by[k].hit += 1;
+            else by[k].miss += 1;
+        });
+        lines.push('<div class="ride-set-rows">');
+        this.bands.forEach(function (band) {
+            var row = by[String(band.freq)];
+            var n = row ? row.hit + row.miss : 0;
+            var ok = row ? row.hit : 0;
+            var rate = n ? row.miss / n : 0;
+            var col = n ? (rate > 0.45 ? '#c45c5c' : rate > 0.25 ? '#c9a36e' : '#8fad6e') : '#5a5144';
+            lines.push(
+                '<div class="ride-set-row"><span>' + band.name + '</span>' +
+                '<span class="ride-set-bar"><i style="width:' + Math.max(8, (n ? ok / n : 0) * 100) + '%;background:' + col + '"></i></span>' +
+                '<span>' + (n ? ok + '/' + n : '—') + '</span></div>'
+            );
+        });
+        lines.push('</div>');
+        body.innerHTML = lines.join('');
+        el.classList.remove('hidden');
+    };
+
+    Ride.prototype._dismissSetReport = function (keep) {
+        this._hideSetReport();
+        if (keep) {
+            this.session.finished = true;
+            this.startGame();
+            return;
+        }
+        this._ensureSession(true);
     };
 
     Ride.prototype._onTrackEnded = function () {
@@ -1036,6 +1356,27 @@
             this.els.weak.textContent = worst ? ('weak: ' + worst) : 'weak: —';
         }
         this._updateABBadge();
+        this._renderWeakMap();
+    };
+
+    Ride.prototype._renderWeakMap = function () {
+        var host = document.getElementById('ride-weak-map');
+        if (!host) return;
+        host.innerHTML = '';
+        var self = this;
+        this.bands.forEach(function (band) {
+            var row = self.stats.perBand[String(band.freq)] || { hit: 0, miss: 0 };
+            var n = (row.hit || 0) + (row.miss || 0);
+            var rate = n ? (row.miss || 0) / n : 0;
+            var cell = document.createElement('span');
+            cell.className = 'ride-weak-cell';
+            cell.title = band.name + (n ? (' · ' + Math.round((1 - rate) * 100) + '% of ' + n) : ' · no data yet');
+            if (n < 3) cell.style.background = 'rgba(90,81,68,0.45)';
+            else if (rate > 0.45) cell.style.background = 'rgba(196,92,92,' + (0.35 + rate * 0.45) + ')';
+            else cell.style.background = 'rgba(143,173,110,' + (0.28 + (1 - rate) * 0.4) + ')';
+            cell.textContent = band.freq < 1000 ? String(band.freq) : ((band.freq / 1000) + 'k');
+            host.appendChild(cell);
+        });
     };
 
     Ride.prototype._updateABBadge = function () {
@@ -1267,6 +1608,8 @@
             if (this.source === 'library' && this.library.length) {
                 this.gameOn = true;
                 this._syncGameBtn();
+                this._ensureSession(false);
+                this._startSetClock();
                 this._playCurrent();
                 return;
             }
@@ -1277,6 +1620,8 @@
         }
         this.gameOn = true;
         this._syncGameBtn();
+        this._ensureSession(false);
+        this._startSetClock();
         this._beginListen();
     };
 
@@ -1298,6 +1643,10 @@
 
     Ride.prototype._beginListen = function () {
         if (!this.gameOn) return;
+        if (this.session && !this.session.finished && this.session.done >= SET_TARGET) {
+            this._endDailySet();
+            return;
+        }
         this.clearTimers();
         this.phase = 'listen';
         this.currentProblem = null;
@@ -1349,18 +1698,37 @@
         if (weak >= 0 && n > 1) {
             deck.splice(1 + Math.floor(Math.random() * n), 0, weak);
         }
+        for (var w = 0; w < n; w++) {
+            if (w === weak) continue;
+            var row = this.stats.perBand[String(this.bands[w].freq)] || { hit: 0, miss: 0 };
+            var nn = (row.hit || 0) + (row.miss || 0);
+            if (nn >= 3 && (row.miss || 0) / nn >= 0.4) {
+                deck.splice(1 + Math.floor(Math.random() * deck.length), 0, w);
+            }
+        }
         this.deck = deck;
     };
 
     Ride.prototype._pickBandIndex = function () {
-        if (!this.deck || !this.deck.length) this._rebuildDeck();
-        var idx = this.deck.shift();
-        if (this.bands.length > 1 && idx === this.lastBandIndex && this.deck.length) {
+        var tries = Math.max(this.bands.length * 2, 8);
+        var fallback = 0;
+        for (var t = 0; t < tries; t++) {
+            if (!this.deck || !this.deck.length) this._rebuildDeck();
+            var idx = this.deck.shift();
+            if (this.bands.length > 1 && idx === this.lastBandIndex && this.deck.length) {
+                this.deck.push(idx);
+                idx = this.deck.shift();
+            }
+            fallback = idx;
+            var freq = this.bands[idx] && this.bands[idx].freq;
+            if (!this.engine || this.engine.bandHasEnergy(freq)) {
+                this.lastBandIndex = idx;
+                return idx;
+            }
             this.deck.push(idx);
-            idx = this.deck.shift();
         }
-        this.lastBandIndex = idx;
-        return idx;
+        this.lastBandIndex = fallback;
+        return fallback;
     };
 
     Ride.prototype._shapeForFreq = function (freq, skill) {
@@ -1396,7 +1764,7 @@
             var choices = this._amountGains();
             gain = choices[Math.floor(Math.random() * choices.length)];
         } else {
-            gain = this._bandLevelGain();
+            gain = scaleDetectability(this._bandLevelGain(), band.freq);
         }
         this._clearHighlights();
         this._hideResult();
@@ -1409,6 +1777,7 @@
             dir: gain >= 0 ? 'boost' : 'cut'
         };
         this.engine.setProblem(this.currentProblem);
+        this.engine.calibrateCompensation(this.currentProblem);
         this.phase = 'problem';
         this._updateABBadge();
         if (this.watch) {
@@ -1487,6 +1856,18 @@
         }
         saveStats(this.stats);
         this._renderStats();
+        this._renderWeakMap();
+        if (!this.watch && this.session && !this.session.finished) {
+            this.session.done += 1;
+            if (ok) this.session.hits += 1;
+            this.session.log.push({
+                freq: this.currentProblem ? this.currentProblem.freq : 0,
+                name: this.currentProblem && this.bands[this.currentProblem.index]
+                    ? this.bands[this.currentProblem.index].name : '',
+                ok: ok
+            });
+            this._renderSetBar();
+        }
     };
 
     Ride.prototype._labelEq = function (spec) {
@@ -1509,7 +1890,8 @@
 
     Ride.prototype._skipCompare = function () {
         if (!this.gameOn) return;
-        if (this.phase === 'reveal' || this.phase === 'compare-guess' || this.phase === 'compare-truth') {
+        if (this.phase === 'reveal' || this.phase === 'compare-guess' || this.phase === 'compare-truth' || this.phase === 'compare-gap') {
+            if (this.engine) this.engine.setGate(0.88);
             this._beginListen();
         }
     };
@@ -1543,15 +1925,33 @@
         this._showResult(false, title, 'Your guess: ' + this._labelEq(guess));
         this.setStatus('Hearing your guess — ' + this._labelEq(guess) + '. Then the truth. Click to skip.');
         var self = this;
+        var gap = this.stats.gapAB ? COMPARE_GAP_MS : 0;
         this.after(COMPARE_GUESS_MS, function () {
             if (!self.gameOn || self.phase !== 'compare-guess') return;
+            if (gap && self.engine) {
+                self.phase = 'compare-gap';
+                self.engine.setGate(0);
+                self.setStatus('…');
+                return;
+            }
             self.phase = 'compare-truth';
             self._applyLiveEq(p);
             self._showResult(false, title, 'Truth: ' + truthLabel);
             self.setStatus('Hearing the truth — ' + truthLabel + '. Hold Space for clean.');
         });
-        this.after(COMPARE_GUESS_MS + COMPARE_TRUTH_MS, function () {
-            if (self.gameOn && (self.phase === 'compare-truth' || self.phase === 'compare-guess')) {
+        if (gap) {
+            this.after(COMPARE_GUESS_MS + gap, function () {
+                if (!self.gameOn || self.phase !== 'compare-gap') return;
+                self.phase = 'compare-truth';
+                if (self.engine) self.engine.setGate(0.88);
+                self._applyLiveEq(p);
+                self._showResult(false, title, 'Truth: ' + truthLabel);
+                self.setStatus('Hearing the truth — ' + truthLabel + '. Hold Space for clean.');
+            });
+        }
+        this.after(COMPARE_GUESS_MS + gap + COMPARE_TRUTH_MS, function () {
+            if (self.gameOn && (self.phase === 'compare-truth' || self.phase === 'compare-guess' || self.phase === 'compare-gap')) {
+                if (self.engine) self.engine.setGate(0.88);
                 self._beginListen();
             }
         });

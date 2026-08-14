@@ -65,12 +65,15 @@
             </div>
 
             <div class="ride-transport">
-                <button type="button" id="ride-play-btn" class="ride-icon-btn" aria-label="Play"><i class="fa-solid fa-play"></i></button>
-                <button type="button" id="ride-prev-btn" class="ride-icon-btn" aria-label="Previous track"><i class="fa-solid fa-backward-step"></i></button>
-                <button type="button" id="ride-next-btn" class="ride-icon-btn" aria-label="Next track"><i class="fa-solid fa-forward-step"></i></button>
-                <button type="button" id="ride-random-btn" class="ride-chip">Random</button>
-                <button type="button" id="ride-loop-toggle" class="ride-chip is-active">Loop on</button>
-                <button type="button" id="ride-loop-btn" class="ride-chip">Slice 8s</button>
+                <div id="ride-transport-nav" class="ride-transport-nav">
+                    <button type="button" id="ride-play-btn" class="ride-icon-btn" aria-label="Play"><i class="fa-solid fa-play"></i></button>
+                    <button type="button" id="ride-prev-btn" class="ride-icon-btn" aria-label="Previous track"><i class="fa-solid fa-backward-step"></i></button>
+                    <button type="button" id="ride-next-btn" class="ride-icon-btn" aria-label="Next track"><i class="fa-solid fa-forward-step"></i></button>
+                    <button type="button" id="ride-random-btn" class="ride-chip">Random</button>
+                    <button type="button" id="ride-loop-toggle" class="ride-chip is-active">Loop on</button>
+                    <button type="button" id="ride-loop-btn" class="ride-chip">Slice 8s</button>
+                    <button type="button" id="ride-gap-btn" class="ride-chip">Gap A/B</button>
+                </div>
                 <span class="ride-transport-gap"></span>
                 <button type="button" id="ride-watch-btn" class="ride-chip">Watch</button>
                 <button type="button" id="ride-game-btn" class="px-5 py-2.5 bg-white text-zinc-950 font-semibold rounded-3xl text-sm">Start ride</button>
@@ -82,10 +85,25 @@
                     <div id="ride-status" class="ride-status">Choose a folder, then Start ride.</div>
                     <button type="button" id="ride-ab-badge">Hold Space = clean</button>
                 </div>
-                <div class="ride-score">
-                    <span><b id="ride-streak">0</b> streak</span>
-                    <span><b id="ride-accuracy">—</b> accuracy</span>
-                    <span id="ride-weak">weak: —</span>
+                <div id="ride-progress" class="ride-progress">
+                    <div class="ride-score">
+                        <span><b id="ride-streak">0</b> streak</span>
+                        <span><b id="ride-accuracy">—</b> accuracy</span>
+                        <span id="ride-weak">weak: —</span>
+                        <span id="ride-set-progress">Daily set 0 / 24</span>
+                        <span id="ride-set-clock">0:00</span>
+                        <button type="button" id="ride-set-new" class="ride-chip">New set</button>
+                    </div>
+                    <div id="ride-weak-map" class="ride-weak-map" aria-label="Band strength"></div>
+                </div>
+            </div>
+
+            <div id="ride-set-report" class="ride-set-report hidden">
+                <h3>Daily set complete</h3>
+                <div id="ride-set-report-body"></div>
+                <div class="ride-set-actions">
+                    <button type="button" id="ride-set-keep" class="ride-chip">Keep training</button>
+                    <button type="button" id="ride-set-done" class="ride-chip is-active">New set</button>
                 </div>
             </div>
 
@@ -122,7 +140,7 @@
                 <div id="ride-tour-spot" class="ride-tour-spot"></div>
                 <div id="ride-tour-card" class="ride-tour-card">
                     <div id="ride-tour-arrow" class="ride-tour-arrow up"></div>
-                    <div id="ride-tour-step" class="ride-tour-step">1 / 9</div>
+                    <div id="ride-tour-step" class="ride-tour-step">1 / 14</div>
                     <h3 id="ride-tour-title"></h3>
                     <p id="ride-tour-body"></p>
                     <div class="ride-tour-nav">

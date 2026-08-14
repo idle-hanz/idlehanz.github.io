@@ -301,6 +301,13 @@ body.ear-trainer-page {
     margin-bottom: 1rem;
 }
 
+.ear-trainer-page .ride-transport-nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem 0.55rem;
+}
+
 .ear-trainer-page .ride-transport-gap {
     flex: 1 1 0.5rem;
 }
@@ -336,11 +343,14 @@ body.ear-trainer-page {
     flex: 1 1 14rem;
 }
 
+.ear-trainer-page .ride-progress {
+    margin-top: 0.65rem;
+}
+
 .ear-trainer-page .ride-score {
     display: flex;
     flex-wrap: wrap;
     gap: 0.85rem 1.25rem;
-    margin-top: 0.65rem;
     font-size: 0.8rem;
     color: var(--et-muted);
 }
@@ -350,6 +360,75 @@ body.ear-trainer-page {
     font-family: ui-monospace, monospace;
     font-weight: 600;
     margin-right: 0.2rem;
+}
+
+.ear-trainer-page #ride-set-clock.is-long {
+    color: #c45c5c;
+}
+
+.ear-trainer-page .ride-weak-map {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.65rem;
+}
+
+.ear-trainer-page .ride-weak-cell {
+    min-width: 2.2rem;
+    padding: 0.2rem 0.35rem;
+    border-radius: 6px;
+    font-size: 0.68rem;
+    text-align: center;
+    color: #efe6d4;
+    letter-spacing: 0.02em;
+}
+
+.ear-trainer-page .ride-set-report {
+    border: 1px solid var(--et-border);
+    border-radius: 10px;
+    padding: 0.9rem 1rem 1rem;
+    margin-bottom: 1rem;
+    background: rgba(8, 6, 4, 0.55);
+}
+
+.ear-trainer-page .ride-set-report h3 {
+    margin: 0 0 0.5rem;
+    font-family: 'Cinzel', serif;
+    font-size: 1.05rem;
+    font-weight: 400;
+    color: var(--et-accent-light);
+}
+
+.ear-trainer-page .ride-set-hero {
+    font-size: 1.15rem;
+    margin-bottom: 0.7rem;
+}
+
+.ear-trainer-page .ride-set-row {
+    display: grid;
+    grid-template-columns: 6.5rem 1fr 2.4rem;
+    gap: 0.45rem;
+    align-items: center;
+    font-size: 0.8rem;
+    margin-bottom: 0.28rem;
+}
+
+.ear-trainer-page .ride-set-bar {
+    height: 0.45rem;
+    background: rgba(255,255,255,0.06);
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.ear-trainer-page .ride-set-bar i {
+    display: block;
+    height: 100%;
+}
+
+.ear-trainer-page .ride-set-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.8rem;
 }
 
 .ear-trainer-page .ride-setup {
@@ -798,7 +877,7 @@ body.ear-trainer-page {
 
 .ride-tour-card {
     position: fixed;
-    width: min(22rem, calc(100vw - 20px));
+    width: min(24.5rem, calc(100vw - 20px));
     pointer-events: auto;
     border: 1px solid #3a2f22;
     border-radius: 12px;
@@ -844,8 +923,13 @@ body.ear-trainer-page {
 .ride-tour-card p {
     margin: 0 0 0.85rem;
     font-size: 0.95rem;
-    line-height: 1.45;
+    line-height: 1.5;
     color: #c8bfa8;
+}
+
+.ride-tour-card p strong {
+    color: #e8d9b8;
+    font-weight: 600;
 }
 
 .ride-tour-nav {
