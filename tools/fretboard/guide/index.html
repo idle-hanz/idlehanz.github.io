@@ -163,6 +163,26 @@
         }
         details.later[open] > summary::after { content: ' ▴'; }
         .ignore { color: #95897a; font-size: 0.95em; }
+        .demo-grid {
+            display: grid;
+            gap: 0.65rem;
+            margin: 1rem 0 0.35rem;
+        }
+        @media (min-width: 560px) {
+            .demo-grid { grid-template-columns: 1fr 1fr; }
+        }
+        .demo-card {
+            display: block;
+            border: 1px solid #3a2f22;
+            border-radius: 10px;
+            padding: 0.75rem 0.85rem;
+            text-decoration: none;
+            background: rgba(0,0,0,0.28);
+            color: #c8b8a0 !important;
+        }
+        .demo-card:hover { border-color: #c9a36e; }
+        .demo-card strong { display: block; color: #e8d9b8; font-family: 'Cinzel', serif; font-weight: 500; margin-bottom: 0.25rem; }
+        .demo-card span { font-size: 0.92em; }
     </style>
 </head>
 <body class="art-bg">
@@ -181,6 +201,7 @@
             <h1>How to use the Fretboard</h1>
             <p class="subhead">This page is a guitar. It already has four chords on it. You look at a chord, hear it, change it if you want, and watch it become the next one.</p>
             <a class="guide-cta primary" href="../index.html">Open the app →</a>
+            <a class="guide-cta" href="../index.html?demo=first">First look demo →</a>
         </div>
 
         <nav class="guide-toc" aria-label="Contents">
@@ -189,6 +210,7 @@
                 <li><a href="#what">What this is</a></li>
                 <li><a href="#screen">The three parts of the screen</a></li>
                 <li><a href="#first">Your first session</a></li>
+                <li><a href="#demos">Walkthrough demos</a></li>
                 <li><a href="#colours">Red, blue, and the other marks</a></li>
                 <li><a href="#change">Change a chord and hear the row</a></li>
                 <li><a href="#key">See the key (it does not move your chords)</a></li>
@@ -211,7 +233,7 @@
                 <li>Watch how the notes move from one chord to the next.</li>
             </ul>
             <div class="guide-callout">
-                In the app, press <kbd>?</kbd> or click <strong>Take the tour</strong>. A spotlight points at each control and tells you what to click. <kbd>→</kbd> next, <kbd>←</kbd> back, <kbd>Esc</kbd> leave.
+                In the app, click <strong>Take the tour</strong> for a first look, or <strong>Demos</strong> (or press <kbd>?</kbd>) to pick a walkthrough. Each one runs on the real board, then puts your session back. <kbd>→</kbd> next, <kbd>←</kbd> back, <kbd>Esc</kbd> leave.
             </div>
         </section>
 
@@ -245,11 +267,43 @@
                 <li><strong>Press Play</strong> on the right (or <kbd>Space</kbd>). It walks C → G → Am → F.</li>
                 <li><strong>Change one chord.</strong> Click the F card. Change the type from major to minor, or the letter to D. Press Play again. That is the whole loop: see, hear, change, hear.</li>
             </ol>
-            <p>When that feels obvious, the rest of this page is extra.</p>
+            <p>When that feels obvious, run a walkthrough on the real board, or keep reading.</p>
+        </section>
+
+        <section class="card" id="demos">
+            <h2>4. Walkthrough demos</h2>
+            <p>These open the app and drive it. You watch the move happen. Your own chords come back when you leave.</p>
+            <div class="demo-grid">
+                <a class="demo-card" href="../index.html?demo=first">
+                    <strong>First look</strong>
+                    <span>See the neck, click through the cards, hear Play, change F to Dm, watch the morph.</span>
+                </a>
+                <a class="demo-card" href="../index.html?demo=hear">
+                    <strong>Hear the song</strong>
+                    <span>Play walks C → G → Am → F. Then it switches to an arpeggio so you hear the difference.</span>
+                </a>
+                <a class="demo-card" href="../index.html?demo=change">
+                    <strong>Change a chord</strong>
+                    <span>The last card is F. It becomes Dm. Then you hear C – G – Am – Dm.</span>
+                </a>
+                <a class="demo-card" href="../index.html?demo=morph">
+                    <strong>Watch C become G</strong>
+                    <span>Shared notes stay lit. Notes that leave pulse red. Notes that arrive pulse blue.</span>
+                </a>
+                <a class="demo-card" href="../index.html?demo=key">
+                    <strong>See the key</strong>
+                    <span>Amber diamonds paint C major, then C minor. The four chords do not move. That is a map, not a transpose.</span>
+                </a>
+                <a class="demo-card" href="../index.html?demo=grip">
+                    <strong>Name a grip</strong>
+                    <span>White rings appear on a first-position C. DETECT offers the name. That is Shift+click.</span>
+                </a>
+            </div>
+            <p>In the app, <strong>Demos</strong> or <kbd>?</kbd> opens the same list. <strong>All</strong> on a tour card jumps back to it.</p>
         </section>
 
         <section class="card" id="colours">
-            <h2>4. Red, blue, and the other marks</h2>
+            <h2>5. Red, blue, and the other marks</h2>
             <p>You only need the first three rows to start.</p>
             <table class="guide-table">
                 <thead><tr><th>Mark</th><th>Meaning</th></tr></thead>
@@ -271,7 +325,7 @@
         </section>
 
         <section class="card" id="change">
-            <h2>5. Change a chord and hear the row</h2>
+            <h2>6. Change a chord and hear the row</h2>
             <p>Click a card, then edit that card:</p>
             <ul>
                 <li><strong>Named</strong> — pick a letter (C, D, …) and a type (major, minor, 7, sus…).</li>
@@ -290,7 +344,7 @@
         </section>
 
         <section class="card" id="key">
-            <h2>6. See the key (it does not move your chords)</h2>
+            <h2>7. See the key (it does not move your chords)</h2>
             <p>On the right, <strong>SCALE / KEY</strong> is a map painted on the neck. It is not a transpose.</p>
             <p>If you change C major to A minor here, C–G–Am–F stay C–G–Am–F. Only the amber diamonds change.</p>
             <p>On the left, <strong>Scale map</strong>:</p>
@@ -303,7 +357,7 @@
         </section>
 
         <section class="card" id="morph">
-            <h2>7. Watch one chord become the next</h2>
+            <h2>8. Watch one chord become the next</h2>
             <p>This is the main practice trick. You are not just seeing two grips. You are seeing what stays and what moves.</p>
             <ol class="steps-how">
                 <li>Click a card that has another card after it (C, then G).</li>
@@ -316,7 +370,7 @@
         </section>
 
         <section class="card" id="shape">
-            <h2>8. Pin a shape you already play</h2>
+            <h2>9. Pin a shape you already play</h2>
             <p>You know a grip on the guitar. You want the app to name it and lock it on the board.</p>
             <ol class="steps-how">
                 <li>Hold the shape on your guitar.</li>
@@ -328,8 +382,8 @@
         </section>
 
         <section class="card" id="more">
-            <h2>9. When you want more</h2>
-            <p>You can stop at section 7 and use this every day. These are optional.</p>
+            <h2>10. When you want more</h2>
+            <p>You can stop at section 8 and use this every day. These are optional.</p>
 
             <details class="later">
                 <summary>Save, load, and a picture of the neck</summary>
@@ -382,7 +436,7 @@
         </section>
 
         <section class="card" id="faq">
-            <h2>10. If something looks wrong</h2>
+            <h2>11. If something looks wrong</h2>
             <h3>No sound</h3>
             <p>Click the neck once, then raise Volume. Check Octave is not all the way down.</p>
             <h3>The neck is too busy</h3>

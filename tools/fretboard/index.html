@@ -229,6 +229,7 @@
         html.dark .help-panel kbd { background: #0f172a; border-color: #475569; color: #e2e8f0; }
         .fb-tour { position: fixed; inset: 0; z-index: 90; pointer-events: none; }
         .fb-tour.hidden { display: none !important; }
+        .fb-tour.is-picking { pointer-events: auto; background: rgba(6, 4, 2, 0.72); }
         .fb-tour-spot {
             position: fixed; border-radius: 10px;
             box-shadow: 0 0 0 9999px rgba(6, 4, 2, 0.72), 0 0 0 2px #c9a36e;
@@ -254,6 +255,25 @@
         }
         .fb-tour-nav button:disabled { opacity: 0.35; cursor: default; }
         .fb-tour-nav #fb-tour-next { background: #8b6f4e; border-color: #8b6f4e; color: #fff; }
+        .fb-demo-pick {
+            position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+            width: min(26rem, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow-y: auto;
+            pointer-events: auto; border: 1px solid #3a2f22; border-radius: 12px;
+            background: rgba(16, 12, 8, 0.98); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+            padding: 1rem 1rem 0.85rem; color: #e0e0e0;
+        }
+        .fb-demo-pick.hidden { display: none !important; }
+        .fb-demo-pick h3 { margin: 0 0 0.35rem; font-size: 1.2rem; font-weight: 600; color: #d4bea3; }
+        .fb-demo-pick .fb-demo-lead { margin: 0 0 0.85rem; font-size: 0.92rem; line-height: 1.45; color: #c8bfa8; }
+        .fb-demo-list { display: flex; flex-direction: column; gap: 0.4rem; margin: 0 0 0.75rem; }
+        .fb-demo-list button {
+            text-align: left; border: 1px solid #3a2f22; background: rgba(255,255,255,0.03);
+            color: #e8d9b8; border-radius: 10px; padding: 0.55rem 0.7rem; cursor: pointer;
+        }
+        .fb-demo-list button:hover { border-color: #c9a36e; }
+        .fb-demo-list button strong { display: block; font-size: 0.95rem; color: #d4bea3; }
+        .fb-demo-list button span { display: block; font-size: 0.8rem; color: #c8bfa8; margin-top: 0.12rem; }
+        .fb-demo-pick .fb-tour-nav { margin-top: 0.15rem; }
     </style>
 </head>
 <body class="py-4">
@@ -390,7 +410,8 @@
                 <div id="coach-bar" class="coach-bar">
                     <i class="fa-solid fa-lightbulb text-amber-500"></i>
                     <span id="coach-copy"><strong>New here?</strong> The neck already shows <strong>C – G – Am – F</strong>. Take the two-minute tour.</span>
-                    <button type="button" class="chip text-[10px] px-2 py-0.5 rounded-lg font-semibold" onclick="startFretboardTour()" title="Spotlight tour">Take the tour</button>
+                    <button type="button" class="chip text-[10px] px-2 py-0.5 rounded-lg font-semibold" onclick="startFretboardTour()" title="First-look walkthrough">Take the tour</button>
+                    <button type="button" class="chip text-[10px] px-2 py-0.5 rounded-lg font-semibold" onclick="openFretboardDemos()" title="Scripted walkthroughs on the real board">Demos</button>
                     <a href="guide/index.html" class="chip text-[10px] px-2 py-0.5 rounded-lg font-semibold" style="text-decoration:none">Guide</a>
                     <button type="button" class="coach-dismiss chip" onclick="dismissCoachBar()" title="Hide this bar">Got it</button>
                 </div>
@@ -403,8 +424,9 @@
                         <li>Eye on the <em>next</em> (blue) card: watch one chord become the next.</li>
                         <li>Scale / Key only paints the neck. It does not transpose your chords.</li>
                         <li><strong>Shift+click</strong> pins a grip you already play. DETECT names it.</li>
-                        <li><kbd>←</kbd><kbd>→</kbd> step · <kbd>M</kbd> morph · <kbd>?</kbd> tour · <kbd>Esc</kbd> close</li>
+                        <li><kbd>←</kbd><kbd>→</kbd> step · <kbd>M</kbd> morph · <kbd>?</kbd> walkthroughs · <kbd>Esc</kbd> close</li>
                     </ul>
+                    <button type="button" class="chip text-[10px] mt-2 px-2 py-1 rounded-lg" onclick="openFretboardDemos()">Walkthrough demos</button>
                     <a href="guide/index.html" class="chip text-[10px] mt-2 px-2 py-1 rounded-lg inline-block" style="text-decoration:none">Open the written guide</a>
                     <button type="button" class="chip text-[10px] mt-2 px-2 py-1 rounded-lg" onclick="toggleHelpPanel(false)">Close</button>
                 </div>
@@ -597,7 +619,7 @@
 
         <div class="app-footer mt-4 px-1 text-xs" style="color:var(--text-muted)">
             <span class="font-semibold" style="color:var(--text-main)">New here?</span>
-            Press <kbd>?</kbd> for the two-minute tour · <a href="guide/index.html" class="underline">User guide</a> · Focus board hides the side columns
+            Press <kbd>?</kbd> for walkthrough demos · <a href="guide/index.html" class="underline">User guide</a> · Focus board hides the side columns
         </div>
     </div>
 
@@ -611,8 +633,19 @@
             <div class="fb-tour-nav">
                 <button type="button" id="fb-tour-back">Back</button>
                 <span class="fb-tour-nav-gap"></span>
+                <button type="button" id="fb-tour-all">All</button>
                 <button type="button" id="fb-tour-skip">Skip</button>
                 <button type="button" id="fb-tour-next">Next</button>
+            </div>
+        </div>
+        <div id="fb-demo-pick" class="fb-demo-pick hidden" role="dialog" aria-label="Walkthrough demos">
+            <div class="fb-tour-step">Walkthroughs</div>
+            <h3>Watch the board do it</h3>
+            <p class="fb-demo-lead">Each demo puts <strong>C – G – Am – F</strong> on the neck, shows one move, then puts your session back.</p>
+            <div class="fb-demo-list" id="fb-demo-list"></div>
+            <div class="fb-tour-nav">
+                <span class="fb-tour-nav-gap"></span>
+                <button type="button" id="fb-demo-cancel">Not now</button>
             </div>
         </div>
     </div>
@@ -4484,9 +4517,9 @@
         let seen = false;
         try { seen = localStorage.getItem('guitarAppTourSeen') === '1'; } catch (e) {}
         if (seen) {
-            el.innerHTML = '<strong>Using it:</strong> click a card · <strong>Play</strong> hears the row · eye on the next card watches the change · <kbd class="text-[10px]">?</kbd> tour';
+            el.innerHTML = '<strong>Using it:</strong> click a card · <strong>Play</strong> hears the row · <strong>Demos</strong> walk through a change or a morph';
         } else {
-            el.innerHTML = '<strong>New here?</strong> The neck already shows <strong>C – G – Am – F</strong>. Take the two-minute tour.';
+            el.innerHTML = '<strong>New here?</strong> The neck already shows <strong>C – G – Am – F</strong>. Take the tour, or open <strong>Demos</strong>.';
         }
     }
 
@@ -5049,7 +5082,7 @@
 
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape') {
-                if (window.FbTour && FbTour.on) {
+                if (window.FbTour && (FbTour.on || FbTour.picking)) {
                     FbTour.close();
                     return;
                 }
@@ -5065,7 +5098,7 @@
             // Arrow keys step progression when not typing in a field
             const tag = (e.target && e.target.tagName) || '';
             if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-            if (window.FbTour && FbTour.on) return;
+            if (window.FbTour && (FbTour.on || FbTour.picking)) return;
             if (e.key === 'ArrowLeft') { e.preventDefault(); stepProgression(-1); }
             if (e.key === 'ArrowRight') { e.preventDefault(); stepProgression(1); }
             if (e.key === ' ') {
@@ -5077,8 +5110,8 @@
             if (e.key === '?' || (e.shiftKey && e.key === '/')) {
                 e.preventDefault();
                 if (window.FbTour) {
-                    if (FbTour.on) FbTour.close();
-                    else FbTour.start();
+                    if (FbTour.on || FbTour.picking) FbTour.close();
+                    else FbTour.openPicker();
                 } else toggleHelpPanel();
             }
             // M = toggle pair morph (next-eye style)
@@ -5094,6 +5127,16 @@
                 togglePathButton();
             }
         });
+    }
+
+    function maybeStartDemoFromUrl() {
+        try {
+            var q = new URLSearchParams(location.search);
+            var id = q.get('demo');
+            if (id && window.FbTour && FbTour.SCRIPTS[id]) {
+                window.setTimeout(function () { FbTour.start(id); }, 450);
+            }
+        } catch (e) {}
     }
 
     function initializeApp() {
@@ -5137,6 +5180,7 @@
             updateSessionTitleUI();
             updateNeckViewUI();
             console.log('%c[Guitar App] Ready · board neck zoom', 'color:#16a34a');
+            maybeStartDemoFromUrl();
         });
     }
 
@@ -5419,76 +5463,179 @@
     window.dismissCoachBar = dismissCoachBar;
     window.toggleHelpPanel = toggleHelpPanel;
     window.startFretboardTour = function () {
-        if (window.FbTour) FbTour.start();
+        if (window.FbTour) FbTour.start('first');
+        else toggleHelpPanel(true);
+    };
+    window.openFretboardDemos = function () {
+        if (window.FbTour) FbTour.openPicker();
         else toggleHelpPanel(true);
     };
 
     var FbTour = {
         on: false,
+        picking: false,
         i: 0,
-        STEPS: [
-            {
-                target: '#fretboard',
-                title: 'This is a guitar',
-                body: 'Player\u2019s view \u2014 thick string at the bottom, open strings on the left. You already have C, G, Am, F. Red notes are C, the chord you are on. Blue notes are G, the next chord. Click any red or blue dot. You should hear that note.'
-            },
-            {
-                target: '#progression-panel',
-                title: 'These cards are the song',
-                body: 'C, G, Am, F \u2014 already loaded. Click the G card. The neck redraws: G turns red, Am turns blue. Click C to come back. Left and right arrows step the same way.',
-                enter: function () {
-                    if (typeof setProgressionFocus === 'function' && typeof progressionFocus === 'number' && progressionFocus !== 0) {
-                        setProgressionFocus(0);
-                    }
-                }
-            },
-            {
-                target: '#audio-panel',
-                title: 'Hear the four chords',
-                body: 'Press Play. It walks C \u2192 G \u2192 Am \u2192 F. Pattern changes how they are plucked. If you heard nothing on the neck, click the board once \u2014 the browser waits for that. Space also plays.'
-            },
-            {
-                target: '#progression-panel',
-                title: 'Change a chord',
-                body: 'Click a card, then change the letter or the type (major, minor, 7). The neck updates straight away. Play again to hear the new row. Add makes another card. Solo hides the rest so you only see this grip.'
-            },
-            {
-                target: '#scale-panel',
-                title: 'The key is a map',
-                body: 'Amber diamonds (Scale map = Full, on the left) are notes in this key. Change Major to Natural Minor if you want \u2014 your four chords stay put. This only paints the neck. It does not transpose.'
-            },
-            {
-                target: '#tour-next-eye',
-                title: 'Watch one chord become the next',
-                body: 'This is running now. Shared notes stay lit. Notes that leave pulse red. Notes that arrive pulse blue. That is the main practice trick. Click this eye (or press M) to stop. Speed is \u00bd\u00d7 1\u00d7 2\u00d7 under the neck.',
-                enter: function () {
-                    if (typeof startMorph === 'function') {
-                        startMorph('pair');
-                        if (typeof updateFretboard === 'function') updateFretboard();
-                    }
-                }
-            },
-            {
-                target: '#coach-bar',
-                title: 'That is how you use it',
-                body: 'See a chord, hear it, change it, watch it become the next one. Shift+click pins a grip you already play \u2014 DETECT names it. Save a name at the top if you want this back. Press ? to walk this again. The written guide is in the top bar.'
-            }
+        id: 'first',
+        saved: null,
+        _step: null,
+        CATALOG: [
+            { id: 'first', title: 'First look', blurb: 'See the neck, the cards, Play, and the morph.' },
+            { id: 'hear', title: 'Hear the song', blurb: 'Play walks C \u2192 G \u2192 Am \u2192 F on the real board.' },
+            { id: 'change', title: 'Change a chord', blurb: 'F becomes Dm. The neck updates. Then you hear the new row.' },
+            { id: 'morph', title: 'Watch C become G', blurb: 'Shared notes stay. Notes that leave or arrive pulse.' },
+            { id: 'key', title: 'See the key', blurb: 'Amber diamonds are a map. Your four chords stay put.' },
+            { id: 'grip', title: 'Name a grip', blurb: 'White rings on a C shape. DETECT offers the name.' }
         ],
-        start: function () {
-            this.on = true;
+        STEPS: [],
+        loadBoard: function () {
+            if (typeof stopMorph === 'function') stopMorph();
+            if (typeof stopProgressionPlay === 'function') stopProgressionPlay();
+            if (typeof soloActive !== 'undefined' && soloActive && typeof showAllSlots === 'function') showAllSlots();
+            if (typeof clearScalePath === 'function') clearScalePath();
+            if (typeof clearShapePins === 'function') clearShapePins();
+            if (typeof clearExtraPins === 'function') clearExtraPins();
+            instrument = 'guitar';
+            var instSel = document.getElementById('instrument-type');
+            if (instSel) instSel.value = 'guitar';
+            if (typeof applyOpenMidi === 'function') applyOpenMidi([64, 59, 55, 50, 45, 40]);
+            if (typeof populateInstrumentUI === 'function') populateInstrumentUI();
+            progression = [newSlot(0, 0), newSlot(7, 0), newSlot(9, 1), newSlot(5, 0)];
+            progressionFocus = 0;
+            scaleRoot = 0;
+            scaleType = 'Major (Ionian)';
+            if (typeof populateScaleRoot === 'function') populateScaleRoot(0);
+            var st = document.getElementById('scale-type');
+            if (st) st.value = scaleType;
+            if (typeof setScaleDisplay === 'function') setScaleDisplay('full');
+            if (typeof setFretRange === 'function') setFretRange(0, 12);
+            if (typeof setDetectMode === 'function') setDetectMode('chord');
+            if (typeof updateFretboard === 'function') updateFretboard();
+        },
+        playOn: function () {
+            if (typeof progPlaying !== 'undefined' && progPlaying) return;
+            if (typeof toggleProgressionPlay === 'function') toggleProgressionPlay();
+        },
+        playOff: function () {
+            if (typeof stopProgressionPlay === 'function') stopProgressionPlay();
+        },
+        morphOn: function () {
+            this.playOff();
+            if (typeof setProgressionFocus === 'function') setProgressionFocus(0);
+            if (typeof startMorph === 'function') startMorph('pair');
+            if (typeof updateFretboard === 'function') updateFretboard();
+        },
+        morphOff: function () {
+            if (typeof stopMorph === 'function') stopMorph();
+            if (typeof updateFretboard === 'function') updateFretboard();
+        },
+        setNamed: function (idx, root, typeIdx) {
+            var slot = progression[idx];
+            if (!slot) return;
+            slot.mode = 'named';
+            slot.root = root;
+            slot.typeIdx = typeIdx;
+            if (typeof updateFretboard === 'function') updateFretboard();
+        },
+        setScaleMap: function (root, typeName, display) {
+            scaleRoot = root;
+            scaleType = typeName;
+            if (typeof populateScaleRoot === 'function') populateScaleRoot(root);
+            var st = document.getElementById('scale-type');
+            if (st) st.value = typeName;
+            if (display && typeof setScaleDisplay === 'function') setScaleDisplay(display);
+            if (typeof updateFretboard === 'function') updateFretboard();
+        },
+        pinCShape: function () {
+            if (typeof clearShapePins === 'function') clearShapePins();
+            if (typeof toggleShapePin !== 'function') return;
+            toggleShapePin(1, 1);
+            toggleShapePin(3, 2);
+            toggleShapePin(4, 3);
+            if (typeof setDetectMode === 'function') setDetectMode('chord');
+            if (typeof updateFretboard === 'function') updateFretboard();
+        },
+        hidePicker: function () {
+            this.picking = false;
+            var p = document.getElementById('fb-demo-pick');
+            var c = document.getElementById('fb-tour-card');
+            var wrap = document.getElementById('fb-tour');
+            if (p) p.classList.add('hidden');
+            if (c) c.style.display = '';
+            if (wrap) wrap.classList.remove('is-picking');
+        },
+        fillPicker: function () {
+            var host = document.getElementById('fb-demo-list');
+            if (!host) return;
+            host.innerHTML = '';
+            this.CATALOG.forEach(function (item) {
+                var b = document.createElement('button');
+                b.type = 'button';
+                b.innerHTML = '<strong>' + item.title + '</strong><span>' + item.blurb + '</span>';
+                b.addEventListener('click', function () { FbTour.start(item.id); });
+                host.appendChild(b);
+            });
+        },
+        openPicker: function () {
+            if (this.on) this.leaveStep();
+            this.on = false;
+            this.picking = true;
+            if (!this.saved) {
+                try { this.saved = snapshotInstance(); } catch (e) { this.saved = null; }
+            }
+            sessionSuppressDirty = true;
+            var wrap = document.getElementById('fb-tour');
+            var card = document.getElementById('fb-tour-card');
+            var pick = document.getElementById('fb-demo-pick');
+            var spot = document.getElementById('fb-tour-spot');
+            if (wrap) {
+                wrap.classList.remove('hidden');
+                wrap.classList.add('is-picking');
+            }
+            if (card) card.style.display = 'none';
+            if (spot) spot.style.display = 'none';
+            if (pick) pick.classList.remove('hidden');
+            this.fillPicker();
+        },
+        leaveStep: function () {
+            if (this._step && typeof this._step.leave === 'function') {
+                try { this._step.leave(); } catch (e) {}
+            }
+            this._step = null;
+        },
+        start: function (id) {
+            this.hidePicker();
+            if (!this.saved) {
+                try { this.saved = snapshotInstance(); } catch (e) { this.saved = null; }
+            }
+            sessionSuppressDirty = true;
+            this.loadBoard();
+            this.id = this.SCRIPTS[id] ? id : 'first';
+            this.STEPS = this.SCRIPTS[this.id];
             this.i = 0;
+            this.on = true;
+            this.picking = false;
             var el = document.getElementById('fb-tour');
+            var card = document.getElementById('fb-tour-card');
             if (el) el.classList.remove('hidden');
+            if (card) card.style.display = '';
             this.show();
         },
         close: function (finished) {
+            this.leaveStep();
             this.on = false;
+            this.picking = false;
+            this.hidePicker();
             var el = document.getElementById('fb-tour');
             if (el) el.classList.add('hidden');
-            if (typeof stopMorph === 'function') {
-                stopMorph();
-                if (typeof updateFretboard === 'function') updateFretboard();
+            this.playOff();
+            this.morphOff();
+            if (typeof clearShapePins === 'function') clearShapePins();
+            if (typeof clearExtraPins === 'function') clearExtraPins();
+            if (this.saved) {
+                try { applyInstance(this.saved); } catch (e) {}
+                this.saved = null;
             }
+            sessionSuppressDirty = false;
             if (finished) {
                 try { localStorage.setItem('guitarAppTourSeen', '1'); } catch (e) {}
                 if (typeof setCoachCopy === 'function') setCoachCopy();
@@ -5509,8 +5656,10 @@
             this.show();
         },
         show: function () {
+            this.leaveStep();
             var step = this.STEPS[this.i];
             if (!step) return;
+            this._step = step;
             if (typeof step.enter === 'function') {
                 try { step.enter(); } catch (e) {}
             }
@@ -5519,9 +5668,10 @@
             var num = document.getElementById('fb-tour-step');
             var next = document.getElementById('fb-tour-next');
             var back = document.getElementById('fb-tour-back');
+            var cat = this.CATALOG.filter(function (c) { return c.id === FbTour.id; })[0];
             if (title) title.textContent = step.title;
             if (body) body.textContent = step.body;
-            if (num) num.textContent = this.i + 1 + ' / ' + this.STEPS.length;
+            if (num) num.textContent = ((cat && cat.title) || 'Walkthrough') + ' \u00b7 ' + (this.i + 1) + ' / ' + this.STEPS.length;
             if (next) next.textContent = this.i >= this.STEPS.length - 1 ? 'Got it' : 'Next';
             if (back) back.disabled = this.i <= 0;
             var target = step.target && document.querySelector(step.target);
@@ -5569,17 +5719,223 @@
             if (arrow) arrow.className = 'fb-tour-arrow ' + (below ? 'up' : 'down');
         }
     };
+    FbTour.SCRIPTS = {
+        first: [
+            {
+                target: '#fretboard',
+                title: 'This is a guitar',
+                body: 'Player\u2019s view \u2014 thick string at the bottom, open strings on the left. Red notes are C. Blue notes are G, the next chord. Click any red or blue dot. You should hear that note.'
+            },
+            {
+                target: '#progression-panel',
+                title: 'These cards are the song',
+                body: 'C, G, Am, F \u2014 already loaded. Next I will click G for you. Watch the neck change colour.',
+                enter: function () { setProgressionFocus(0); }
+            },
+            {
+                target: '[data-slot-index="1"]',
+                title: 'G is now this chord',
+                body: 'The G card is red. Am is blue. That is all clicking a card does \u2014 pick which chord you are looking at.',
+                enter: function () { setProgressionFocus(1); }
+            },
+            {
+                target: '#audio-panel',
+                title: 'Hear the four chords',
+                body: 'Play is walking the row. The card with the purple pulse is the one sounding. Pattern changes how they are plucked.',
+                enter: function () {
+                    setProgressionFocus(0);
+                    FbTour.playOn();
+                },
+                leave: function () { FbTour.playOff(); }
+            },
+            {
+                target: '[data-slot-index="3"]',
+                title: 'I just changed F to Dm',
+                body: 'Same place in the song, different grip. The neck updated. You do this by changing the letter or the type on any card.',
+                enter: function () {
+                    FbTour.playOff();
+                    setProgressionFocus(3);
+                    FbTour.setNamed(3, 2, 1);
+                }
+            },
+            {
+                target: '#tour-next-eye',
+                title: 'Watch one chord become the next',
+                body: 'This is running now. Shared notes stay lit. Notes that leave pulse red. Notes that arrive pulse blue. That is the main practice trick.',
+                enter: function () {
+                    FbTour.setNamed(3, 5, 0);
+                    FbTour.morphOn();
+                },
+                leave: function () { FbTour.morphOff(); }
+            },
+            {
+                target: '#coach-bar',
+                title: 'That is how you use it',
+                body: 'See a chord, hear it, change it, watch it become the next one. Open Demos for Hear, Change, Morph, Key, and Name a grip. Your own session comes back when you leave.'
+            }
+        ],
+        hear: [
+            {
+                target: '#progression-panel',
+                title: 'The song is this row',
+                body: 'C, then G, then Am, then F. Play walks the cards in this order.',
+                enter: function () { setProgressionFocus(0); }
+            },
+            {
+                target: '#audio-panel',
+                title: 'Listening',
+                body: 'Each card lights purple when it sounds. If you hear nothing, click the neck once \u2014 the browser waits for that.',
+                enter: function () { FbTour.playOn(); },
+                leave: function () { FbTour.playOff(); }
+            },
+            {
+                target: '#audio-pattern',
+                title: 'How it is plucked',
+                body: 'I switched this to Arpeggio \u2014 one note after another. Try Block (all at once) yourself after the demo.',
+                enter: function () {
+                    var pat = document.getElementById('audio-pattern');
+                    if (pat) pat.value = 'arpeggio';
+                    if (typeof readAudioControls === 'function') readAudioControls();
+                    FbTour.playOff();
+                    FbTour.playOn();
+                },
+                leave: function () { FbTour.playOff(); }
+            },
+            {
+                target: '#audio-panel',
+                title: 'You can do this anytime',
+                body: 'Play or Space starts and stops the row. The side arrows step one chord and play it. That is all audio is for.'
+            }
+        ],
+        change: [
+            {
+                target: '[data-slot-index="3"]',
+                title: 'This last card is F',
+                body: 'Look at the neck \u2014 those red notes are F. I am about to change only this card.',
+                enter: function () { setProgressionFocus(3); }
+            },
+            {
+                target: '[data-slot-index="3"]',
+                title: 'Now it is Dm',
+                body: 'I set the letter to D and the type to Minor. The neck is a new grip. Named = letter + type. Custom = pick notes yourself.',
+                enter: function () {
+                    setProgressionFocus(3);
+                    FbTour.setNamed(3, 2, 1);
+                }
+            },
+            {
+                target: '#audio-panel',
+                title: 'Hear the new row',
+                body: 'C, G, Am, Dm. That is the whole edit loop: change a card, press Play.',
+                enter: function () {
+                    setProgressionFocus(0);
+                    FbTour.playOn();
+                },
+                leave: function () { FbTour.playOff(); }
+            },
+            {
+                target: '#progression-panel',
+                title: 'Add, Solo, trash',
+                body: 'Add puts another card on the end. Solo hides the others so you only see this grip. The trash on a card deletes it.'
+            }
+        ],
+        morph: [
+            {
+                target: '#fretboard',
+                title: 'C against G',
+                body: 'Red is C. Blue is G. A split dot is a note both chords share \u2014 it will stay when we morph.',
+                enter: function () { setProgressionFocus(0); }
+            },
+            {
+                target: '#tour-next-eye',
+                title: 'The change is running',
+                body: 'Shared notes stay. Leaving notes pulse red. Arriving notes pulse blue. This is the main practice trick.',
+                enter: function () { FbTour.morphOn(); }
+            },
+            {
+                target: '#board-legend',
+                title: 'Speed',
+                body: '\u00bd\u00d7 is easier to follow. M starts and stops the same animation. Play stops it so you can hear the sequence.',
+                enter: function () { FbTour.morphOn(); }
+            },
+            {
+                target: '#progression-panel',
+                title: 'The eye on the next card',
+                body: 'Click the eye on the blue card anytime. The eye on the red card does a greyscale version of the same idea.',
+                leave: function () { FbTour.morphOff(); }
+            }
+        ],
+        key: [
+            {
+                target: '#scale-panel',
+                title: 'This is a map',
+                body: 'C major is selected. Amber diamonds on the neck are notes in that key. Your four chords have not moved.',
+                enter: function () { FbTour.setScaleMap(0, 'Major (Ionian)', 'full'); }
+            },
+            {
+                target: '#scale-panel',
+                title: 'Same chords, darker map',
+                body: 'I switched the map to Natural Minor. C, G, Am, F are still C, G, Am, F. Only the amber diamonds changed.',
+                enter: function () { FbTour.setScaleMap(0, 'Natural Minor', 'full'); }
+            },
+            {
+                target: '#scale-display-btns',
+                title: 'Too busy? Hide the extra dots',
+                body: 'Chord notes only keeps the two chords and hides the rest of the scale. That is the usual practice view.',
+                enter: function () { FbTour.setScaleMap(0, 'Major (Ionian)', 'chords'); }
+            },
+            {
+                target: '#scale-panel',
+                title: 'Not a transpose',
+                body: 'Scale / Key never rewrites the cards. To change the song, edit a card. I put the map back to C major.',
+                enter: function () { FbTour.setScaleMap(0, 'Major (Ionian)', 'full'); }
+            }
+        ],
+        grip: [
+            {
+                target: '#detect-panel',
+                title: 'Name a shape you already play',
+                body: 'Hold a grip on your guitar. Shift+click each fretted note on the screen. I will pin a common C shape for you.',
+                enter: function () { setProgressionFocus(0); }
+            },
+            {
+                target: '#fretboard',
+                title: 'White rings are the grip',
+                body: 'Those rings are A-string 3, D-string 2, B-string 1 \u2014 a first-position C. One ring per string. Same fret again would remove it.',
+                enter: function () { FbTour.pinCShape(); }
+            },
+            {
+                target: '#detect-panel',
+                title: 'DETECT names it',
+                body: 'The panel should offer C Major. Apply as chord writes that name into the card you have selected.',
+                enter: function () { FbTour.pinCShape(); }
+            },
+            {
+                target: '#detect-apply-chord-btn',
+                title: 'Then it is on the card',
+                body: 'That is the loop: pin the shape you play, apply the name. Your session comes back when you leave this demo.'
+            }
+        ]
+    };
     window.FbTour = FbTour;
     (function bindTour() {
         var n = document.getElementById('fb-tour-next');
         var b = document.getElementById('fb-tour-back');
         var s = document.getElementById('fb-tour-skip');
+        var a = document.getElementById('fb-tour-all');
+        var cancel = document.getElementById('fb-demo-cancel');
         if (n) n.addEventListener('click', function () { FbTour.next(); });
         if (b) b.addEventListener('click', function () { FbTour.back(); });
         if (s) s.addEventListener('click', function () { FbTour.close(); });
+        if (a) a.addEventListener('click', function () { FbTour.openPicker(); });
+        if (cancel) cancel.addEventListener('click', function () { FbTour.close(); });
         window.addEventListener('resize', function () { if (FbTour.on) FbTour.place(); });
         window.addEventListener('scroll', function () { if (FbTour.on) FbTour.place(); }, true);
         document.addEventListener('keydown', function (e) {
+            if (FbTour.picking && (e.key === 'Escape' || e.key === 'ArrowRight' || e.key === 'Enter')) {
+                if (e.key === 'Escape') { e.preventDefault(); FbTour.close(); }
+                return;
+            }
             if (!FbTour.on) return;
             if (e.key === 'ArrowRight' || e.key === 'Enter') {
                 e.preventDefault();
