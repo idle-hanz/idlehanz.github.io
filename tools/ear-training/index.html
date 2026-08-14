@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EQ Ear Trainer - Idle Hanz</title>
-    <meta name="description" content="Interactive EQ ear training for music producers and mix engineers — by Idle Hanz.">
+    <meta name="description" content="Ride along to your own music and train EQ by ear — frequency ID and corrective mixing drills. Idle Hanz.">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="../../assets/styles.css">
@@ -16,7 +16,7 @@
 </head>
 <body class="ear-trainer-page bg-zinc-950 text-zinc-200">
     <nav class="border-b border-zinc-800 bg-zinc-950/90 backdrop-blur sticky top-0 z-50">
-        <div class="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
             <div class="flex items-center gap-x-4">
                 <a href="../../index.html" class="et-nav-brand">← Idle Hanz</a>
                 <span class="text-zinc-500 hidden sm:inline">|</span>
@@ -24,14 +24,100 @@
             </div>
             <div class="flex items-center gap-x-4">
                 <a href="../index.html" class="et-nav-link">Studio Tools</a>
-                <a href="https://github.com/idle-hanz/eq-ear-trainer" target="_blank" rel="noopener" class="et-nav-link">GitHub</a>
+                <a href="https://github.com/idle-hanz/eq-ear-trainer" target="_blank" rel="noopener" class="et-nav-link hidden sm:inline">GitHub</a>
             </div>
         </div>
     </nav>
 
     <div class="max-w-4xl mx-auto px-6 pt-12 pb-8 text-center">
         <h1 class="text-6xl font-display font-semibold tracking-tighter mb-4">Train your ears.<br><span class="et-hero-accent">Master EQ.</span></h1>
-        <p class="text-xl text-zinc-400">Interactive ear training for audio equalization using real Web Audio API.</p>
+        <p class="text-xl text-zinc-400">Ride along to your music.<br class="sm:hidden"> A change appears. Name it.</p>
+    </div>
+
+    <!-- Ride — live insert on your music -->
+    <div class="max-w-5xl mx-auto px-6 pb-16">
+        <div id="ride-panel" class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 et-game-panel relative">
+            <video id="ride-capture-video" class="ride-capture-video" playsinline muted></video>
+            <input id="ride-folder-input" type="file" class="hidden" multiple webkitdirectory accept="audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.opus,.webm,.aiff">
+            <input id="ride-files-input" type="file" class="hidden" multiple accept="audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.opus,.webm,.aiff">
+
+            <div class="ride-top">
+                <div class="min-w-0">
+                    <div class="et-section-label">Ride</div>
+                    <div class="text-3xl font-semibold break-words">Play on your music</div>
+                </div>
+                <div class="ride-source-row">
+                    <button type="button" id="ride-source-library" class="ride-source-btn is-active">My albums</button>
+                    <button type="button" id="ride-source-tap" class="ride-source-btn">Browser tab</button>
+                    <button type="button" id="ride-source-demo" class="ride-source-btn">Demo</button>
+                </div>
+            </div>
+
+            <div id="ride-library-controls" class="ride-inline-row">
+                <button type="button" id="ride-choose-folder" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-3xl">Choose folder</button>
+                <button type="button" id="ride-add-files" class="px-4 py-2 border border-zinc-700 hover:bg-zinc-800 text-sm rounded-3xl">Add files</button>
+                <span id="ride-track-count" class="text-xs text-zinc-500">No library</span>
+            </div>
+
+            <div id="ride-tap-controls" class="hidden ride-tap-box">
+                <p class="ride-tap-lead">Play a song in another tab — Amazon Music, Spotify, YouTube, and the like — then point this trainer at that tab. Chrome or Edge. In the popup, choose the player tab and turn on <strong>Also share tab audio</strong>.</p>
+                <button type="button" id="ride-tap-btn" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-3xl">Choose tab</button>
+            </div>
+
+            <div class="ride-transport">
+                <button type="button" id="ride-play-btn" class="ride-icon-btn" aria-label="Play"><i class="fa-solid fa-play"></i></button>
+                <button type="button" id="ride-prev-btn" class="ride-icon-btn" aria-label="Previous track"><i class="fa-solid fa-backward-step"></i></button>
+                <button type="button" id="ride-next-btn" class="ride-icon-btn" aria-label="Next track"><i class="fa-solid fa-forward-step"></i></button>
+                <button type="button" id="ride-random-btn" class="ride-chip">Random</button>
+                <button type="button" id="ride-loop-toggle" class="ride-chip is-active">Loop on</button>
+                <button type="button" id="ride-loop-btn" class="ride-chip">Slice 8s</button>
+                <span class="ride-transport-gap"></span>
+                <button type="button" id="ride-watch-btn" class="ride-chip">Watch</button>
+                <button type="button" id="ride-game-btn" class="px-5 py-2.5 bg-white text-zinc-950 font-semibold rounded-3xl text-sm">Start ride</button>
+            </div>
+
+            <div class="ride-prompt">
+                <div id="ride-now-playing" class="ride-track">Nothing playing</div>
+                <div class="ride-prompt-row">
+                    <div id="ride-status" class="ride-status">Choose a folder, then Start ride.</div>
+                    <button type="button" id="ride-ab-badge">Hold Space = clean</button>
+                </div>
+                <div class="ride-score">
+                    <span><b id="ride-streak">0</b> streak</span>
+                    <span><b id="ride-accuracy">—</b> accuracy</span>
+                    <span id="ride-weak">weak: —</span>
+                </div>
+            </div>
+
+            <div class="ride-setup">
+                <div class="ride-setup-row">
+                    <span class="ride-kicker">Game</span>
+                    <div class="ride-seg">
+                        <button type="button" id="ride-skill-band" class="ride-chip is-active">Which band?</button>
+                        <button type="button" id="ride-skill-amount" class="ride-chip">Band + amount</button>
+                    </div>
+                    <span class="ride-kicker">Layout</span>
+                    <div class="ride-seg">
+                        <button type="button" id="ride-bands-few" class="ride-chip is-active">7 bands</button>
+                        <button type="button" id="ride-bands-many" class="ride-chip">14 bands</button>
+                    </div>
+                </div>
+                <div id="ride-level-row" class="ride-diff">
+                    <div class="ride-diff-head">
+                        <span class="ride-kicker">Difficulty</span>
+                        <p id="ride-skill-hint" class="ride-now-line">Now: Easy boost · +6 dB</p>
+                    </div>
+                    <div id="ride-level-chips"></div>
+                </div>
+            </div>
+
+            <div id="ride-result" class="ride-result hidden" aria-live="polite">
+                <div id="ride-result-mark" class="ride-result-mark"></div>
+                <div id="ride-result-detail" class="ride-result-detail"></div>
+            </div>
+
+            <div id="ride-guess-buttons" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-3 mb-4"></div>
+        </div>
     </div>
 
     <!-- Frequency ID -->
@@ -320,8 +406,13 @@
             return buffer;
         }
 
+        function yieldToOtherGames() {
+            if (window.EQRide) window.EQRide.suspendForOtherGame();
+        }
+
         function playWithEQ(gains) {
             if (!audioContext) initAudio();
+            yieldToOtherGames();
             if (currentSource) { try { currentSource.stop(); } catch(e){} }
 
             const source = audioContext.createBufferSource();
@@ -365,6 +456,7 @@
          */
         function playIsolatedBand(bandIndex, maskingLevel = 0.25) {
             if (!audioContext) initAudio();
+            yieldToOtherGames();
             if (currentSource) { try { currentSource.stop(); } catch(e){} }
 
             const source = audioContext.createBufferSource();
@@ -529,6 +621,7 @@
 
         function playTrackWithEQ(buffer, gains, qs = null) {
             if (!audioContext) initAudio();
+            yieldToOtherGames();
             if (trackSource) { try { trackSource.stop(); } catch(e){} }
             if (currentSource) { try { currentSource.stop(); } catch(e){} }
             if (currentNoiseSrc) { try { currentNoiseSrc.stop(); } catch(e){} }
@@ -636,12 +729,13 @@
             playTrackWithEQ(currentTrackBuffer, zeros, defaultQs);
         }
 
-        function stopAllAudio() {
+        function stopAllAudio(opts) {
             if (trackSource) { try { trackSource.stop(); } catch(e){} trackSource = null; }
             if (currentNoiseSrc) { try { currentNoiseSrc.stop(); } catch(e){} currentNoiseSrc = null; }
             if (currentSource) { try { currentSource.stop(); } catch(e){} currentSource = null; }
             contextSources.forEach(src => { try { src.stop(); } catch(e){} });
             contextSources = [];
+            if (!(opts && opts.fromRide)) yieldToOtherGames();
         }
 
         function setCorrectiveMode(newMode) {
@@ -1438,6 +1532,8 @@ You are working on the clean track. The "Play Problem Version" has a hidden <str
 
         function setupKeyboard() {
             document.addEventListener('keydown', function(e) {
+                if (window.EQRide && window.EQRide.handleKey(e)) return;
+
                 if (e.key === ' ' || e.key === 'Spacebar') {
                     e.preventDefault();
                     startIDRound();
@@ -1449,6 +1545,9 @@ You are working on the clean track. The "Play Problem Version" has a hidden <str
                     if (buttons[num - 1]) buttons[num - 1].click();
                 }
             });
+            document.addEventListener('keyup', function(e) {
+                if (window.EQRide && window.EQRide.handleKeyUp(e)) return;
+            });
         }
 
         function initializeApp() {
@@ -1456,6 +1555,20 @@ You are working on the clean track. The "Play Problem Version" has a hidden <str
             setIDGameMode('practice');  // default to practice / free listening
             createSliders();
             setupKeyboard();
+
+            if (window.EQRide) {
+                window.EQRide.init({
+                    getContext: function () {
+                        initAudio();
+                        return audioContext;
+                    },
+                    stopOtherAudio: function () {
+                        stopAllAudio({ fromRide: true });
+                    },
+                    getFewBands: function () { return fewBands; },
+                    getManyBands: function () { return manyBands; }
+                });
+            }
 
             document.getElementById('btn-few').classList.add('bg-emerald-500', 'text-white');
 
@@ -1503,6 +1616,7 @@ You are working on the clean track. The "Play Problem Version" has a hidden <str
 
         window.onload = initializeApp;
     </script>
+    <script src="ride.js"></script>
 
     <footer class="site-footer">
         <p>© Idle Hanz • <a href="../../index.html">Return Home</a> • <a href="../index.html">Studio Tools</a></p>
