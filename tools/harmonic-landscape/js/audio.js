@@ -4,6 +4,10 @@
  *
  * Sequence steps are scheduled on AudioContext.currentTime so durations
  * (in beats) and tempo stay aligned with the time strip.
+ *
+ * Realtime MIDI-out (HLMidiOut) uses the same voicing. Soft / hover stays
+ * local. Click / Write / Play send notes. Mute tones skips oscillators only.
+ * Play can pass beats + bpm for Speak figures, and opts.clock for MIDI clock.
  */
 (function (global) {
   'use strict';
@@ -80,9 +84,13 @@
     return 440 * Math.pow(2, (m - 69) / 12);
   }
 
-  function stopAll(fade) {
+  function stopAll(fade, opts) {
     fade = fade != null ? fade : 0.04;
+    opts = opts || {};
     const c = ctx;
+    if (!opts.keepMidi && global.HLMidiOut && global.HLMidiOut.silence) {
+      global.HLMidiOut.silence({ cc: false });
+    }
     if (!c) return;
     const now = c.currentTime;
     activeNodes.forEach(({ osc, gain }) => {
@@ -102,21 +110,25 @@
   function stopAllAt(when, fade) {
     fade = fade != null ? fade : 0.035;
     const c = ctx;
-    if (!c || !activeNodes.length) return;
-    const t = Math.max(c.currentTime, when);
-    const nodes = activeNodes.slice();
-    activeNodes = [];
-    nodes.forEach(({ osc, gain }) => {
-      try {
-        gain.gain.cancelScheduledValues(t);
-        const cur = Math.max(0.0001, gain.gain.value);
-        gain.gain.setValueAtTime(cur, t);
-        gain.gain.linearRampToValueAtTime(0.0001, t + fade);
-        osc.stop(t + fade + 0.02);
-      } catch (_) {
-        /* ignore */
-      }
-    });
+    const t = c ? Math.max(c.currentTime, when) : when;
+    if (c && activeNodes.length) {
+      const nodes = activeNodes.slice();
+      activeNodes = [];
+      nodes.forEach(({ osc, gain }) => {
+        try {
+          gain.gain.cancelScheduledValues(t);
+          const cur = Math.max(0.0001, gain.gain.value);
+          gain.gain.setValueAtTime(cur, t);
+          gain.gain.linearRampToValueAtTime(0.0001, t + fade);
+          osc.stop(t + fade + 0.02);
+        } catch (_) {
+          /* ignore */
+        }
+      });
+    }
+    if (global.HLMidiOut && global.HLMidiOut.silenceAt) {
+      global.HLMidiOut.silenceAt(t, c);
+    }
   }
 
   function clearTimers(list) {
@@ -240,11 +252,28 @@
       playChord._lastSoftAt = nowAudio;
     }
 
-    if (!opts.layer) stopAll(soft ? 0.04 : 0.06);
+    // Soft hover must not cut a committed synth chord. Click / Play replace it.
+    if (!opts.layer) stopAll(soft ? 0.04 : 0.06, { keepMidi: !!soft });
 
     const now = opts.when != null ? opts.when : nowAudio;
     const dur = opts.duration != null ? opts.duration : soft ? 0.55 : 1.35;
     const voicing = midi;
+    const midiOut = global.HLMidiOut;
+    const sendMidi = !!(midiOut && midiOut.wantsChord && midiOut.wantsChord(opts));
+    if (sendMidi) {
+      midiOut.soundChord(voicing, {
+        when: now,
+        duration: dur,
+        ctx: c,
+        bpm: opts.bpm,
+        beats: opts.beats,
+        beatOffset: opts.beatOffset,
+        chord: opts.chord || null,
+      });
+    }
+    if (sendMidi && midiOut.muteBrowser && midiOut.muteBrowser()) {
+      return voicing;
+    }
     const n = voicing.length;
     const dest = chordBus || master;
 
@@ -356,7 +385,7 @@
   /**
    * Play a sequence of chords (durations in beats @ bpm).
    * Overload: playSequence(chords, bpm, opts)
-   * opts: { loop, pulse, onStep, onEnd, onLoop, startAt: { stepIndex, beatsIntoStep } }
+   * opts: { loop, pulse, clock, onStep, onEnd, onLoop, startAt: { stepIndex, beatsIntoStep } }
    * startAt — resume mid-sequence (used when resyncing after duration edits).
    */
   function playSequence(chords, bpm, onStep, onEnd, opts) {
@@ -366,7 +395,7 @@
       onEnd = opts.onEnd;
     }
     opts = opts || {};
-    stopPlayback();
+    stopPlayback({ keepClock: true });
     const c = ensure();
     if (!chords || !chords.length) {
       if (onEnd) onEnd();
@@ -428,6 +457,9 @@
         playing = false;
         clearTimers(pulseTimers);
         transport = null;
+        if (global.HLMidiOut && global.HLMidiOut.endTransport) {
+          global.HLMidiOut.endTransport();
+        }
         if (onEnd) onEnd();
       });
     }
@@ -499,6 +531,9 @@
         when: when,
         duration: sustain,
         layer: true,
+        bpm: bpmN,
+        beats: remainBeats,
+        beatOffset: into,
       });
 
       const nextWhen = when + sec;
@@ -511,10 +546,14 @@
 
     // Clear anything still ringing from previews
     stopAll(0.04);
+    if (opts.clock && global.HLMidiOut && global.HLMidiOut.beginTransport) {
+      global.HLMidiOut.beginTransport({ bpm: bpmN, when: now, ctx: c });
+    }
     scheduleStep(startIndex, now, startBeatsInto);
   }
 
-  function stopPlayback() {
+  function stopPlayback(opts) {
+    opts = opts || {};
     playing = false;
     loopMode = false;
     if (playTimer) {
@@ -525,6 +564,12 @@
     clearTimers(uiTimers);
     transport = null;
     stopAll(0.08);
+    if (global.HLMidiOut && global.HLMidiOut.silence) {
+      global.HLMidiOut.silence({ cc: true });
+    }
+    if (!opts.keepClock && global.HLMidiOut && global.HLMidiOut.endTransport) {
+      global.HLMidiOut.endTransport();
+    }
   }
 
   function isPlaying() {

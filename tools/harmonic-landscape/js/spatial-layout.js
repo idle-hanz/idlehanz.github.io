@@ -53,52 +53,488 @@
       return da - db || a.tonic - b.tonic;
     });
 
-    const others = list.filter((k) => !k.active);
-    this.disks = list.map((k) => {
-      const isActive = !!k.active;
-      let cx = 0;
-      let cy = 0;
-      let dR = R;
-      if (!isActive) {
-        const idx = others.indexOf(k);
-        const steps =
-          M && M.fifthsDistance ? M.fifthsDistance(this.origin.tonic, k.tonic) : idx + 1;
-        // Always offset â€” never sit under the active disk
-        const ang =
-          -Math.PI / 2 +
-          (steps !== 0
-            ? (steps / 6) * Math.PI
-            : ((idx + 1) / Math.max(1, others.length)) * Math.PI * 1.6 - 0.4);
-        const dist = R * (1.85 + idx * 0.35);
-        cx = Math.cos(ang) * dist;
-        cy = Math.sin(ang) * dist * 0.9;
-        dR = R * 0.85;
-      }
-      return {
-        tonic: k.tonic,
-        mode: k.mode,
-        cx,
-        cy,
-        R: dR,
-        active: isActive,
-        label: M ? M.noteName(k.tonic) : '?',
-      };
-    });
+    this.disks = list.map((k) => ({
+      tonic: k.tonic,
+      mode: k.mode,
+      cx: 0,
+      cy: 0,
+      R: k.active ? R : R * 0.85,
+      rot: 0,
+      active: !!k.active,
+      meshed: !!k.active,
+      label: M ? M.noteName(k.tonic) : '?',
+    }));
 
-    // Never auto-pan/zoom here â€” rebuilds run on every setPath and caused jumpiness.
+    // Journey: write-home + one traveled disk as meshed cogs at the pivot seat.
+    // Third+ disks stay fifths-offset (gear train is a later sitting).
+    this._placeJourneyCogs(R);
+
+    // Never auto-pan/zoom here — rebuilds run on every setPath and caused jumpiness.
     // User re-frames with Fit / Home lock / wheel / pan.
     this._rebuildScaleSeats();
-    // Ghosts: only when not dragging (layout under the pointer feels jumpy)
-    if (this._mode !== 'node' && this._mode !== 'edgePending') {
-      this._rebuildGhostHalo();
-    }
+    this._syncGhostHalo();
   };
 
   /**
-   * Chase halo: adjacent keys around the pivot (selected path step).
-   * Ghost wheels offer "establish home" pads; they clear when pivot moves
-   * unless that key becomes a solid traveled disk.
-   * Never throw â€” a failure must not freeze path/timeline updates.
+   * World XY of a seat on a disk. `rot` is added to the harmonic-scale angle
+   * before squash so meshed cogs and drawn rings stay aligned.
+   */
+  SpatialMap.prototype._diskSeatXY = function (disk, angle, radius) {
+    disk = disk || {};
+    const rad = radius != null ? radius : disk.R || 120;
+    return {
+      x: (disk.cx || 0) + Math.cos(angle) * rad,
+      y: (disk.cy || 0) + Math.sin(angle) * rad * SEAT.squash,
+    };
+  };
+
+  /** Radius a chord occupies on a disk (same rings as Journey path seats). */
+  SpatialMap.prototype._hitRadius = function (disk, hit) {
+    const R = (disk && disk.R) || 120;
+    if (!hit || !hit.seat) return R * SEAT.scale;
+    if (hit.seat.role === 'tonic' && hit.onScale && !hit.shell) return R * SEAT.tonic;
+    if (hit.shell === 'secondary') return R * SEAT.v7;
+    if (hit.shell === 'variant') return R * 0.82;
+    if (hit.shell === true) return R * SEAT.shell;
+    return R * SEAT.scale;
+  };
+
+  /** Seat world position of a chord on a given disk, honouring disk.rot. */
+  SpatialMap.prototype._seatPosOnDisk = function (ch, disk) {
+    const M = global.HLMusic;
+    const d = disk || this._activeDisk();
+    if (!ch || !M || !M.seatForChord) {
+      return { x: d.cx || 0, y: d.cy || 0, onScale: false, shell: false, seat: null };
+    }
+    const hit = M.seatForChord(
+      ch,
+      d.tonic != null ? d.tonic : this.origin.tonic,
+      d.mode || this.origin.mode
+    );
+    const rad = this._hitRadius(d, hit);
+    const ang = ((hit.seat && hit.seat.angle) || 0) + (d.rot || 0);
+    const p = this._diskSeatXY(d, ang, rad);
+    p.onScale = !!(hit && hit.onScale);
+    p.shell = hit && hit.shell;
+    p.seat = hit && hit.seat;
+    p.hit = hit;
+    p.ang = ang;
+    p.rad = rad;
+    return p;
+  };
+
+  SpatialMap.prototype._pitchKey = function (ch) {
+    const notes = (ch && ch.notes) || [];
+    if (notes.length) {
+      const seen = {};
+      const pcs = [];
+      notes.forEach((n) => {
+        const p = ((Number(n) % 12) + 12) % 12;
+        if (!seen[p]) {
+          seen[p] = true;
+          pcs.push(p);
+        }
+      });
+      pcs.sort((a, b) => a - b);
+      return pcs.join(',');
+    }
+    if (ch && ch.root != null) {
+      const M = global.HLMusic;
+      const fam =
+        M && M.qualityFamily ? M.qualityFamily(ch.quality) : ch.quality || '';
+      return ch.root + ':' + fam;
+    }
+    return '';
+  };
+
+  /** Same-disk revisit identity: seat + ring, not exact quality / slash bass. */
+  SpatialMap.prototype._visitSeatKey = function (ch) {
+    if (!ch) return '';
+    const disk = this._diskForChord(ch);
+    const M = global.HLMusic;
+    const kid = this._keyId(
+      disk && disk.tonic != null ? disk.tonic : this.origin.tonic,
+      (disk && disk.mode) || this.origin.mode
+    );
+    if (!M || !M.seatForChord) {
+      return kid + ':' + ch.root + ':' + (ch.quality || '');
+    }
+    const hit = M.seatForChord(
+      ch,
+      disk && disk.tonic != null ? disk.tonic : this.origin.tonic,
+      (disk && disk.mode) || this.origin.mode
+    );
+    const shell =
+      hit.shell === true ? 'out' : hit.shell ? String(hit.shell) : 'in';
+    const si =
+      hit.seat && hit.seat.seatIndex != null
+        ? hit.seat.seatIndex
+        : 'r' + ch.root;
+    return kid + ':' + si + ':' + shell;
+  };
+
+  /**
+   * Named rim seat for a chord on a disk. Chromatic (no roman) is not a tooth.
+   * Same-root colour (F major on Fm) still counts — it is the F tooth.
+   */
+  SpatialMap.prototype._namedHit = function (ch, disk) {
+    const M = global.HLMusic;
+    if (!ch || !disk || !M || !M.seatForChord) return null;
+    const hit = M.seatForChord(ch, disk.tonic, disk.mode);
+    if (!hit || !hit.seat) return null;
+    if (hit.shell === true) return null;
+    return hit;
+  };
+
+  /** Unrotated harmonic-scale angle of a pitch class on a disk. */
+  SpatialMap.prototype._rawSeatAngle = function (disk, root) {
+    const M = global.HLMusic;
+    const t = disk && disk.tonic != null ? disk.tonic : 0;
+    const r = M && M.pc ? M.pc(root) : ((Number(root) % 12) + 12) % 12;
+    if (M && M.circularHarmonicScale) {
+      const seats = M.circularHarmonicScale(t, disk.mode);
+      for (let i = 0; i < seats.length; i++) {
+        if (seats[i].root === r) return seats[i].angle;
+      }
+    }
+    return -Math.PI / 2 + (((r - t) % 12) + 12) % 12 * ((Math.PI * 2) / 12);
+  };
+
+  SpatialMap.prototype._chordRootPc = function (ch) {
+    const M = global.HLMusic;
+    if (!ch || ch.root == null) return null;
+    return M && M.pc ? M.pc(ch.root) : ((Number(ch.root) % 12) + 12) % 12;
+  };
+
+  SpatialMap.prototype._chordFam = function (ch) {
+    const M = global.HLMusic;
+    if (!ch) return '';
+    return M && M.qualityFamily ? M.qualityFamily(ch.quality) : ch.quality || '';
+  };
+
+  /**
+   * Score a path chord as the cog tooth between two disks.
+   * General rule: a pivot is a chord named on both rims. Prefer a real
+   * scale-seat tooth (not a hub) and a sound that appears on both disks.
+   */
+  SpatialMap.prototype._scorePivot = function (ch, diskA, diskB) {
+    const hA = this._namedHit(ch, diskA);
+    const hB = this._namedHit(ch, diskB);
+    if (!hA || !hB) return -1;
+    let score = 1;
+    const exactA = !hA.shell;
+    const exactB = !hB.shell;
+    if (exactA && exactB) score += 100;
+    else if (exactA || exactB) score += 50;
+    const rimA = hA.seat.role !== 'tonic';
+    const rimB = hB.seat.role !== 'tonic';
+    if (rimA && rimB) score += 30;
+    else if (rimA || rimB) score += 15;
+    const root = this._chordRootPc(ch);
+    const fam = this._chordFam(ch);
+    const pk = this._pitchKey(ch);
+    const sameSound = (p) => {
+      if (!p) return false;
+      if (this._chordRootPc(p) === root && this._chordFam(p) === fam) return true;
+      return !!(pk && this._pitchKey(p) === pk);
+    };
+    const sameDisk = (d, e) =>
+      d &&
+      e &&
+      d.tonic === e.tonic &&
+      (d.mode || '') === (e.mode || '');
+    let repeats = 0;
+    let onA = false;
+    let onB = false;
+    let crossings = 0;
+    const path = this.path || [];
+    for (let i = 0; i < path.length; i++) {
+      const p = path[i];
+      if (!p) continue;
+      if (sameSound(p)) {
+        repeats += 1;
+        const own = this._diskForChord(p);
+        if (sameDisk(own, diskA)) onA = true;
+        if (sameDisk(own, diskB)) onB = true;
+      }
+      if (i > 0 && sameSound(p)) {
+        const prevD = this._diskForChord(path[i - 1]);
+        const curD = this._diskForChord(p);
+        if (prevD && curD && !sameDisk(prevD, curD)) crossings += 1;
+      }
+    }
+    if (repeats >= 2) score += 40;
+    // The path actually plants this sound on both rims (the visible shared F)
+    if (onA && onB) score += 80;
+    if (crossings) score += 20 * crossings;
+    return score;
+  };
+
+  /**
+   * Best path chord that is a named seat on both disks — the cog contact.
+   * Not “first landing” and not a key-specific special case.
+   */
+  SpatialMap.prototype._findMeshPivot = function (home, other) {
+    if (!home || !other) return null;
+    const path = this.path || [];
+    let best = null;
+    let bestScore = -1;
+    for (let i = 0; i < path.length; i++) {
+      const ch = path[i];
+      if (!ch) continue;
+      const score = this._scorePivot(ch, home, other);
+      if (score > bestScore) {
+        bestScore = score;
+        best = {
+          ch: ch,
+          i: i,
+          hitH: this._namedHit(ch, home),
+          hitO: this._namedHit(ch, other),
+          score: score,
+        };
+      }
+    }
+    return best;
+  };
+
+  SpatialMap.prototype._pickMeshPartner = function (home, others) {
+    if (!others || !others.length) return null;
+    if (others.length === 1) return others[0];
+    let best = null;
+    let bestScore = -1;
+    for (let i = 0; i < others.length; i++) {
+      const p = this._findMeshPivot(home, others[i]);
+      const s = p && p.score != null ? p.score : -1;
+      if (s > bestScore) {
+        best = others[i];
+        bestScore = s;
+      }
+    }
+    return best || others[0];
+  };
+
+  SpatialMap.prototype._placeDiskByFifths = function (home, disk, idx, R) {
+    const M = global.HLMusic;
+    const steps =
+      M && M.fifthsDistance
+        ? M.fifthsDistance(home.tonic, disk.tonic)
+        : idx + 1;
+    const ang =
+      -Math.PI / 2 +
+      (steps !== 0 ? (steps / 6) * Math.PI : ((idx + 1) / 4) * Math.PI * 1.6 - 0.4);
+    const dist = R * (1.85 + idx * 0.35);
+    disk.cx = Math.cos(ang) * dist;
+    disk.cy = Math.sin(ang) * dist * 0.9;
+    disk.R = R * 0.85;
+    disk.rot = 0;
+    disk.meshed = false;
+  };
+
+  /**
+   * Mesh `moving` into `anchor` so the pivot pitch is one shared tooth.
+   * Both rims use the scale ring (the roman seats) — hubs are not cog teeth.
+   */
+  SpatialMap.prototype._meshDiskAtPivot = function (anchor, moving, pivot, R) {
+    moving.R = R;
+    anchor.R = R;
+    const root = this._chordRootPc(pivot.ch);
+    const angA = this._rawSeatAngle(anchor, root) + (anchor.rot || 0);
+    const angM0 = this._rawSeatAngle(moving, root);
+    moving.rot = angA + Math.PI - angM0;
+    const tooth = R * SEAT.scale;
+    const dist = tooth * 2;
+    moving.cx = (anchor.cx || 0) + Math.cos(angA) * dist;
+    moving.cy = (anchor.cy || 0) + Math.sin(angA) * dist * SEAT.squash;
+    moving.meshed = true;
+    const contact = this._diskSeatXY(anchor, angA, tooth);
+    if (!this._meshContacts) this._meshContacts = [];
+    this._meshContacts.push({
+      root: root,
+      fam: this._chordFam(pivot.ch),
+      pitchKey: this._pitchKey(pivot.ch),
+      x: contact.x,
+      y: contact.y,
+      a: this._keyId(anchor.tonic, anchor.mode),
+      b: this._keyId(moving.tonic, moving.mode),
+    });
+    this._meshPivotPitch = this._pitchKey(pivot.ch);
+  };
+
+  SpatialMap.prototype._cogContactForChord = function (ch) {
+    const contacts = this._meshContacts || [];
+    if (!ch || !contacts.length) return null;
+    const root = this._chordRootPc(ch);
+    const pk = this._pitchKey(ch);
+    for (let i = 0; i < contacts.length; i++) {
+      const c = contacts[i];
+      if (c.root === root) return c;
+      if (pk && c.pitchKey && pk === c.pitchKey) return c;
+    }
+    return null;
+  };
+
+  SpatialMap.prototype._firstPathIndexForDisk = function (disk) {
+    const path = this.path || [];
+    for (let i = 0; i < path.length; i++) {
+      const d = this._diskForChord(path[i]);
+      if (
+        d &&
+        d.tonic === disk.tonic &&
+        (d.mode || '') === (disk.mode || '')
+      ) {
+        return i;
+      }
+    }
+    return 1e9;
+  };
+
+  SpatialMap.prototype._placeJourneyCogs = function (R) {
+    this._meshPivotPitch = null;
+    this._meshContacts = [];
+    const home =
+      (this.disks || []).find((d) => d.active) || (this.disks && this.disks[0]);
+    if (!home) return;
+    home.cx = 0;
+    home.cy = 0;
+    home.R = R;
+    home.rot = 0;
+    home.meshed = true;
+    const others = (this.disks || []).filter((d) => !d.active);
+    if (!others.length) return;
+    others.sort(
+      (a, b) => this._firstPathIndexForDisk(a) - this._firstPathIndexForDisk(b)
+    );
+    const placed = [home];
+    let extra = 0;
+    others.forEach((disk) => {
+      let best = null;
+      let bestAnchor = null;
+      let bestScore = -1;
+      placed.forEach((anchor) => {
+        const p = this._findMeshPivot(anchor, disk);
+        const s = p && p.score != null ? p.score : -1;
+        if (s > bestScore) {
+          best = p;
+          bestAnchor = anchor;
+          bestScore = s;
+        }
+      });
+      if (best && bestAnchor) this._meshDiskAtPivot(bestAnchor, disk, best, R);
+      else {
+        this._placeDiskByFifths(home, disk, extra, R);
+        extra += 1;
+      }
+      placed.push(disk);
+    });
+  };
+
+  /**
+   * Same named pitches on two rims (or a same-disk revisit) = one node.
+   * Visit numbers stack (2 · 4). Function view keeps offset stacking.
+   */
+  SpatialMap.prototype._stackVisitNodes = function () {
+    if (this.mapView === 'function') return;
+    const nodes = this.nodes || [];
+    if (nodes.length < 2) {
+      nodes.forEach((n) => {
+        if (!n) return;
+        n.visits = [n.i + 1];
+        n.visitIndices = [n.i];
+        n.drawBody = true;
+        n.sharedPivot = false;
+      });
+      return;
+    }
+    const groups = new Map();
+    nodes.forEach((n) => {
+      if (!n) return;
+      const cog = this._cogContactForChord(n.chord);
+      const key = cog
+        ? 'cog:' + cog.root
+        : this._visitSeatKey(n.chord) || 'n' + n.i;
+      if (cog) {
+        n.x = cog.x;
+        n.y = cog.y;
+      }
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(n);
+    });
+    groups.forEach((group) => {
+      const visits = group.map((n) => n.i + 1);
+      const visitIndices = group.map((n) => n.i);
+      const x = group[0].x;
+      const y = group[0].y;
+      let rep =
+        group.find((n) => n.i === this.current) ||
+        group.find((n) => n.i === this.playing) ||
+        group[group.length - 1];
+      group.forEach((n) => {
+        n.x = x;
+        n.y = y;
+        n.visits = visits;
+        n.visitIndices = visitIndices;
+        n.drawBody = n === rep;
+        n.sharedPivot = group.length > 1;
+      });
+    });
+  };
+
+  SpatialMap.prototype._ghostsWanted = function () {
+    if (this.mapView !== 'chase') return false;
+    if (this.cameraMode === 'follow') return true;
+    if (this._forceGhostHalo) return true;
+    if (this._mode === 'node') return true;
+    return !!this._ghostsVisible;
+  };
+
+  SpatialMap.prototype.ensureGhostHalo = function (opts) {
+    opts = opts || {};
+    if (this.mapView !== 'chase') return;
+    const idx = opts.pivotIndex;
+    const same =
+      this._ghostsVisible &&
+      (idx == null || idx === this._ghostPivotIndex) &&
+      this.ghostDisks &&
+      this.ghostDisks.length;
+    this._ghostsVisible = true;
+    if (idx != null) this._ghostPivotIndex = idx;
+    if (same && !opts.force) return;
+    this._rebuildGhostHalo();
+  };
+
+  SpatialMap.prototype.hideGhostHalo = function () {
+    if (this._mode === 'node') return;
+    if (this._forceGhostHalo) return;
+    this._ghostsVisible = false;
+    this._ghostPivotIndex = null;
+    this.ghostDisks = [];
+    this.ghostOptions = [];
+  };
+
+  SpatialMap.prototype._syncGhostHalo = function (opts) {
+    opts = opts || {};
+    if (!this._ghostsWanted()) {
+      if (!this._ghostsVisible) {
+        this.ghostDisks = [];
+        this.ghostOptions = [];
+      }
+      return;
+    }
+    if (
+      this._mode === 'node' &&
+      !opts.force &&
+      this.ghostDisks &&
+      this.ghostDisks.length
+    ) {
+      return;
+    }
+    this._rebuildGhostHalo();
+  };
+
+  /**
+   * Chase halo: adjacent keys around the pivot (hovered / aimed path step).
+   * Off by default — ensureGhostHalo on hover / aim / leave-home.
+   * Never throw — a failure must not freeze path/timeline updates.
    */
 
   SpatialMap.prototype._rebuildGhostHalo = function () {
@@ -111,10 +547,13 @@
       const C = global.HLCompose || M;
       if (!M || !C || !C.adjacentKeys || !C.establishHomeOptions) return;
 
+      const forced = this._ghostPivotIndex;
       const idx =
-        this.current >= 0 && this.current < this.path.length
-          ? this.current
-          : this.path.length - 1;
+        forced != null && forced >= 0 && forced < this.path.length
+          ? forced
+          : this.current >= 0 && this.current < this.path.length
+            ? this.current
+            : this.path.length - 1;
       const pivotCh = this.path[idx];
       if (!pivotCh) return;
 
@@ -436,21 +875,16 @@
       return { x: Math.cos(ang) * R * 0.7, y: Math.sin(ang) * R * 0.6, onScale: true };
     }
     const disk = this._diskForChord(ch);
-    const pos = M.chaseChordPos(
-      ch,
-      disk.tonic != null ? disk.tonic : this.origin.tonic,
-      disk.mode || this.origin.mode,
-      disk
-    );
+    const pos = this._seatPosOnDisk(ch, disk);
     if (lane === 1) {
       // Compare path slightly outward on same seat
       const ang = Math.atan2(pos.y - disk.cy, pos.x - disk.cx);
       pos.x += Math.cos(ang) * 12;
       pos.y += Math.sin(ang) * 10;
     }
-    // Stack visits to same seat along a short tangent so repeats don't fully overlap
+    // Journey revisits share one node (_stackVisitNodes). Function still offsets.
     const peers = stackPath || this.path;
-    if (index > 0 && peers) {
+    if (this.mapView === 'function' && index > 0 && peers) {
       let stack = 0;
       for (let j = 0; j < index; j++) {
         const prev = peers[j];
@@ -532,19 +966,21 @@
     else if (hit.shell === 'secondary') rad = R * SEAT.v7;
     else if (hit.shell === 'variant') rad = R * 0.82;
     else if (hit.shell === true) rad = R * SEAT.shell;
-    const ang = hit.seat.angle;
+    const ang = hit.seat.angle + (disk.rot || 0);
     let x = cx + Math.cos(ang) * rad;
     let y = cy + Math.sin(ang) * rad * SEAT.squash;
-    // Stack revisits slightly so repeats don't fully cover
-    let stack = 0;
-    const peers = stackPath || this.path || [];
-    for (let j = 0; j < index; j++) {
-      const prev = peers[j];
-      if (prev && prev.root === ch.root && prev.quality === ch.quality) stack++;
-    }
-    if (stack > 0) {
-      x += Math.cos(ang + Math.PI / 2) * stack * 6;
-      y += Math.sin(ang + Math.PI / 2) * stack * 5;
+    // Function view still offsets revisits. Journey stacks numbers on one node.
+    if (this.mapView === 'function') {
+      let stack = 0;
+      const peers = stackPath || this.path || [];
+      for (let j = 0; j < index; j++) {
+        const prev = peers[j];
+        if (prev && prev.root === ch.root && prev.quality === ch.quality) stack++;
+      }
+      if (stack > 0) {
+        x += Math.cos(ang + Math.PI / 2) * stack * 6;
+        y += Math.sin(ang + Math.PI / 2) * stack * 5;
+      }
     }
     return {
       x: x,
@@ -567,11 +1003,14 @@
         // Function chart seats first (aligned to Chase scale ring)
         pos = this._functionSeatForChord(ch, i, this.path);
       }
-      // Chase + Function fallback: same write-home seat math
+      // Journey: sit on the owning disk (mesh + visit stack handle shared seats)
+      if (!pos && ch && this.mapView !== 'function') {
+        pos = this._seatPosOnDisk(ch, this._diskForChord(ch));
+      }
+      // Function: write-home seat math, then generic fallback
       if (!pos && ch && this._pathShouldUseActiveWheel(ch)) {
         pos = this._activeSeatPos(ch, i, this.path);
       }
-      // True other-key ownership only (not diatonic in write home)
       if (!pos) pos = this._chordPos(ch, i, 0);
       const r = 16 + Math.min(11, (ch.duration || 4) * 1.15);
       const ownT =
@@ -595,14 +1034,13 @@
         keyTonic: ownT != null ? ownT : homeT,
       };
     });
-    // Never soft-separate path off seats â€” that made Chase â‰  Function
+    // Never soft-separate path off seats — that made Chase ≠ Function
+    this._stackVisitNodes();
     this._layoutAltPath();
     this._computeDivergent();
     this._rebuildScaleSeats();
-    // Mid-aim: freeze ghosts so drag targets don't re-orbit under the pointer
-    if (this._mode !== 'node' && this._mode !== 'edgePending') {
-      this._rebuildGhostHalo();
-    }
+    this._syncGhostHalo();
+    if (this._refreshFocusOptions) this._refreshFocusOptions();
     // Path layout must NEVER move the camera (was the main source of jumpiness).
     // Camera only changes via setCameraMode / focusHome / pan / wheel.
   };
@@ -787,38 +1225,618 @@
     // Never clobber zoom/pan while switching views, freezing after aim, or dragging
     if (this._keepCameraOnce || this._freezeCamera || this._mode === 'node') return;
     const keepZ = this.camera.tz > 0 ? this.camera.tz : 1;
-    if (this.cameraMode === 'home' || !this.nodes.length) {
-      // Home lock: only re-centre if user hasn't panned (or just switched to home)
-      if (!this._userPanned || this._forceHomeCenter) {
-        this.camera.tx = 0;
-        this.camera.ty = 0;
-        this._forceHomeCenter = false;
-      }
+    const frame = this._cinematicFrame(this.cameraMode);
+    if (!frame) {
+      this.camera.tx = 0;
+      this.camera.ty = 0;
       this.camera.tz = keepZ;
       return;
     }
-    if (this.cameraMode === 'follow') {
-      const n = this.nodes[Math.max(0, Math.min(this.current, this.nodes.length - 1))];
-      if (n) {
-        this.camera.tx = n.x;
-        this.camera.ty = n.y;
-        this.camera.tz = keepZ;
+    if (this.cameraMode === 'home') {
+      if (!this._userPanned || this._forceHomeCenter) {
+        this.camera.tx = frame.tx;
+        this.camera.ty = frame.ty;
+        this._forceHomeCenter = false;
       }
+      this.camera.tz = frame.tz;
       return;
     }
-    // Fit: re-frame path
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    const all = this.nodes.concat(this.showAlt ? this.altNodes || [] : []);
-    all.forEach((n) => {
-      minX = Math.min(minX, n.x - n.r);
-      maxX = Math.max(maxX, n.x + n.r);
-      minY = Math.min(minY, n.y - n.r);
-      maxY = Math.max(maxY, n.y + n.r);
+    this.camera.tx = frame.tx;
+    this.camera.ty = frame.ty;
+    this.camera.tz = frame.tz;
+  };
+
+  SpatialMap.prototype._partnerDisk = function (focus) {
+    const disks = this.disks || [];
+    for (let i = 0; i < disks.length; i++) {
+      const d = disks[i];
+      if (d && !this._sameDiskRef(d, focus)) return d;
+    }
+    return null;
+  };
+
+  /**
+   * Close cinematic shot: the focus wheel fills the stage.
+   * The adjacent cog may clip — better than a tiny pair in the middle.
+   * home = write-home large; follow = sounding wheel/node; fit = a little more pair.
+   */
+  SpatialMap.prototype._cinematicFrame = function (mode) {
+    mode = mode || this.cameraMode || 'home';
+    const home = this._activeDisk && this._activeDisk();
+    if (!home) return null;
+    let focus = home;
+    let peek = 0.14;
+    if (mode === 'follow') {
+      const i = this.playing >= 0 ? this.playing : this.current;
+      const ch = this.path && i >= 0 ? this.path[i] : null;
+      if (ch) focus = this._diskForChord(ch) || home;
+      peek = 0.07;
+    } else if (mode === 'fit') {
+      peek = 0.3;
+    }
+    const other =
+      this.mapView === 'function' ? null : this._partnerDisk(focus);
+    const fx = focus.cx || 0;
+    const fy = focus.cy || 0;
+    const ox = other ? other.cx || 0 : fx;
+    const oy = other ? other.cy || 0 : fy;
+    let tx = fx * (1 - peek) + ox * peek;
+    let ty = fy * (1 - peek) + oy * peek;
+    if (mode === 'follow' && this.nodes && this.nodes.length) {
+      const i = this.playing >= 0 ? this.playing : this.current;
+      const n =
+        i >= 0 && this.nodes[i]
+          ? this.nodes[i]
+          : this.nodes[this.nodes.length - 1];
+      if (n) {
+        tx = n.x * 0.78 + fx * 0.22;
+        ty = n.y * 0.78 + fy * 0.22;
+      }
+    }
+    const R = focus.R || Math.min(this.w || 500, this.h || 360) * 0.38;
+    const view = Math.min(this.w || 500, this.h || 360);
+    let tz = (view * 0.42) / Math.max(R, 40);
+    if (mode === 'fit') tz *= 0.88;
+    if (mode === 'follow') tz *= 1.28;
+    tz = Math.min(1.62, Math.max(0.82, tz));
+    return { tx: tx, ty: ty, tz: tz };
+  };
+
+  SpatialMap.prototype._uprightRotForDisk = function (disk) {
+    if (!disk) return 0;
+    let a = -(disk.rot || 0);
+    while (a > Math.PI) a -= Math.PI * 2;
+    while (a < -Math.PI) a += Math.PI * 2;
+    return a;
+  };
+
+  SpatialMap.prototype._sameDiskRef = function (a, b) {
+    if (!a || !b) return false;
+    return a.tonic === b.tonic && (a.mode || '') === (b.mode || '');
+  };
+
+  SpatialMap.prototype._stepDurationMs = function (ch) {
+    const beats = (ch && ch.duration) || 4;
+    let bpm = 100;
+    try {
+      const st = typeof global.HLApp !== 'undefined' && global.HLApp.state;
+      if (st && st.bpm > 0) bpm = st.bpm;
+    } catch (_) {}
+    return Math.max(180, beats * (60000 / Math.max(30, bpm)));
+  };
+
+  SpatialMap.prototype._stepBeats = function (ch) {
+    const n = ch && ch.duration != null ? Number(ch.duration) : 4;
+    return n > 0 ? n : 4;
+  };
+
+  /** Consecutive path steps on the same disk, with beat spans. */
+  SpatialMap.prototype._keyRuns = function () {
+    const path = this.path || [];
+    const runs = [];
+    let beat0 = 0;
+    for (let i = 0; i < path.length; i++) {
+      const disk = this._diskForChord(path[i]);
+      const beats = this._stepBeats(path[i]);
+      const last = runs[runs.length - 1];
+      if (last && this._sameDiskRef(last.disk, disk)) {
+        last.end = i;
+        last.beats += beats;
+      } else {
+        runs.push({
+          start: i,
+          end: i,
+          disk: disk,
+          beats: beats,
+          beat0: beat0,
+        });
+      }
+      beat0 += beats;
+    }
+    return runs;
+  };
+
+  SpatialMap.prototype._isLooping = function () {
+    try {
+      return !!(
+        typeof global.HLApp !== 'undefined' &&
+        global.HLApp.state &&
+        global.HLApp.state.loop &&
+        this.path &&
+        this.path.length > 1
+      );
+    } catch (_) {
+      return false;
+    }
+  };
+
+  SpatialMap.prototype._lerpAngle = function (a, b, t) {
+    let d = b - a;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    return a + d * t;
+  };
+
+  /**
+   * Beats from the start of the path to the current playhead
+   * (elapsed fraction of the sounding step).
+   */
+  SpatialMap.prototype._playheadBeats = function () {
+    const path = this.path || [];
+    if (!path.length) return 0;
+    let i = this.playing;
+    if (i == null || i < 0) {
+      i = this.current >= 0 ? this.current : 0;
+    }
+    if (i >= path.length) i = path.length - 1;
+    let beats = 0;
+    for (let k = 0; k < i; k++) beats += this._stepBeats(path[k]);
+    if (this.playing == null || this.playing < 0) return beats;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const ms = this._playStepMs || this._stepDurationMs(path[i]);
+    let u = ms > 0 ? (now - (this._playStepAt || now)) / ms : 0;
+    if (u < 0) u = 0;
+    if (u > 1) u = 1;
+    return beats + this._stepBeats(path[i]) * u;
+  };
+
+  /** Rotation when we *arrive* at run idx — matches the previous run’s end. */
+  SpatialMap.prototype._runArriveRot = function (runs, idx, looping) {
+    if (!runs || !runs.length) return 0;
+    const n = runs.length;
+    const i = ((idx % n) + n) % n;
+    const run = runs[i];
+    const prevI = i > 0 ? i - 1 : looping ? n - 1 : -1;
+    if (prevI < 0) return this._uprightRotForDisk(run.disk);
+    const prev = runs[prevI];
+    if (this._sameDiskRef(prev.disk, run.disk)) {
+      return this._uprightRotForDisk(run.disk);
+    }
+    return this._lerpAngle(
+      this._uprightRotForDisk(prev.disk),
+      this._uprightRotForDisk(run.disk),
+      0.055
+    );
+  };
+
+  /**
+   * Continuous lean across key changes. Never snaps to the new wheel’s upright.
+   */
+  SpatialMap.prototype._rotationAtBeats = function (beats) {
+    if (this.mapView === 'function') return 0;
+    const runs = this._keyRuns();
+    if (!runs.length) return 0;
+    const looping = this._isLooping();
+    const total = runs[runs.length - 1].beat0 + runs[runs.length - 1].beats;
+    let head = beats;
+    if (looping && total > 0) {
+      head = ((head % total) + total) % total;
+    }
+    let idx = runs.length - 1;
+    for (let i = 0; i < runs.length; i++) {
+      const r = runs[i];
+      if (head >= r.beat0 && head < r.beat0 + r.beats) {
+        idx = i;
+        break;
+      }
+    }
+    const run = runs[idx];
+    const nextI = idx < runs.length - 1 ? idx + 1 : looping ? 0 : -1;
+    const from = this._runArriveRot(runs, idx, looping);
+    const to =
+      nextI >= 0 ? this._runArriveRot(runs, nextI, looping) : from;
+    const span = run.beats > 0 ? run.beats : 1;
+    const u = (head - run.beat0) / span;
+    return this._lerpAngle(from, to, u);
+  };
+
+  SpatialMap.prototype._focusRunState = function () {
+    const runs = this._keyRuns();
+    if (!runs.length) return null;
+    const looping = this._isLooping();
+    const playing = this.playing != null && this.playing >= 0;
+    let head = 0;
+    if (playing) head = this._playheadBeats();
+    else {
+      const i =
+        this.current >= 0 && this.current < (this.path || []).length
+          ? this.current
+          : 0;
+      for (let k = 0; k < i; k++) head += this._stepBeats((this.path || [])[k]);
+    }
+    const total = runs[runs.length - 1].beat0 + runs[runs.length - 1].beats;
+    if (playing && looping && total > 0) {
+      head = ((head % total) + total) % total;
+    }
+    let run = runs[runs.length - 1];
+    for (let i = 0; i < runs.length; i++) {
+      const r = runs[i];
+      if (head >= r.beat0 && head < r.beat0 + r.beats) {
+        run = r;
+        break;
+      }
+    }
+    const idx = runs.indexOf(run);
+    const next = idx < runs.length - 1 ? runs[idx + 1] : looping ? runs[0] : null;
+    const span = run.beats > 0 ? run.beats : 1;
+    const u = playing ? (head - run.beat0) / span : 0;
+    const nxt =
+      next && !this._sameDiskRef(run.disk, next.disk) ? next.disk : null;
+    return { run: run, next: next, u: u, here: run.disk, nxt: nxt };
+  };
+
+  SpatialMap.prototype._focusFadeT = function () {
+    const st = this._focusRunState();
+    if (!st || !st.nxt) return 0;
+    let t = st.u;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    return t * t * (3 - 2 * t);
+  };
+
+  SpatialMap.prototype._meshContactBetween = function (a, b) {
+    if (!a || !b) return null;
+    const idA = this._keyId(a.tonic, a.mode);
+    const idB = this._keyId(b.tonic, b.mode);
+    const list = this._meshContacts || [];
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      if ((c.a === idA && c.b === idB) || (c.a === idB && c.b === idA)) {
+        return { x: c.x, y: c.y };
+      }
+    }
+    return {
+      x: ((a.cx || 0) + (b.cx || 0)) / 2,
+      y: ((a.cy || 0) + (b.cy || 0)) / 2,
+    };
+  };
+
+  SpatialMap.prototype._pathLookNow = function () {
+    const nodes = this.nodes || [];
+    if (!nodes.length) return { x: 0, y: 0 };
+    let i = this.playing;
+    if (i == null || i < 0) i = this.current;
+    if (i == null || i < 0) i = 0;
+    if (i >= nodes.length) i = nodes.length - 1;
+    const a = nodes[i];
+    if (!a) return { x: 0, y: 0 };
+    let j = i + 1;
+    if (j >= nodes.length) j = this._isLooping() ? 0 : i;
+    const b = nodes[j] || a;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const ms = this._playStepMs || this._stepDurationMs((this.path || [])[i]);
+    let u = 0;
+    if (this.playing >= 0 && ms > 0) {
+      u = (now - (this._playStepAt || now)) / ms;
+    }
+    if (u < 0) u = 0;
+    if (u > 1) u = 1;
+    u = u * u * (3 - 2 * u);
+    const diskA = this._diskForChord((this.path || [])[i] || a.chord) || this._activeDisk();
+    const diskB = this._diskForChord((this.path || [])[j] || b.chord) || diskA;
+    const soft = (n, disk) => ({
+      x: n.x * 0.28 + ((disk && disk.cx) || 0) * 0.72,
+      y: n.y * 0.28 + ((disk && disk.cy) || 0) * 0.72,
     });
-    this.camera.tx = (minX + maxX) / 2;
-    this.camera.ty = (minY + maxY) / 2;
-    const span = Math.max(maxX - minX, maxY - minY, 80);
-    this.camera.tz = Math.min(1.3, Math.max(0.55, (Math.min(this.w, this.h) * 0.55) / span));
+    const from = soft(a, diskA);
+    const to = soft(b, diskB);
+    return {
+      x: from.x + (to.x - from.x) * u,
+      y: from.y + (to.y - from.y) * u,
+    };
+  };
+
+  /** Lamp: path look → pivot tooth → next-run look. Continuous at both ends. */
+  SpatialMap.prototype._focusLampWorld = function () {
+    const pathLook = this._pathLookNow();
+    const st = this._focusRunState();
+    const t = this._focusFadeT();
+    if (!st || !st.nxt || t <= 0) return pathLook;
+    const here = { x: st.here.cx || 0, y: st.here.cy || 0 };
+    const nxt = { x: st.nxt.cx || 0, y: st.nxt.cy || 0 };
+    const tooth = this._meshContactBetween(st.here, st.nxt) || {
+      x: (here.x + nxt.x) / 2,
+      y: (here.y + nxt.y) / 2,
+    };
+    let dest = nxt;
+    if (st.next && this.nodes && this.nodes[st.next.start]) {
+      const n = this.nodes[st.next.start];
+      dest = {
+        x: n.x * 0.28 + nxt.x * 0.72,
+        y: n.y * 0.28 + nxt.y * 0.72,
+      };
+    }
+    if (t < 0.4) {
+      const u = t / 0.4;
+      return {
+        x: pathLook.x + (tooth.x - pathLook.x) * u,
+        y: pathLook.y + (tooth.y - pathLook.y) * u,
+      };
+    }
+    if (t < 0.62) return tooth;
+    const u = (t - 0.62) / 0.38;
+    return {
+      x: tooth.x + (dest.x - tooth.x) * u,
+      y: tooth.y + (dest.y - tooth.y) * u,
+    };
+  };
+
+  /** Fog title: the sounding path step only. Never the next-key preview. */
+  SpatialMap.prototype._focusSoundingName = function () {
+    const i = this.playing >= 0 ? this.playing : this.current;
+    if (i == null || i < 0) return '';
+    const ch = this.path && this.path[i];
+    if (ch && ch.name) return ch.name;
+    const node = this.nodes && this.nodes[i];
+    return (node && node.chord && node.chord.name) || '';
+  };
+
+  SpatialMap.prototype._worldToScreen = function (wx, wy, w, h) {
+    const z = this.camera.zoom || 1;
+    const rot = this.camera.rot || 0;
+    const dx = (wx || 0) - (this.camera.x || 0);
+    const dy = (wy || 0) - (this.camera.y || 0);
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    return {
+      x: w / 2 + (dx * c - dy * s) * z,
+      y: h / 2 + (dx * s + dy * c) * z,
+    };
+  };
+
+  SpatialMap.prototype._focusNamePockets = function (w, h) {
+    return [
+      { x: w * 0.07, y: h * 0.78, align: 'left' },
+      { x: w * 0.93, y: h * 0.78, align: 'right' },
+      { x: w * 0.07, y: h * 0.22, align: 'left' },
+      { x: w * 0.08, y: h * 0.52, align: 'left' },
+    ];
+  };
+
+  SpatialMap.prototype._focusNameSlotFor = function (name, w, h) {
+    const pockets = this._focusNamePockets(w, h);
+    const look =
+      (this._followFocusWorld && this._followFocusWorld()) || { x: 0, y: 0 };
+    const scr = this._worldToScreen(look.x, look.y, w, h);
+    let best = 0;
+    let bestD = -1;
+    for (let i = 0; i < pockets.length; i++) {
+      const p = pockets[i];
+      const d = Math.hypot(p.x - scr.x, p.y - scr.y);
+      if (d > bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    if (name && this._fogNamePrev && this._fogNamePrev !== name) {
+      const prev = this._fogNameSlot;
+      if (prev === best) best = (best + 1) % pockets.length;
+    }
+    return best;
+  };
+
+  /** Face / rim fade later; incoming seats bloom first. */
+  SpatialMap.prototype._focusDiskPaint = function (disk) {
+    if (!disk || this.cameraMode !== 'follow' || this.mapView === 'function') {
+      return null;
+    }
+    const fog = 0.08;
+    const st = this._focusRunState();
+    if (!st || !st.here) {
+      return { face: 1, seats: 1, rim: 1 };
+    }
+    if (!st.nxt) {
+      const on = this._sameDiskRef(disk, st.here);
+      return {
+        face: on ? 1 : fog,
+        seats: on ? 1 : fog * 0.35,
+        rim: on ? 1 : fog,
+      };
+    }
+    const t = this._focusFadeT();
+    if (this._sameDiskRef(disk, st.here)) {
+      const seatT = Math.max(0, (t - 0.42) / 0.58);
+      return {
+        face: 1 - t * (1 - fog),
+        rim: 1 - t * (1 - fog),
+        seats: 1 - seatT * (1 - fog),
+      };
+    }
+    if (this._sameDiskRef(disk, st.nxt)) {
+      const seatT = Math.min(1, t / 0.46);
+      const faceT = Math.max(0, (t - 0.28) / 0.72);
+      return {
+        face: fog + faceT * (1 - fog),
+        rim: fog + faceT * (1 - fog),
+        seats: fog * 0.4 + seatT * (1 - fog * 0.4),
+      };
+    }
+    return { face: fog * 0.55, seats: 0.03, rim: fog * 0.55 };
+  };
+
+  SpatialMap.prototype._focusDiskLight = function (disk) {
+    const p = this._focusDiskPaint(disk);
+    return p ? p.face : null;
+  };
+
+  SpatialMap.prototype._restRotation = function () {
+    const path = this.path || [];
+    const i =
+      this.current >= 0 && this.current < path.length
+        ? this.current
+        : path.length
+          ? path.length - 1
+          : -1;
+    const d =
+      i >= 0 && path[i]
+        ? this._diskForChord(path[i])
+        : this._activeDisk && this._activeDisk();
+    return this._uprightRotForDisk(d);
+  };
+
+  /**
+   * One continuous look-at: path drift, or lamp walk into the next key.
+   * Low-passed so a math blip cannot snap the angle.
+   */
+  SpatialMap.prototype._followDriftTarget = function () {
+    const look =
+      (this._focusLampWorld && this._focusLampWorld()) ||
+      this._pathLookNow();
+    const zoom = this._cinematicFrame('follow');
+    const tz = zoom && zoom.tz ? zoom.tz : 1;
+    if (this._lookX == null || this._lookY == null) {
+      this._lookX = look.x;
+      this._lookY = look.y;
+    } else {
+      const k = 0.035;
+      this._lookX += (look.x - this._lookX) * k;
+      this._lookY += (look.y - this._lookY) * k;
+    }
+    return { tx: this._lookX, ty: this._lookY, tz: tz };
+  };
+
+  /**
+   * Soft next-seats on the sounding wheel — where this chord can go.
+   * Visual only. Never writes the path.
+   */
+  SpatialMap.prototype._refreshFocusOptions = function () {
+    this._focusOptions = [];
+    if (this.cameraMode !== 'follow' || this.mapView === 'function') return;
+    const i = this.playing >= 0 ? this.playing : this.current;
+    const ch = this.path && i >= 0 ? this.path[i] : null;
+    if (!ch) return;
+    if (this.ensureGhostHalo) this.ensureGhostHalo({ pivotIndex: i });
+    if (!this.scaleSeats || !this.scaleSeats.length) return;
+    const disk = this._followFocusDisk
+      ? this._followFocusDisk()
+      : this._diskForChord(ch);
+    const nextCh =
+      this.path && i >= 0 && i + 1 < this.path.length
+        ? this.path[i + 1]
+        : this._isLooping() && this.path && this.path[0]
+          ? this.path[0]
+          : null;
+    const H = global.HLApp;
+    const tonic =
+      disk && disk.tonic != null
+        ? disk.tonic
+        : this.origin
+          ? this.origin.tonic
+          : 0;
+    const mode = (disk && disk.mode) || (this.origin && this.origin.mode) || 'minor';
+    const opts = [];
+    const fadeT = this._focusFadeT ? this._focusFadeT() : 0;
+    const st = this._focusRunState ? this._focusRunState() : null;
+    const extraDisk = fadeT > 0.12 && st && st.nxt ? st.nxt : null;
+    (this.scaleSeats || []).forEach((s) => {
+      if (!s || s.x == null || !s.chord) return;
+      const onHere =
+        disk && s.disk && this._sameDiskRef && this._sameDiskRef(s.disk, disk);
+      const onNext =
+        extraDisk &&
+        s.disk &&
+        this._sameDiskRef &&
+        this._sameDiskRef(s.disk, extraDisk);
+      if (disk && s.disk && !onHere && !onNext) return;
+      if (!s.disk && disk && !disk.active && !s.activeDisk) return;
+      if (s.root === ch.root) return;
+      let w = 0.42;
+      if (H && H.scoreDegreeProgression) {
+        const sc = H.scoreDegreeProgression(ch, s.chord, tonic, mode);
+        if (typeof sc === 'number' && isFinite(sc)) w = sc;
+      } else if (s.role === 'tonic') w = 0.92;
+      else if (s.role === 'dom') w = 0.84;
+      else if (s.role === 'subdom') w = 0.7;
+      const isNext = !!(nextCh && s.root === nextCh.root);
+      if (isNext) w = Math.max(w, 0.9);
+      opts.push({
+        x: s.x,
+        y: s.y,
+        weight: Math.max(0.05, Math.min(1, w)),
+        next: isNext,
+        roman: s.roman || '',
+        kind: 'seat',
+      });
+    });
+    const ghosts = (this.ghostDisks || []).slice().sort((a, b) => {
+      const M = global.HLMusic;
+      const da =
+        M && M.fifthsDistance
+          ? Math.abs(M.fifthsDistance(tonic, a.tonic))
+          : 9;
+      const db =
+        M && M.fifthsDistance
+          ? Math.abs(M.fifthsDistance(tonic, b.tonic))
+          : 9;
+      return da - db;
+    });
+    ghosts.forEach((g, gi) => {
+      if (!g) return;
+      opts.push({
+        x: g.cx || 0,
+        y: g.cy || 0,
+        r: g.R || 70,
+        weight: gi < 2 ? 0.72 : 0.26,
+        next: false,
+        rumoured: gi >= 2,
+        roman: g.label || '',
+        kind: 'modulate',
+        label: g.label || '',
+        relation: g.relation || '',
+      });
+    });
+    opts.sort((a, b) => b.weight - a.weight);
+    this._focusOptions = opts;
+  };
+
+  SpatialMap.prototype._focusBloom = function () {
+    if (this.playing == null || this.playing < 0) return 0.42;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const ms = this._playStepMs || 1;
+    let u = (now - (this._playStepAt || now)) / ms;
+    if (u < 0) u = 0;
+    if (u > 1) u = 1;
+    return u * u * (3 - 2 * u);
+  };
+
+  SpatialMap.prototype._tickPlayRotation = function () {
+    if (this.playing == null || this.playing < 0) return;
+    const cam = this.camera;
+    if (this.cameraMode === 'follow' && this.mapView !== 'function') {
+      const rot = this._rotationAtBeats(this._playheadBeats());
+      cam.rot = rot;
+      cam.tr = rot;
+      const drift = this._followDriftTarget();
+      if (drift) {
+        cam.tx = drift.tx;
+        cam.ty = drift.ty;
+        cam.tz = drift.tz;
+      }
+    } else {
+      cam.tr = 0;
+    }
   };
 
   /** Snapshot / restore camera (scale + pan). Snap visual immediately so zoom doesn't lerp. */
@@ -997,8 +2015,10 @@
         });
         // Same radii as path seats + Function diatonic ring
         const radius = s.role === 'tonic' ? disk.R * SEAT.tonic : disk.R * SEAT.scale;
-        const x = disk.cx + Math.cos(s.angle) * radius;
-        const y = disk.cy + Math.sin(s.angle) * radius * SEAT.squash;
+        const ang = s.angle + (disk.rot || 0);
+        const xy = this._diskSeatXY(disk, ang, radius);
+        const x = xy.x;
+        const y = xy.y;
         // Stamp disk ownership on seat chords so drop/click keep multi-disk correct
         ch.localTonic = disk.tonic;
         ch.localMode = disk.mode;

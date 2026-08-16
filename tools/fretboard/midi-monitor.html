@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIDI monitor · Idle Hanz chase v2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { fontFamily: { display: ['Space Grotesk', 'Inter', 'system-ui', 'sans-serif'] } } }
+        };
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
+        :root {
+            --page-bg: #f1f5f9; --card-bg: #ffffff; --card-border: #e2e8f0;
+            --text-main: #0f172a; --text-muted: #64748b; --section: #334155;
+        }
+        html.dark {
+            --page-bg: #0f172a; --card-bg: #1e293b; --card-border: #334155;
+            --text-main: #f1f5f9; --text-muted: #94a3b8; --section: #cbd5e1;
+        }
+        body { font-family: 'Inter', system-ui, sans-serif; background: var(--page-bg); color: var(--text-main); }
+        .font-display { font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif; font-weight: 600; }
+        .card-panel { background: var(--card-bg); border: 1px solid var(--card-border); }
+        .chip { background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text-muted); }
+        .chip:hover { border-color: #94a3b8; }
+        .field { background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text-main); }
+        .badge {
+            display: inline-flex; align-items: center; gap: 0.35rem;
+            font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+            padding: 0.2rem 0.5rem; border-radius: 999px; border: 1px solid var(--card-border);
+            color: var(--text-muted);
+        }
+        .badge.on { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
+        html.dark .badge.on { background: #064e3b; border-color: #059669; color: #6ee7b7; }
+        .badge.warn { background: #fff7ed; border-color: #fdba74; color: #c2410c; }
+        html.dark .badge.warn { background: #431407; border-color: #c2410c; color: #fdba74; }
+        .badge.off { background: #f8fafc; }
+        html.dark .badge.off { background: #0f172a; }
+        .pulse-dot {
+            width: 0.5rem; height: 0.5rem; border-radius: 999px; background: #94a3b8;
+        }
+        .pulse-dot.live { background: #10b981; box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.2); }
+        #log {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 12px; line-height: 1.45;
+            white-space: pre; overflow: auto;
+            min-height: 22rem; max-height: 60vh;
+            padding: 0.75rem 0.85rem;
+            background: #0f172a; color: #e2e8f0;
+            border-radius: 12px;
+        }
+        .ol { color: #64748b; }
+        .kind-mark { color: #fbbf24; font-weight: 700; }
+        .kind-start, .kind-continue { color: #34d399; }
+        .kind-stop { color: #f87171; }
+        .kind-spp { color: #a78bfa; }
+        .kind-mtc, .kind-sysex { color: #38bdf8; }
+        .kind-clock { color: #94a3b8; }
+        .kind-note, .kind-cc, .kind-other { color: #cbd5e1; }
+        .kind-sense { color: #475569; }
+        kbd {
+            font-size: 10px; padding: 0.05rem 0.3rem; border-radius: 0.25rem;
+            border: 1px solid #cbd5e1; background: #f8fafc; font-family: ui-monospace, monospace;
+        }
+        html.dark kbd { background: #0f172a; border-color: #475569; color: #e2e8f0; }
+        .step-num {
+            width: 1.35rem; height: 1.35rem; border-radius: 999px;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 11px; font-weight: 700; background: #e0e7ff; color: #3730a3;
+        }
+        html.dark .step-num { background: #312e81; color: #c7d2fe; }
+        details > summary { cursor: pointer; list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+    </style>
+</head>
+<body class="py-4">
+    <nav class="px-3 sm:px-4 py-2 text-xs flex flex-wrap items-center gap-x-3 gap-y-1 border-b mb-2" style="border-color:var(--card-border);color:var(--text-muted)">
+        <a href="index.html" class="font-semibold hover:underline" style="color:var(--text-main)">Guitar Fretboard</a>
+        <span aria-hidden="true">·</span>
+        <span style="color:var(--text-main)">MIDI monitor</span>
+        <span aria-hidden="true">·</span>
+        <span>chase v2 measure — not a playhead lock</span>
+    </nav>
+
+    <div class="max-w-6xl mx-auto px-3 sm:px-4 pb-10">
+        <header class="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+                <h1 class="font-display text-3xl tracking-tighter">MIDI monitor</h1>
+                <p class="text-sm mt-1" style="color:var(--text-muted)">
+                    Dump what Fender Studio / Studio One actually sends. Chase stays off until this log exists.
+                    Chrome or Edge only. Clock = tempo. SPP = song time. MTC is the fallback if SPP is junk.
+                </p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <span id="browser-badge" class="badge off">Browser…</span>
+                <span id="access-badge" class="badge off">MIDI off</span>
+                <span id="sysex-badge" class="badge off">Sysex off</span>
+            </div>
+        </header>
+
+        <details class="card-panel rounded-2xl p-4 mb-4" open>
+            <summary class="font-semibold text-sm flex items-center gap-2">
+                <i class="fa-solid fa-plug text-violet-500"></i>
+                DAW setup — do this once
+            </summary>
+            <ol class="mt-3 space-y-2.5 text-sm" style="color:var(--text-main)">
+                <li class="flex gap-2"><span class="step-num shrink-0">1</span><span><strong>Install loopMIDI</strong> (free, Tobias Erichsen) and create a port named <kbd>Idle Hanz Chase</kbd>. Leave it running. Do not buy a hardware MIDI interface for this.</span></li>
+                <li class="flex gap-2"><span class="step-num shrink-0">2</span><span><strong>Fender Studio / Studio One</strong> → Options (Windows) → <strong>External Devices</strong> → Add → <strong>New Instrument</strong>. Name it Idle Hanz Chase. <strong>Send To</strong> = that loopMIDI port. Tick <strong>Send MIDI Clock</strong> and <strong>Use MIDI Clock Start</strong>. If you also see <strong>Send MIDI Time Code</strong>, tick it so we can measure MTC. Receive From can stay empty.</span></li>
+                <li class="flex gap-2"><span class="step-num shrink-0">3</span><span>Open this page in <strong>Chrome or Edge</strong> (not Firefox). Click <strong>Enable Web MIDI</strong>, allow the prompt, pick <kbd>Idle Hanz Chase</kbd>.</span></li>
+                <li class="flex gap-2"><span class="step-num shrink-0">4</span><span>Use the <strong>Mark</strong> buttons below, then play the song in the DAW. We need: play from bar 1, stop, play from bar 17 (or any mid-song locate), cycle wrap, and a tempo change if easy.</span></li>
+                <li class="flex gap-2"><span class="step-num shrink-0">5</span><span><strong>Copy log</strong> and paste it back in the chase chat. Raw hex + timestamps — do not paraphrase.</span></li>
+            </ol>
+            <p class="text-xs mt-3" style="color:var(--text-muted)">
+                If no clock appears after play: confirm loopMIDI is running, the External Device Send To is that port, and you allowed MIDI in the browser. A dummy instrument track routed to the device is only needed if the DAW stays silent. This logger does not lock the Fretboard row.
+            </p>
+        </details>
+
+        <div class="grid lg:grid-cols-3 gap-4 mb-4">
+            <section class="card-panel rounded-2xl p-4 lg:col-span-1 space-y-3">
+                <div class="text-xs font-semibold tracking-wide" style="color:var(--section)">PORT</div>
+                <button type="button" id="enable-btn" class="w-full chip rounded-xl px-3 py-2 text-sm font-semibold" onclick="enableMidi()">
+                    <i class="fa-solid fa-power-off mr-1"></i>Enable Web MIDI
+                </button>
+                <label class="block text-[10px]" style="color:var(--text-muted)">Input</label>
+                <select id="port-select" class="field w-full text-sm rounded-xl px-2 py-2" disabled onchange="onPortChange()">
+                    <option value="">No ports yet</option>
+                </select>
+                <p id="port-hint" class="text-[11px] leading-snug" style="color:var(--text-muted)">Allow MIDI, then pick the loopMIDI port the DAW sends to.</p>
+                <div class="flex flex-wrap gap-1.5">
+                    <span class="badge off"><span id="clock-dot" class="pulse-dot"></span><span id="clock-lab">Clock —</span></span>
+                    <span id="bpm-badge" class="badge off">BPM —</span>
+                    <span id="spp-badge" class="badge off">SPP —</span>
+                    <span id="mtc-badge" class="badge off">MTC —</span>
+                    <span id="run-badge" class="badge off">Stopped</span>
+                </div>
+                <div id="last-line" class="text-[11px] font-mono break-all" style="color:var(--text-muted)">No messages yet.</div>
+            </section>
+
+            <section class="card-panel rounded-2xl p-4 lg:col-span-2 space-y-3">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="text-xs font-semibold tracking-wide" style="color:var(--section)">MEASURE</div>
+                    <div class="text-[11px]" style="color:var(--text-muted)">Click Mark, then do the action in the DAW.</div>
+                </div>
+                <div class="grid sm:grid-cols-2 gap-2">
+                    <button type="button" class="chip text-left rounded-xl px-3 py-2 text-xs" onclick="mark('Play from bar 1')">
+                        <strong class="block text-sm" style="color:var(--text-main)">1 · Play from bar 1</strong>
+                        Start? Clock? SPP F2 bytes? Running status?
+                    </button>
+                    <button type="button" class="chip text-left rounded-xl px-3 py-2 text-xs" onclick="mark('Stop')">
+                        <strong class="block text-sm" style="color:var(--text-main)">2 · Stop</strong>
+                        Stop (FC)? Clock silence?
+                    </button>
+                    <button type="button" class="chip text-left rounded-xl px-3 py-2 text-xs" onclick="mark('Play from bar 17 (mid-song locate)')">
+                        <strong class="block text-sm" style="color:var(--text-main)">3 · Play from bar 17</strong>
+                        SPP before Start? After? Never?
+                    </button>
+                    <button type="button" class="chip text-left rounded-xl px-3 py-2 text-xs" onclick="mark('Cycle wrap')">
+                        <strong class="block text-sm" style="color:var(--text-main)">4 · Cycle wrap</strong>
+                        SPP again? Only clock? Silence?
+                    </button>
+                    <button type="button" class="chip text-left rounded-xl px-3 py-2 text-xs sm:col-span-2" onclick="mark('Tempo change while playing')">
+                        <strong class="block text-sm" style="color:var(--text-main)">5 · Tempo change (optional)</strong>
+                        Clock period change?
+                    </button>
+                </div>
+                <div class="flex flex-wrap gap-2 text-[11px]" id="count-row" style="color:var(--text-muted)"></div>
+            </section>
+        </div>
+
+        <section class="card-panel rounded-2xl p-4">
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+                <div class="text-xs font-semibold tracking-wide mr-auto" style="color:var(--section)">LOG</div>
+                <label class="inline-flex items-center gap-1 text-[11px] cursor-pointer">
+                    <input type="checkbox" id="collapse-clock" class="accent-violet-500" checked> Collapse clock
+                </label>
+                <label class="inline-flex items-center gap-1 text-[11px] cursor-pointer">
+                    <input type="checkbox" id="collapse-sense" class="accent-violet-500" checked> Collapse active sense
+                </label>
+                <button type="button" class="chip text-[11px] px-2.5 py-1 rounded-lg font-semibold" onclick="copyLog()"><i class="fa-solid fa-copy mr-1"></i>Copy log</button>
+                <button type="button" class="chip text-[11px] px-2.5 py-1 rounded-lg font-semibold" onclick="downloadLog()"><i class="fa-solid fa-download mr-1"></i>Download</button>
+                <button type="button" class="chip text-[11px] px-2.5 py-1 rounded-lg font-semibold" onclick="clearLog()"><i class="fa-solid fa-eraser mr-1"></i>Clear</button>
+            </div>
+            <div id="log" aria-live="polite"></div>
+        </section>
+    </div>
+
+<script>
+(function () {
+    const MAX_LINES = 4000;
+    const state = {
+        access: null,
+        sysex: false,
+        portId: '',
+        t0: 0,
+        lastTs: 0,
+        running: false,
+        lines: [],
+        counts: { start: 0, stop: 0, continue: 0, clock: 0, spp: 0, mtc: 0, sysex: 0, note: 0, cc: 0, sense: 0, other: 0, mark: 0 },
+        lastSpp: null,
+        lastMtc: '',
+        clockTimes: [],
+        clockPeriod: 0,
+        clockCollapsed: null,
+        senseCollapsed: null,
+        mtcNibbles: new Array(8).fill(0),
+        mtcGot: 0
+    };
+
+    function $(id) { return document.getElementById(id); }
+
+    function hexBytes(data) {
+        const out = [];
+        for (let i = 0; i < data.length; i++) out.push(data[i].toString(16).toUpperCase().padStart(2, '0'));
+        return out.join(' ');
+    }
+
+    function nowMs() { return performance.now(); }
+
+    function bpmFromPeriod(ms) {
+        if (!ms || ms < 1 || ms > 400) return 0;
+        return 60000 / (ms * 24);
+    }
+
+    function decodeSpp(data) {
+        if (data.length < 3) return null;
+        const beats = data[1] | (data[2] << 7);
+        const bar4 = Math.floor(beats / 16) + 1;
+        const sixteenth = beats % 16;
+        const beat4 = Math.floor(sixteenth / 4) + 1;
+        const sub = sixteenth % 4;
+        return { beats: beats, guess: '4/4 bar ' + bar4 + ' beat ' + beat4 + (sub ? '+' + sub + '/4' : '') };
+    }
+
+    function decodeMtcFrame() {
+        const n = state.mtcNibbles;
+        const frames = (n[1] << 4) | n[0];
+        const seconds = (n[3] << 4) | n[2];
+        const minutes = (n[5] << 4) | n[4];
+        const hours = n[6] | ((n[7] & 1) << 4);
+        const rateBits = (n[7] >> 1) & 3;
+        const rates = ['24', '25', '29.97df', '30'];
+        return hours.toString().padStart(2, '0') + ':' +
+            minutes.toString().padStart(2, '0') + ':' +
+            seconds.toString().padStart(2, '0') + ':' +
+            frames.toString().padStart(2, '0') + ' @' + (rates[rateBits] || '?');
+    }
+
+    function kindOf(data) {
+        if (!data || !data.length) return { kind: 'other', label: 'empty' };
+        const s = data[0];
+        if (s === 0xF8) return { kind: 'clock', label: 'Clock' };
+        if (s === 0xFA) return { kind: 'start', label: 'Start' };
+        if (s === 0xFB) return { kind: 'continue', label: 'Continue' };
+        if (s === 0xFC) return { kind: 'stop', label: 'Stop' };
+        if (s === 0xF2) {
+            const spp = decodeSpp(data);
+            return { kind: 'spp', label: spp ? ('SPP  beats=' + spp.beats + '  (' + spp.guess + ' — 4/4 guess)') : 'SPP (short)' };
+        }
+        if (s === 0xF1) {
+            const nibble = data[1] != null ? data[1] : 0;
+            const idx = (nibble >> 4) & 7;
+            const val = nibble & 0x0F;
+            state.mtcNibbles[idx] = val;
+            state.mtcGot |= (1 << idx);
+            const full = (state.mtcGot === 0xFF) ? decodeMtcFrame() : 'partial';
+            if (state.mtcGot === 0xFF) state.lastMtc = decodeMtcFrame();
+            return { kind: 'mtc', label: 'MTC QF  nibble ' + idx + '=' + val.toString(16) + (full !== 'partial' ? '  → ' + full : '') };
+        }
+        if (s === 0xFE) return { kind: 'sense', label: 'Active sense' };
+        if (s === 0xFF) return { kind: 'other', label: 'Reset' };
+        if (s === 0xF0) {
+            const arr = Array.from(data);
+            const isFullMtc = arr.length >= 10 && arr[1] === 0x7F && arr[3] === 0x01 && arr[4] === 0x01;
+            if (isFullMtc) {
+                const hr = arr[5] & 0x1F;
+                const rateBits = (arr[5] >> 5) & 3;
+                const rates = ['24', '25', '29.97df', '30'];
+                const stamp = (arr[5] & 0x1F).toString().padStart(2, '0') + ':' +
+                    arr[6].toString().padStart(2, '0') + ':' +
+                    arr[7].toString().padStart(2, '0') + ':' +
+                    arr[8].toString().padStart(2, '0') + ' @' + (rates[rateBits] || '?');
+                state.lastMtc = stamp;
+                return { kind: 'sysex', label: 'MTC full  ' + stamp };
+            }
+            return { kind: 'sysex', label: 'SysEx  len=' + data.length };
+        }
+        const cmd = s & 0xF0;
+        const ch = (s & 0x0F) + 1;
+        if (cmd === 0x90) return { kind: 'note', label: 'Note on  ch' + ch + '  ' + (data[1] || 0) + ' vel ' + (data[2] || 0) };
+        if (cmd === 0x80) return { kind: 'note', label: 'Note off  ch' + ch + '  ' + (data[1] || 0) };
+        if (cmd === 0xB0) return { kind: 'cc', label: 'CC  ch' + ch + '  #' + (data[1] || 0) + ' = ' + (data[2] || 0) };
+        return { kind: 'other', label: 'status ' + s.toString(16).toUpperCase() };
+    }
+
+    function stamp(ts) {
+        if (!state.t0) state.t0 = ts;
+        const t = ((ts - state.t0) / 1000).toFixed(3);
+        const d = state.lastTs ? ((ts - state.lastTs)).toFixed(1) : '    ';
+        return { t: t, d: d };
+    }
+
+    function renderCounts() {
+        const c = state.counts;
+        $('count-row').textContent =
+            'Start ' + c.start +
+            ' · Stop ' + c.stop +
+            ' · Continue ' + c.continue +
+            ' · Clock ' + c.clock +
+            ' · SPP ' + c.spp +
+            ' · MTC ' + c.mtc +
+            ' · SysEx ' + c.sysex +
+            ' · Note ' + c.note +
+            ' · CC ' + c.cc +
+            ' · Sense ' + c.sense +
+            ' · Other ' + c.other +
+            ' · Marks ' + c.mark;
+    }
+
+    function renderLog() {
+        const el = $('log');
+        const html = state.lines.map(function (ln) {
+            return '<span class="ol">' + ln.prefix + '</span><span class="kind-' + ln.kind + '">' + ln.body + '</span>';
+        }).join('\n');
+        el.innerHTML = html || '<span class="ol">Log is empty. Enable Web MIDI, pick the port, then Mark + play.</span>';
+        el.scrollTop = el.scrollHeight;
+    }
+
+    function pushLine(kind, body, ts) {
+        const st = stamp(ts || nowMs());
+        state.lastTs = ts || nowMs();
+        const prefix = 't+' + st.t.padStart(7, ' ') + '  Δ' + String(st.d).padStart(6, ' ') + 'ms  ';
+        state.lines.push({ kind: kind, prefix: prefix, body: body, raw: prefix + body });
+        if (state.lines.length > MAX_LINES) state.lines.splice(0, state.lines.length - MAX_LINES);
+        renderLog();
+    }
+
+    function finishCollapsed(slotName) {
+        const slot = state[slotName];
+        if (!slot) return;
+        const last = state.lines[slot.lineIndex];
+        if (last) {
+            last.body = slot.base + '  ×' + slot.n + '  last Δ' + slot.lastDt.toFixed(1) + 'ms';
+            last.raw = last.prefix + last.body;
+        }
+        state[slotName] = null;
+    }
+
+    function logMessage(data, ts) {
+        const info = kindOf(data);
+        const hex = hexBytes(data);
+        if (state.counts[info.kind] != null) state.counts[info.kind] += 1;
+        else state.counts.other += 1;
+
+        if (info.kind === 'start') state.running = true;
+        if (info.kind === 'continue') state.running = true;
+        if (info.kind === 'stop') state.running = false;
+        if (info.kind === 'spp') {
+            const spp = decodeSpp(data);
+            if (spp) state.lastSpp = spp;
+        }
+        if (info.kind === 'clock') {
+            if (state.lastTs) {
+                const dt = ts - state.lastTs;
+                if (dt > 1 && dt < 400) {
+                    state.clockTimes.push(dt);
+                    if (state.clockTimes.length > 12) state.clockTimes.shift();
+                    let sum = 0;
+                    for (let i = 0; i < state.clockTimes.length; i++) sum += state.clockTimes[i];
+                    state.clockPeriod = sum / state.clockTimes.length;
+                }
+            }
+        }
+
+        const collapseClock = $('collapse-clock').checked && info.kind === 'clock';
+        const collapseSense = $('collapse-sense').checked && info.kind === 'sense';
+        if (collapseClock) {
+            if (!state.clockCollapsed) {
+                finishCollapsed('senseCollapsed');
+                const body = hex + '     ' + info.label;
+                pushLine('clock', body, ts);
+                state.clockCollapsed = { lineIndex: state.lines.length - 1, n: 1, lastDt: 0, base: body };
+            } else {
+                const slot = state.clockCollapsed;
+                slot.n += 1;
+                slot.lastDt = state.lastTs ? (ts - state.lastTs) : 0;
+                state.lastTs = ts;
+                const last = state.lines[slot.lineIndex];
+                if (last) {
+                    last.body = slot.base + '  ×' + slot.n + '  last Δ' + slot.lastDt.toFixed(1) + 'ms';
+                    last.raw = last.prefix + last.body;
+                }
+                if (slot.n % 24 === 0) renderLog();
+            }
+        } else if (collapseSense) {
+            if (!state.senseCollapsed) {
+                finishCollapsed('clockCollapsed');
+                const body = hex + '     ' + info.label;
+                pushLine('sense', body, ts);
+                state.senseCollapsed = { lineIndex: state.lines.length - 1, n: 1, lastDt: 0, base: body };
+            } else {
+                const slot = state.senseCollapsed;
+                slot.n += 1;
+                slot.lastDt = state.lastTs ? (ts - state.lastTs) : 0;
+                state.lastTs = ts;
+                const last = state.lines[slot.lineIndex];
+                if (last) {
+                    last.body = slot.base + '  ×' + slot.n;
+                    last.raw = last.prefix + last.body;
+                }
+            }
+        } else {
+            finishCollapsed('clockCollapsed');
+            finishCollapsed('senseCollapsed');
+            pushLine(info.kind, hex + (hex.length < 12 ? ' '.repeat(12 - hex.length) : '  ') + info.label, ts);
+        }
+
+        updateLive();
+        renderCounts();
+        $('last-line').textContent = hex + '  ·  ' + info.label;
+        console.log('[ih-midi]', hex, info.label);
+    }
+
+    function updateLive() {
+        const bpm = bpmFromPeriod(state.clockPeriod);
+        const clockFresh = state.clockTimes.length && (nowMs() - state.lastTs) < 400;
+        $('clock-dot').classList.toggle('live', !!clockFresh);
+        $('clock-lab').textContent = clockFresh ? 'Clock heard' : (state.counts.clock ? 'Clock stale' : 'Clock —');
+        const bpmEl = $('bpm-badge');
+        bpmEl.textContent = bpm ? ('BPM ' + bpm.toFixed(1)) : 'BPM —';
+        bpmEl.className = 'badge ' + (bpm ? 'on' : 'off');
+        const sppEl = $('spp-badge');
+        if (state.lastSpp) {
+            sppEl.textContent = 'SPP ' + state.lastSpp.beats + ' · ' + state.lastSpp.guess;
+            sppEl.className = 'badge on';
+        } else {
+            sppEl.textContent = state.counts.spp ? 'SPP heard' : 'SPP —';
+            sppEl.className = 'badge ' + (state.counts.spp ? 'on' : 'off');
+        }
+        const mtcEl = $('mtc-badge');
+        if (state.lastMtc) {
+            mtcEl.textContent = 'MTC ' + state.lastMtc;
+            mtcEl.className = 'badge on';
+        } else {
+            mtcEl.textContent = (state.counts.mtc || state.counts.sysex) ? 'MTC heard' : 'MTC —';
+            mtcEl.className = 'badge ' + ((state.counts.mtc || state.counts.sysex) ? 'on' : 'off');
+        }
+        const run = $('run-badge');
+        run.textContent = state.running ? 'Running' : 'Stopped';
+        run.className = 'badge ' + (state.running ? 'on' : 'off');
+    }
+
+    function listPorts() {
+        const sel = $('port-select');
+        const access = state.access;
+        sel.innerHTML = '';
+        if (!access) {
+            sel.disabled = true;
+            sel.innerHTML = '<option value="">Enable Web MIDI first</option>';
+            return;
+        }
+        const ports = Array.from(access.inputs.values());
+        if (!ports.length) {
+            sel.disabled = true;
+            sel.innerHTML = '<option value="">No MIDI inputs</option>';
+            $('port-hint').textContent = 'No inputs. Is loopMIDI running? Restart Chrome after creating the port.';
+            return;
+        }
+        sel.disabled = false;
+        const blank = document.createElement('option');
+        blank.value = '';
+        blank.textContent = 'Select input…';
+        sel.appendChild(blank);
+        ports.forEach(function (p) {
+            const o = document.createElement('option');
+            o.value = p.id;
+            o.textContent = (p.name || 'MIDI') + (p.manufacturer ? ' · ' + p.manufacturer : '');
+            sel.appendChild(o);
+        });
+        const prefer = ports.find(function (p) {
+            return /idle|hanz|chase|loopmidi|loop midi/i.test(p.name || '');
+        }) || ports[0];
+        if (prefer) {
+            sel.value = prefer.id;
+            listenTo(prefer.id);
+        }
+        $('port-hint').textContent = ports.length + ' input' + (ports.length === 1 ? '' : 's') + '. Pick the port the DAW Send To.';
+    }
+
+    function detachAll() {
+        if (!state.access) return;
+        state.access.inputs.forEach(function (p) { p.onmidimessage = null; });
+    }
+
+    function listenTo(id) {
+        detachAll();
+        state.portId = id || '';
+        if (!id || !state.access) return;
+        const port = state.access.inputs.get(id);
+        if (!port) return;
+        port.onmidimessage = function (ev) {
+            const data = ev.data ? Array.from(ev.data) : [];
+            logMessage(data, ev.timeStamp || nowMs());
+        };
+        pushLine('mark', '— listening on ' + (port.name || id) + ' —', nowMs());
+        $('port-hint').textContent = 'Listening on ' + (port.name || id) + '. Bytes are as Web MIDI delivered them (browser usually expands running status).';
+    }
+
+    function setAccessBadges() {
+        const ok = !!state.access;
+        $('access-badge').textContent = ok ? 'MIDI on' : 'MIDI off';
+        $('access-badge').className = 'badge ' + (ok ? 'on' : 'off');
+        $('sysex-badge').textContent = state.sysex ? 'Sysex on' : 'Sysex off';
+        $('sysex-badge').className = 'badge ' + (state.sysex ? 'on' : 'warn');
+        $('enable-btn').textContent = ok ? 'MIDI enabled' : 'Enable Web MIDI';
+    }
+
+    async function requestAccess() {
+        if (!navigator.requestMIDIAccess) {
+            $('access-badge').textContent = 'No Web MIDI';
+            $('access-badge').className = 'badge warn';
+            $('port-hint').textContent = 'This browser has no Web MIDI. Open this file in Chrome or Edge.';
+            return;
+        }
+        try {
+            state.access = await navigator.requestMIDIAccess({ sysex: true });
+            state.sysex = true;
+        } catch (e1) {
+            try {
+                state.access = await navigator.requestMIDIAccess({ sysex: false });
+                state.sysex = false;
+                pushLine('mark', '— sysex denied; MTC full dump may be missing. Quarter-frame MTC still works. —', nowMs());
+            } catch (e2) {
+                $('access-badge').textContent = 'Denied';
+                $('access-badge').className = 'badge warn';
+                $('port-hint').textContent = 'Web MIDI denied. Allow MIDI for this page, then click Enable again.';
+                console.warn('[ih-midi] requestMIDIAccess failed', e1, e2);
+                return;
+            }
+        }
+        state.access.onstatechange = function () { listPorts(); };
+        setAccessBadges();
+        listPorts();
+    }
+
+    function headerText() {
+        const port = state.access && state.portId ? state.access.inputs.get(state.portId) : null;
+        return [
+            '# Idle Hanz MIDI monitor  chase v2',
+            '# when: ' + new Date().toISOString(),
+            '# port: ' + (port ? (port.name || state.portId) : '(none)'),
+            '# sysex: ' + (state.sysex ? 'yes' : 'no'),
+            '# counts: start=' + state.counts.start +
+                ' stop=' + state.counts.stop +
+                ' continue=' + state.counts.continue +
+                ' clock=' + state.counts.clock +
+                ' spp=' + state.counts.spp +
+                ' mtc=' + state.counts.mtc +
+                ' sysex=' + state.counts.sysex,
+            '# last SPP: ' + (state.lastSpp ? ('beats=' + state.lastSpp.beats + ' ' + state.lastSpp.guess) : 'none'),
+            '# last MTC: ' + (state.lastMtc || 'none'),
+            '# last clock BPM: ' + (bpmFromPeriod(state.clockPeriod) ? bpmFromPeriod(state.clockPeriod).toFixed(2) : 'none'),
+            '# bytes as delivered by Web MIDI (running status usually already expanded)',
+            ''
+        ].join('\n');
+    }
+
+    function logText() {
+        return headerText() + state.lines.map(function (ln) { return ln.raw; }).join('\n') + '\n';
+    }
+
+    window.enableMidi = function () { requestAccess(); };
+
+    window.onPortChange = function () {
+        listenTo($('port-select').value);
+    };
+
+    window.mark = function (label) {
+        finishCollapsed('clockCollapsed');
+        finishCollapsed('senseCollapsed');
+        state.counts.mark += 1;
+        pushLine('mark', '████ MARK  ' + label + ' ████', nowMs());
+        renderCounts();
+    };
+
+    window.copyLog = async function () {
+        const text = logText();
+        try {
+            await navigator.clipboard.writeText(text);
+            $('port-hint').textContent = 'Log copied. Paste it into the chase chat.';
+        } catch (e) {
+            window.prompt('Copy this log:', text);
+        }
+    };
+
+    window.downloadLog = function () {
+        const blob = new Blob([logText()], { type: 'text/plain' });
+        const a = document.createElement('a');
+        const d = new Date();
+        const pad = function (n) { return String(n).padStart(2, '0'); };
+        a.href = URL.createObjectURL(blob);
+        a.download = 'ih-midi-log-' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()) + '.txt';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    };
+
+    window.clearLog = function () {
+        state.lines = [];
+        state.t0 = 0;
+        state.lastTs = 0;
+        state.clockCollapsed = null;
+        state.senseCollapsed = null;
+        state.clockTimes = [];
+        Object.keys(state.counts).forEach(function (k) { state.counts[k] = 0; });
+        renderLog();
+        renderCounts();
+        pushLine('mark', '— log cleared —', nowMs());
+    };
+
+    (function initBrowser() {
+        const ua = navigator.userAgent;
+        const ok = /Chrome|Edg|Chromium/i.test(ua) && !/Firefox|OPR/i.test(ua) || (navigator.userAgentData && navigator.userAgentData.brands && navigator.userAgentData.brands.some(function (b) {
+            return /Chromium|Google Chrome|Microsoft Edge/i.test(b.brand);
+        }));
+        const hasApi = !!navigator.requestMIDIAccess;
+        const badge = $('browser-badge');
+        if (hasApi) {
+            badge.textContent = 'Web MIDI yes';
+            badge.className = 'badge on';
+        } else {
+            badge.textContent = 'Need Chrome/Edge';
+            badge.className = 'badge warn';
+            $('port-hint').textContent = 'Open this file in Chrome or Edge. Firefox has no Web MIDI.';
+        }
+        renderLog();
+        renderCounts();
+        setInterval(updateLive, 400);
+    })();
+})();
+</script>
+</body>
+</html>

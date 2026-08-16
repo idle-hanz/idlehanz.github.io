@@ -207,12 +207,14 @@ H.resolveCompareCell = function (song) {
       return false;
     }
     if (!H.versionsShareLiveGrid(H.state.chords, cell.chords)) {
-      H.setSyncStatus(
-        'Can’t arm “' +
+      // Extended / edited takes have a different grid — jump now so the
+      // chip still switches and the time strip shows that take.
+      return H.jumpToVersionNow(cellId, {
+        label:
+          'Jumped to “' +
           (cell.name || 'take') +
-          '” live · different length · Shift+click to jump now'
-      );
-      return false;
+          '” · different length, so this pass starts now',
+      });
     }
     H.state.armedVersionId = cellId;
     H.renderVersionBar();
@@ -256,14 +258,21 @@ H.resolveCompareCell = function (song) {
     H.S().saveSong(song, 'landscape');
     H.applySessionChords(cell.chords, {
       title: cell.name || 'Cell',
-      cellId: cell.id,
+      cellId: cell.id || id,
       packId: cell.packId,
+      familyId: cell.familyId,
+      versionIndex: cell.versionIndex,
+      fromVersionIndex: cell.fromVersionIndex,
+      fromKind: cell.fromKind,
+      fromCellId: cell.fromCellId,
       tonic: song.key && song.key.tonic,
       mode: song.key && song.key.mode,
       bpm: song.bpm,
       focusIndex: 0,
       liveSwap: true,
     });
+    H.state.cellId = cell.id || id;
+    if (H.rememberCellLineage) H.rememberCellLineage(cell);
     H.state.nameLocked = true;
     if (H._transportMeta) H._transportMeta.fromIndex = 0;
     const out = H.state.chords.map(function (c) {
@@ -304,6 +313,25 @@ H.resolveCompareCell = function (song) {
     return out;
   }
 
+  /** Switch and, if the loop is running, restart this take from the top. */
+  H.jumpToVersionNow = function (cellId, opts) {
+    opts = opts || {};
+    const live = H.isLiveLoop
+      ? H.isLiveLoop()
+      : H.A() && H.A().isPlaying && H.A().isPlaying();
+    if (!H.switchToCell(cellId, { silent: !!opts.silent })) return false;
+    if (live && H.playSeq) {
+      H._loopLive = !!H.state.loop;
+      H.playSeq({
+        force: true,
+        fromIndex: 0,
+        loop: !!H.state.loop,
+        label: opts.label || null,
+      });
+    }
+    return true;
+  };
+
   /**
    * Switch Landscape editor to another session cell (saves current first).
    */
@@ -312,6 +340,10 @@ H.resolveCompareCell = function (song) {
     if (!H.S() || !cellId) return false;
     // Persist what you're leaving so variants don't lose edits
     // skipPush: after delete, current cellId may already be gone
+    if (H._sessionPushTimer) {
+      clearTimeout(H._sessionPushTimer);
+      H._sessionPushTimer = null;
+    }
     if (!opts.skipPush && H.state.chords.length && H.state.cellId) {
       H.pushToSharedSession('landscape');
     }
@@ -321,8 +353,9 @@ H.resolveCompareCell = function (song) {
       return false;
     }
     const cell = song.cells[cellId];
+    if (!cell.id) cell.id = cellId;
     song.focus = {
-      cellId,
+      cellId: cellId,
       sectionId: song.focus && song.focus.sectionId ? song.focus.sectionId : null,
       chordIndex: 0,
     };
@@ -336,13 +369,20 @@ H.resolveCompareCell = function (song) {
     }
     H.applySessionChords(cell.chords || [], {
       title: cell.name || 'Cell',
-      cellId: cell.id,
+      cellId: cellId,
       packId: cell.packId,
+      familyId: cell.familyId,
+      versionIndex: cell.versionIndex,
+      fromVersionIndex: cell.fromVersionIndex,
+      fromKind: cell.fromKind,
+      fromCellId: cell.fromCellId,
       tonic: song.key && song.key.tonic,
       mode: song.key && song.key.mode,
       bpm: song.bpm,
       focusIndex: 0,
     });
+    H.state.cellId = cellId;
+    H.rememberCellLineage(cell);
     H.state.nameLocked = true;
     const tog = H.$('#tog-alt');
     if (tog && parentId && parentId !== cellId) {
@@ -390,6 +430,7 @@ H.resolveCompareCell = function (song) {
   H.cellPreviewLabel = function (cell) {
     if (!cell || !cell.chords || !cell.chords.length) return 'empty';
     const names = cell.chords.slice(0, 4).map((c) => {
+      if (!c) return '?';
       if (c.name) return c.name;
       if (c.custom && c.notes && H.S() && H.S().customChordLabel) {
         return H.S().customChordLabel(c.root, c.notes);
@@ -421,20 +462,47 @@ H.resolveCompareCell = function (song) {
       if (fold) fold.hidden = !!on;
       host.hidden = !!on;
     };
-    const song = H.S() && H.S().loadSong ? H.S().loadSong() : null;
+    let song = null;
+    try {
+      song = H.S() && H.S().loadSong ? H.S().loadSong() : null;
+    } catch (err) {
+      console.error('version bar: loadSong failed', err);
+    }
     const cells = (song && song.cells) || {};
     const cellIds = Object.keys(cells);
+    const allCells = cellIds
+      .map(function (id) {
+        const c = cells[id];
+        if (c && !c.id) c.id = id;
+        return c;
+      })
+      .filter(Boolean);
     const cur = H.state.cellId && cells[H.state.cellId] ? cells[H.state.cellId] : null;
-    const family =
-      song && cur && cur.familyId && H.S().siblingsOfCell
-        ? H.S().siblingsOfCell(song, H.state.cellId)
-        : cur
-          ? [cur]
-          : [];
+    let family = [];
+    try {
+      if (song && H.state.cellId && H.S().siblingsOfCell) {
+        family = H.S().siblingsOfCell(song, H.state.cellId) || [];
+      } else if (song && cur && cur.familyId && H.S().familyVersions) {
+        family = H.S().familyVersions(song, cur.familyId) || [];
+      }
+    } catch (err) {
+      console.error('version bar: siblings failed', err);
+      family = [];
+    }
+    if (family.length <= 1 && allCells.length > 1) {
+      family = allCells.slice().sort(function (a, b) {
+        return (a.versionIndex || 0) - (b.versionIndex || 0);
+      });
+    }
+    if (family.length <= 1 && cur && family[0] !== cur) {
+      family = cur ? [cur] : family;
+    }
     const hasFamily = family.length > 1;
     const hasManyCells = cellIds.length > 1;
 
-    if (!cur && !H.state.chords.length && !hasManyCells) {
+    // Keep Versions open whenever there is a path or any saved take.
+    // Hiding the fold after a failed lookup looked like "the chips vanished."
+    if (!cur && !H.state.chords.length && !hasManyCells && !allCells.length) {
       hideFold(true);
       host.innerHTML = '';
       return;
@@ -459,56 +527,61 @@ H.resolveCompareCell = function (song) {
             '</span>'
           : 'Loop + click a chip = next pass · Alt-click = blue') +
       '</div>';
-    if (hasFamily || cur) {
+    if (hasFamily || cur || family.length) {
       const famName =
         song && cur && cur.familyId && song.families && song.families[cur.familyId]
           ? song.families[cur.familyId].name
           : (cur && cur.name ? cur.name.replace(/\s*v\d+\s*$/i, '') : '') || 'Theme';
-      const chips = hasFamily ? family : cur ? [cur] : [];
+      const chips = family.length ? family : cur ? [cur] : [];
       html +=
         '<div class="version-chips" id="version-chips" data-fam="' +
         H.escapeAttr(famName) +
         '">';
       chips.forEach((c) => {
-        const active = c.id === H.state.cellId;
-        // Only mark blue when user explicitly set compare (never auto-v1)
-        const isCompare = !active && H.state.compareCellId === c.id;
-        const isArmed = !active && H.state.armedVersionId === c.id;
-        const vi = c.versionIndex != null ? c.versionIndex : '?';
-        const label = c.name || 'v' + vi;
-        html +=
-          '<button type="button" class="ver-chip' +
-          (active ? ' active' : '') +
-          (isCompare ? ' compare' : '') +
-          (isArmed ? ' armed' : '') +
-          '" data-cell="' +
-          H.escapeAttr(c.id) +
-          '" title="' +
-          H.escapeAttr(
-            label +
-              ' · ' +
-              H.cellPreviewLabel(c) +
-              (active
-                ? ' (editing)'
-                : isArmed
-                  ? ' — next loop · click again to disarm'
-                  : isCompare
-                    ? ' — blue compare (Alt-click again to clear)'
-                    : ' — click edit · while looping, click to play next · Alt-click = blue · × delete')
-          ) +
-          '">' +
-          '<span class="ver-n">v' +
-          vi +
-          '</span>' +
-          H.escapeHtml(H.shortVersionTitle(label, vi, c)) +
-          '<span class="ver-preview">' +
-          H.escapeHtml(H.cellPreviewLabel(c)) +
-          (isArmed ? ' · next loop' : isCompare ? ' · blue' : '') +
-          '</span>' +
-          '<span class="ver-x" data-del="' +
-          H.escapeAttr(c.id) +
-          '" title="Delete this version" role="button" aria-label="Delete">×</span>' +
-          '</button>';
+        if (!c || !c.id) return;
+        try {
+          const active = c.id === H.state.cellId;
+          // Only mark blue when user explicitly set compare (never auto-v1)
+          const isCompare = !active && H.state.compareCellId === c.id;
+          const isArmed = !active && H.state.armedVersionId === c.id;
+          const vi = c.versionIndex != null ? c.versionIndex : '?';
+          const label = c.name || 'v' + vi;
+          html +=
+            '<button type="button" class="ver-chip' +
+            (active ? ' active' : '') +
+            (isCompare ? ' compare' : '') +
+            (isArmed ? ' armed' : '') +
+            '" data-cell="' +
+            H.escapeAttr(c.id) +
+            '" title="' +
+            H.escapeAttr(
+              label +
+                ' · ' +
+                H.cellPreviewLabel(c) +
+                (active
+                  ? ' (editing)'
+                  : isArmed
+                    ? ' — next loop · click again to disarm'
+                    : isCompare
+                      ? ' — blue compare (Alt-click again to clear)'
+                      : ' — click edit · while looping, click to play next · Alt-click = blue · × delete')
+            ) +
+            '">' +
+            '<span class="ver-n">v' +
+            vi +
+            '</span>' +
+            H.escapeHtml(H.shortVersionTitle(label, vi, c)) +
+            '<span class="ver-preview">' +
+            H.escapeHtml(H.cellPreviewLabel(c)) +
+            (isArmed ? ' · next loop' : isCompare ? ' · blue' : '') +
+            '</span>' +
+            '<span class="ver-x" data-del="' +
+            H.escapeAttr(c.id) +
+            '" title="Delete this version" role="button" aria-label="Delete">×</span>' +
+            '</button>';
+        } catch (err) {
+          console.error('version chip failed', c && c.id, err);
+        }
       });
       html += '</div>';
     } else {
@@ -889,12 +962,16 @@ H.resolveCompareCell = function (song) {
       alert('Session module missing.');
       return;
     }
+    if (H._sessionPushTimer) {
+      clearTimeout(H._sessionPushTimer);
+      H._sessionPushTimer = null;
+    }
     H.pushToSharedSession('landscape');
     let song = H.S().loadSong();
     if (!song || !H.state.cellId) return;
 
     // Start from clean session chords
-    let newChords = H.state.chords.map((c) => H.S().fromLandscapeChord(c));
+    let newChords = H.state.chords.map((c) => H.S().fromLandscapeChord(c)).filter(Boolean);
     let changed = 0;
     const C = H.C();
     const toLand = function (arr) {
@@ -1038,6 +1115,11 @@ H.resolveCompareCell = function (song) {
     const parentId = H.state.cellId;
     H.state.compareCellId = parentId;
     H.state.lastCompareCellId = parentId;
+    song.focus = {
+      cellId: newId,
+      sectionId: song.focus && song.focus.sectionId ? song.focus.sectionId : null,
+      chordIndex: 0,
+    };
     H.S().saveSong(song, 'landscape');
 
     // Switch to the new version for editing
@@ -1046,10 +1128,17 @@ H.resolveCompareCell = function (song) {
       title: cell.name,
       cellId: newId,
       packId: cell.packId,
+      familyId: cell.familyId,
+      versionIndex: cell.versionIndex,
+      fromVersionIndex: cell.fromVersionIndex,
+      fromKind: cell.fromKind,
+      fromCellId: cell.fromCellId,
       tonic: song.key && song.key.tonic,
       mode: song.key && song.key.mode,
       bpm: song.bpm,
     });
+    H.state.cellId = newId;
+    H.rememberCellLineage(cell);
     H.state.nameLocked = true;
     // Ensure blue overlay visible after fork
     const tog = H.$('#tog-alt');

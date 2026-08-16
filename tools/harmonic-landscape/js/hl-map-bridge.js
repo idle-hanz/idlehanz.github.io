@@ -175,6 +175,113 @@ H.chordFromChaseSeat = function (seat, key) {
   };
 
   /**
+   * Extra score for a mid-path join: how well target *passes* prev → target → next.
+   * Not “ways home” — write-home tonic / V-of-home lose unless next really is home.
+   */
+  H.scoreGapJoin = function (prev, target, next, opts) {
+    opts = opts || {};
+    if (!prev || !target || !next) return 0;
+    const music = H.M();
+    const tonic =
+      opts.tonic != null
+        ? opts.tonic
+        : H.state && H.state.tonic != null
+          ? H.state.tonic
+          : 0;
+    const modeKey = opts.modeKey || (H.state && H.state.mode) || 'major';
+    const pcOf = (n) => ((Number(n) % 12) + 12) % 12;
+    const pcDist = (a, b) => {
+      const d = Math.abs(pcOf(a) - pcOf(b));
+      return d > 6 ? 12 - d : d;
+    };
+    const tonesOf = (c) => {
+      if (!c) return [];
+      const raw =
+        c.notes && c.notes.length
+          ? c.notes
+          : (c.intervals || []).map((iv) => pcOf(c.root) + iv);
+      return raw.map(pcOf);
+    };
+
+    let bonus = 0;
+    const setA = new Set(tonesOf(prev));
+    const setB = new Set(tonesOf(next));
+    let commonA = 0;
+    let commonB = 0;
+    let both = 0;
+    tonesOf(target).forEach((p) => {
+      const inA = setA.has(p);
+      const inB = setB.has(p);
+      if (inA) commonA += 1;
+      if (inB) commonB += 1;
+      if (inA && inB) both += 1;
+    });
+    bonus += Math.min(2, commonA) * 0.055;
+    bonus += Math.min(2, commonB) * 0.055;
+    bonus += both * 0.08;
+
+    // Root sits on the shortest arc from prev to next (true passing root)
+    let span = pcOf(next.root) - pcOf(prev.root);
+    if (span > 6) span -= 12;
+    if (span < -6) span += 12;
+    if (span !== 0) {
+      const step = span > 0 ? 1 : -1;
+      let onArc = false;
+      for (
+        let p = pcOf(prev.root + step);
+        p !== pcOf(next.root);
+        p = pcOf(p + step)
+      ) {
+        if (p === pcOf(target.root)) {
+          onArc = true;
+          break;
+        }
+      }
+      if (onArc) bonus += 0.14;
+    }
+
+    const leapIn = pcDist(prev.root, target.root);
+    const leapOut = pcDist(target.root, next.root);
+    if (leapIn <= 2 && leapOut <= 2) bonus += 0.12;
+    if (leapOut === 1) bonus += 0.05;
+
+    // Applied dominant of the *destination*, not of write home
+    const resolvesToNext = pcOf(target.root + 5) === pcOf(next.root);
+    if (resolvesToNext) {
+      bonus += /dom/.test(String(target.quality || '')) ? 0.22 : 0.16;
+    }
+    if (/dim/.test(String(target.quality || '')) && (leapOut === 1 || leapIn === 1)) {
+      bonus += 0.1;
+    }
+
+    const isMin =
+      music.MODES && music.MODES[modeKey]
+        ? music.MODES[modeKey].romanBase === 'minor'
+        : /min/.test(String(modeKey));
+    const homeQ = isMin ? 'min' : 'maj';
+    const tPc = pcOf(tonic);
+    const fam = music.qualityFamily
+      ? music.qualityFamily(target.quality)
+      : target.quality;
+    const homeFam = music.qualityFamily ? music.qualityFamily(homeQ) : homeQ;
+    const nextIsHome =
+      pcOf(next.root) === tPc &&
+      (music.qualityFamily
+        ? music.qualityFamily(next.quality) === homeFam
+        : true);
+
+    // Going home in the middle of a→b is a loop-join, not a pass
+    if (pcOf(target.root) === tPc && fam === homeFam && !nextIsHome) {
+      bonus -= 0.4;
+    }
+    // V / V7 of write-home when the gap does not land on home
+    if (pcOf(target.root + 5) === tPc && !nextIsHome && !resolvesToNext) {
+      if (fam === 'dom' || fam === 'maj') bonus -= 0.16;
+    }
+    return bonus;
+  };
+
+  /**
    * How well target sits between prev and next.
    * Blend: functional degree motion (primary) + voice-leading + cadence cues.
    * mode: middle | building | loop | start — changes weights for last-chord cases.
@@ -263,11 +370,16 @@ H.chordFromChaseSeat = function (seat, key) {
       join(prev, target, prev ? 0.35 : 0);
       join(target, next, 1.0);
     } else {
-      // Middle: sandwich fit + light “from this step’s degree” so in-key ranking
-      // still reflects common moves (e.g. replacing iii, vi is stronger than vii°)
+      // Middle: prev → ? → next. Rank as a join through that gap, not as
+      // “ways home” from the chair being replaced (origin used to pull tonic / V).
       join(prev, target, 0.5);
       join(target, next, 0.5);
-      if (opts.origin) join(opts.origin, target, 0.45);
+      if (H.scoreGapJoin) {
+        score += H.scoreGapJoin(prev, target, next, {
+          tonic: tonic,
+          modeKey: modeKey,
+        });
+      }
     }
 
     const reg = target.region || '';
@@ -365,6 +477,9 @@ H.chordFromChaseSeat = function (seat, key) {
       const k = ch.root + ':' + ch.quality;
       if (seen.has(k)) return;
       if (chord && ch.root === chord.root && ch.quality === chord.quality) return;
+      // Neighbours are already the gap ends — not drop targets
+      if (prev && ch.root === prev.root && ch.quality === prev.quality) return;
+      if (next && ch.root === next.root && ch.quality === next.quality) return;
       seen.add(k);
       const music = H.M();
       ch = music.cloneChord
@@ -383,8 +498,9 @@ H.chordFromChaseSeat = function (seat, key) {
         home: nbr.home,
         tonic: diskKey.tonic,
         modeKey: diskKey.mode,
-        // Chord being replaced — used as “from” when prev is missing (open end / solo)
-        origin: chord,
+        // Origin only for open-end / first-step ranking. Mid-path seats are
+        // joins through prev → ? → next, not “what follows this chair / home.”
+        origin: aimMode === 'middle' ? null : chord,
       });
       list.push(
         Object.assign(
@@ -453,9 +569,14 @@ H.chordFromChaseSeat = function (seat, key) {
       if (seat && H.map._activeDisk) {
         const disk = H.map._activeDisk();
         const rad = seat.role === 'tonic' ? disk.R * 0.42 : disk.R * 0.72;
+        const ang = seat.angle + (disk.rot || 0);
+        if (H.map._diskSeatXY) {
+          const p = H.map._diskSeatXY(disk, ang, rad);
+          return { _seatX: p.x, _seatY: p.y };
+        }
         return {
-          _seatX: (disk.cx || 0) + Math.cos(seat.angle) * rad,
-          _seatY: (disk.cy || 0) + Math.sin(seat.angle) * rad * 0.88,
+          _seatX: (disk.cx || 0) + Math.cos(ang) * rad,
+          _seatY: (disk.cy || 0) + Math.sin(ang) * rad * 0.88,
         };
       }
       return {};
@@ -844,9 +965,9 @@ H.chordFromChaseSeat = function (seat, key) {
   };
 
   /**
-   * Pick a bridge chord between a → b.
-   * Scores diatonic (and light colour) candidates as a→?→b joins — root position,
-   * no auto-inversion (map seats are functional picks the user can then drag).
+   * Pick a passing chord for a → ? → b.
+   * Scale seats (default quality) + V of b + passing dim. Write-home tonic is
+   * never the automatic plant — that is a ways-home join, not a gap fill.
    */
   H.bridgeChordBetween = function (a, b, duration) {
     const bridgeKey = H.keyOf(a);
@@ -854,7 +975,19 @@ H.chordFromChaseSeat = function (seat, key) {
     const mid = H.circularBlendRoot(a.root, b.root, 0.5);
     const cands = [];
     const seen = new Set();
-    const pushCand = (root, quality, roman, region) => {
+    const isMin =
+      music.MODES && music.MODES[bridgeKey.mode]
+        ? music.MODES[bridgeKey.mode].romanBase === 'minor'
+        : /min/.test(String(bridgeKey.mode || ''));
+    const homeQ = isMin ? 'min' : 'maj';
+    const homeFam = music.qualityFamily ? music.qualityFamily(homeQ) : homeQ;
+    const isHomeTonic = (root, quality) => {
+      if (((root % 12) + 12) % 12 !== ((bridgeKey.tonic % 12) + 12) % 12) return false;
+      const fam = music.qualityFamily ? music.qualityFamily(quality) : quality;
+      return fam === homeFam;
+    };
+    const pushCand = (root, quality, roman, region, extra) => {
+      extra = extra || {};
       const k = root + ':' + quality;
       if (seen.has(k)) return;
       if (a && root === a.root && quality === a.quality) return;
@@ -863,55 +996,82 @@ H.chordFromChaseSeat = function (seat, key) {
       let ch = music.makeChord(root, quality, {
         duration: duration,
         region: region || 'diatonic',
-        tag: 'insert',
+        tag: extra.tag || 'insert',
         roman: roman || '',
       });
-      // Always root position for edge inserts
-      if (H.C().withBass) ch = H.C().withBass(ch, ch.root);
+      if (H.C() && H.C().withBass) ch = H.C().withBass(ch, ch.root);
       else ch.bassPc = ch.root;
       H.stampKey(ch, bridgeKey);
       const score = H.scoreAimContext
-        ? H.scoreAimContext(a, ch, b, { mode: 'middle' })
+        ? H.scoreAimContext(a, ch, b, {
+            mode: 'middle',
+            tonic: bridgeKey.tonic,
+            modeKey: bridgeKey.mode,
+          })
         : 0.5 - H.pcDist(root, mid) * 0.05;
-      // Prefer seats near circular mid between a and b
-      const midBias = 0.08 * (3 - Math.min(3, H.pcDist(root, mid)));
-      cands.push({ ch: ch, score: score + midBias });
+      cands.push({
+        ch: ch,
+        score: score,
+        home: isHomeTonic(root, quality),
+      });
     };
 
     if (music.circularHarmonicScale) {
       music.circularHarmonicScale(bridgeKey.tonic, bridgeKey.mode).forEach((s) => {
-        let q = (s.qualities && s.qualities[0]) || 'maj';
-        if (s.role === 'dom') q = 'dom7';
+        const q = music.seatDefaultQuality
+          ? music.seatDefaultQuality(s, bridgeKey.mode)
+          : (s.qualities && s.qualities[0]) || 'maj';
         pushCand(s.root, q, s.roman || '', 'diatonic');
       });
     }
-    // A couple of common bridges if scale is thin
-    [
-      { d: 5, q: 'maj', roman: 'IV', region: 'diatonic' },
-      { d: 7, q: 'dom7', roman: 'V7', region: 'diatonic' },
-      { d: 2, q: bridgeKey.mode === 'major' ? 'min' : 'dim', roman: 'ii', region: 'diatonic' },
-    ].forEach((s) => {
-      pushCand((bridgeKey.tonic + s.d) % 12, s.q, s.roman, s.region);
-    });
+    // Applied dominant of b — join into the destination, not into write home
+    if (b && b.root != null) {
+      pushCand((b.root + 7) % 12, 'dom7', 'V7/' + (b.name || 'next'), 'secondary', {
+        tag: 'pass',
+      });
+    }
+    // Chromatic passing dim on the shortest root arc a → b
+    if (a && b && a.root != null && b.root != null && H.pcNorm(a.root) !== H.pcNorm(b.root)) {
+      let span = H.pcNorm(b.root) - H.pcNorm(a.root);
+      if (span > 6) span -= 12;
+      if (span < -6) span += 12;
+      const step = span > 0 ? 1 : -1;
+      const passRoot = H.pcNorm(a.root + step);
+      if (passRoot !== H.pcNorm(b.root)) {
+        pushCand(passRoot, 'dim', '°→' + (b.name || ''), 'chromatic', { tag: 'pass' });
+      }
+    }
 
-    cands.sort((x, y) => y.score - x.score);
-    if (cands.length) {
-      const best = cands[0].ch;
+    // Never auto-plant write-home tonic (user can still drag there)
+    const passable = cands.filter((x) => !x.home);
+    const pool = passable.length ? passable : cands;
+    pool.sort((x, y) => y.score - x.score);
+    if (pool.length) {
+      let pick = pool[0];
+      // Prefer a scale-seat plant when it is close — colour (V7/b, passing °)
+      // can still win if it is clearly the better join
+      const onWheel = pool.filter((x) => x.ch && x.ch.region === 'diatonic');
+      if (onWheel.length && pick.ch.region !== 'diatonic') {
+        const sameRoot = onWheel.find((x) => x.ch.root === pick.ch.root);
+        if (sameRoot) pick = sameRoot;
+        else if (onWheel[0].score >= pick.score - 0.22) pick = onWheel[0];
+      }
+      const best = pick.ch;
       best.duration = duration;
-      best.tag = 'insert';
+      best.tag = best.tag || 'insert';
       return best;
     }
 
-    // Fallback: mid root diatonic triad
+    // Fallback: mid-root colour that is not the tonic
     let root = mid;
-    let quality = bridgeKey.mode === 'major' ? 'maj' : 'min';
-    let ch = music.makeChord(root, quality, {
+    if (isHomeTonic(root, homeQ)) root = H.pcNorm(root + 1);
+    let ch = music.makeChord(root, isMin ? 'maj' : 'min', {
       duration: duration,
       region: 'diatonic',
       tag: 'insert',
       roman: '→',
     });
-    if (H.C().withBass) ch = H.C().withBass(ch, ch.root);
+    if (H.C() && H.C().withBass) ch = H.C().withBass(ch, ch.root);
     return H.stampKey(ch, bridgeKey);
   }
 
@@ -1002,15 +1162,17 @@ H.chordFromChaseSeat = function (seat, key) {
     H.A().playChord({ chord: ch });
     const total = H.state.chords.reduce((s, c) => s + (c.duration || 0), 0);
     H.setSyncStatus(
-      'New step · ' +
+      'Passing ' +
         ch.name +
-        ' between ' +
+        ' · ' +
         a.name +
+        ' → ' +
+        ch.name +
         ' → ' +
         b.name +
         ' · ' +
         plan.insertDur +
-        'b · drag it onto a seat to change · total ' +
+        'b · drag a seat to change · empty space cancels · total ' +
         total +
         'b'
     );

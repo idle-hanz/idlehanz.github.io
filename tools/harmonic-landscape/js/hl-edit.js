@@ -410,6 +410,11 @@ H.smoothVoicings = function () {
     H.state.fromPackId = null;
     H.state.nameLocked = false;
     H.state.cellId = H.S() && H.S().newCellId ? H.S().newCellId('cell') : null;
+    H.state.familyId = null;
+    H.state.versionIndex = 1;
+    H.state.fromVersionIndex = null;
+    H.state.fromKind = null;
+    H.state.fromCellId = null;
     H.state.compareCellId = null;
     H.state.lastCompareCellId = null;
     H.state.armedVersionId = null;
@@ -450,6 +455,7 @@ H.smoothVoicings = function () {
       try {
         const song = H.S().loadSong && H.S().loadSong();
         if (song) {
+          song._okToShrink = true;
           song.cells = {};
           song.families = {};
           song.arrangement = [];

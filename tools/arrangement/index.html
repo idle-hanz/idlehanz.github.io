@@ -315,7 +315,7 @@
         </label>
         <span class="status" id="key-label">B minor</span>
         <button type="button" class="btn" id="btn-landscape">Landscape</button>
-        <button type="button" class="btn" id="btn-fretboard" title="Opens cell on Fretboard (max 8 chords)">Fretboard</button>
+        <button type="button" class="btn" id="btn-fretboard" title="Opens this cell on the Fretboard">Fretboard</button>
         <button type="button" class="btn" id="btn-save-song" title="Download full song package (.song.json)">Save song</button>
         <button type="button" class="btn" id="btn-load-song" title="Load .song.json package">Load song</button>
         <input type="file" id="song-file-input" accept=".json,application/json,text/json,*/*" hidden>
@@ -352,7 +352,7 @@
     <main>
       <aside class="col">
         <h2>Cells</h2>
-        <p class="hint">Rename · Edit in Landscape · 🎸 Fretboard (≤8) · Vary / Dup. Badge shows frettable vs long.</p>
+        <p class="hint">Rename · Edit in Landscape · 🎸 opens that cell on the Fretboard (same tab). Vary / Dup.</p>
         <div id="cell-list"></div>
         <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-top:0.5rem">
           <button type="button" class="btn primary" id="btn-new-cell">+ New cell</button>
@@ -460,13 +460,13 @@
     </footer>
   </div>
 
-  <script src="../ih-session.js?v=20260814j"></script>
+  <script src="../ih-session.js?v=20260816q"></script>
   <script src="../harmonic-landscape/js/music.js?v=20260814j"></script>
   <script src="../harmonic-landscape/js/compose.js?v=20260814j"></script>
   <script src="../harmonic-landscape/js/audio.js?v=20260814j"></script>
   <!-- Embedded packages: load under file:// without fetch (Chromium blocks local JSON fetch) -->
   <script src="the-speed-of-pain.song.js"></script>
   <script src="multi-key-cylinders.song.js"></script>
-  <script src="app.js?v=20260814j"></script>
+  <script src="app.js?v=20260815w"></script>
 </body>
 </html>

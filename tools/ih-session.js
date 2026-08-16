@@ -10,12 +10,122 @@
   const HASH_PREFIX = 'ih=';
 
   /**
-   * Fretboard progression hard cap (guitar_fretboard_app addSlot).
-   * Landscape / Arrangement must clip before handoff.
+   * Handoff clip for Landscape / Arrangement — not the Fretboard UI ceiling.
+   * Teleprompter v1 lifts the page cap; send-to-Landscape still windows to this size.
    */
   const FRETBOARD_MAX_CHORDS = 8;
   const SONG_PACKAGE_FORMAT = 'idlehanz-song-package';
   const SONG_PACKAGE_VERSION = 1;
+
+  const NOTE_NAMES_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const QUALITY_SHORT = {
+    maj: '',
+    min: 'm',
+    dom7: '7',
+    maj7: 'maj7',
+    min7: 'm7',
+    halfdim: 'm7b5',
+    dim: 'dim',
+    dim7: 'dim7',
+    minmaj7: 'm(maj7)',
+    aug: 'aug',
+    sus2: 'sus2',
+    sus4: 'sus4',
+    add9: 'add9',
+    maj9: 'maj9',
+    min9: 'm9',
+    '6th': '6',
+    min6: 'm6',
+    dom7b9: '7b9',
+    dom7s9: '7#9',
+    dom7s11: '7#11',
+    dom7b13: '7b13',
+    dom7alt: '7alt',
+  };
+
+  function emptyConductor() {
+    return {
+      ppq: 480,
+      tempos: [{ tick: 0, usPerQuarter: 500000, bpm: 120 }],
+      timeSigs: [{ tick: 0, num: 4, den: 4, clocks: 24, thirtySeconds: 8 }],
+    };
+  }
+
+  function emptyTeleprompter() {
+    return {
+      sourceName: '',
+      barOffset: 0,
+      followPlayhead: true,
+      clickEnabled: false,
+      loop: null,
+      chairs: [],
+      instrument: '',
+      midiPortName: '',
+      chaseOffsetSec: 0,
+    };
+  }
+
+  function normalizeConductor(raw) {
+    const base = emptyConductor();
+    if (!raw || typeof raw !== 'object') return base;
+    const ppq = Math.max(1, +(raw.ppq || base.ppq) || 480);
+    let tempos = Array.isArray(raw.tempos)
+      ? raw.tempos
+          .map((t) => {
+            const tick = Math.max(0, +(t.tick || 0) || 0);
+            let us = +(t.usPerQuarter || 0);
+            if (!us && t.bpm) us = Math.round(60000000 / Math.max(1, +t.bpm));
+            if (!us) us = 500000;
+            return { tick, usPerQuarter: us, bpm: Math.round(60000000 / us) };
+          })
+          .sort((a, b) => a.tick - b.tick)
+      : [];
+    if (!tempos.length) tempos = base.tempos.slice();
+    if (tempos[0].tick !== 0) {
+      tempos.unshift({
+        tick: 0,
+        usPerQuarter: tempos[0].usPerQuarter,
+        bpm: tempos[0].bpm,
+      });
+    }
+    let timeSigs = Array.isArray(raw.timeSigs)
+      ? raw.timeSigs
+          .map((s) => ({
+            tick: Math.max(0, +(s.tick || 0) || 0),
+            num: Math.max(1, +(s.num || 4) || 4),
+            den: Math.max(1, +(s.den || 4) || 4),
+            clocks: +(s.clocks || 24) || 24,
+            thirtySeconds: +(s.thirtySeconds || 8) || 8,
+          }))
+          .sort((a, b) => a.tick - b.tick)
+      : [];
+    if (!timeSigs.length) timeSigs = base.timeSigs.slice();
+    if (timeSigs[0].tick !== 0) {
+      timeSigs.unshift(Object.assign({}, timeSigs[0], { tick: 0 }));
+    }
+    return { ppq, tempos, timeSigs };
+  }
+
+  function normalizeTeleprompter(raw) {
+    const base = emptyTeleprompter();
+    if (!raw || typeof raw !== 'object') return base;
+    let loop = null;
+    if (raw.loop && raw.loop.a != null && raw.loop.b != null) {
+      loop = { a: raw.loop.a | 0, b: raw.loop.b | 0 };
+    }
+    const offset = +raw.chaseOffsetSec;
+    return {
+      sourceName: raw.sourceName || '',
+      barOffset: raw.barOffset | 0,
+      followPlayhead: raw.followPlayhead !== false,
+      clickEnabled: !!raw.clickEnabled,
+      loop,
+      chairs: Array.isArray(raw.chairs) ? raw.chairs : [],
+      instrument: raw.instrument === 'bass' || raw.instrument === 'guitar' ? raw.instrument : '',
+      midiPortName: raw.midiPortName ? String(raw.midiPortName) : '',
+      chaseOffsetSec: isFinite(offset) ? offset : 0,
+    };
+  }
 
   /** Landscape quality → fretboard chordTypes index */
   const QUALITY_TO_TYPE = {
@@ -40,6 +150,8 @@
     add9: 16,
     maj9: 19,
     min9: 20,
+    '6th': 13,
+    min6: 14,
   };
 
   const TYPE_TO_QUALITY = {
@@ -55,7 +167,8 @@
     9: 'aug',
     10: 'sus2',
     11: 'sus4',
-    13: 'dom7',
+    13: '6th',
+    14: 'min6',
     16: 'add9',
     19: 'maj9',
     20: 'min9',
@@ -105,23 +218,38 @@
       families: {},
       arrangement: [],
       focus: { cellId: null, sectionId: null, chordIndex: 0 },
+      teleprompter: emptyTeleprompter(),
     };
   }
 
   function ensureSongShape(song) {
     if (!song) return song;
-    if (!song.cells) song.cells = {};
-    if (!song.families) song.families = {};
-    if (!song.arrangement) song.arrangement = [];
-    if (!song.focus) song.focus = { cellId: null, sectionId: null, chordIndex: 0 };
+    try {
+    if (!song.cells || typeof song.cells !== 'object') song.cells = {};
+    if (!song.families || typeof song.families !== 'object') song.families = {};
+    if (!Array.isArray(song.arrangement)) song.arrangement = [];
+    if (!song.focus || typeof song.focus !== 'object') {
+      song.focus = { cellId: null, sectionId: null, chordIndex: 0 };
+    }
     // Migrate cells: familyId / versionIndex / locked lineage
     Object.keys(song.cells).forEach((id) => {
       const c = song.cells[id];
+      if (!c || typeof c !== 'object') {
+        delete song.cells[id];
+        return;
+      }
+      if (!c.id) c.id = id;
       if (c.familyId == null) c.familyId = null;
       if (c.versionIndex == null) c.versionIndex = 1;
-      inferLineageOnCell(song, c);
+      if (!Array.isArray(c.chords)) c.chords = [];
+      try {
+        inferLineageOnCell(song, c);
+      } catch (_) {
+        /* keep the cell even if lineage parse fails */
+      }
     });
     // Migrate sections: chain + seam + cycle exit (end / into)
+    song.arrangement = song.arrangement.filter((sec) => sec && typeof sec === 'object');
     song.arrangement.forEach((sec) => {
       if (!sec.chain || !sec.chain.length) {
         sec.chain = sec.cellId ? [sec.cellId] : [];
@@ -136,11 +264,27 @@
       // after all reps, once: bridge cell before seam / next section
       if (sec.intoCellId === undefined) sec.intoCellId = null;
     });
+    // Teleprompter lives on the song, not inside a Landscape cell.
+    try {
+      if (song.conductor) song.conductor = normalizeConductor(song.conductor);
+      song.teleprompter = normalizeTeleprompter(song.teleprompter);
+    } catch (_) {
+      if (!song.teleprompter) song.teleprompter = emptyTeleprompter();
+    }
+    try {
+      healFamilies(song);
+    } catch (_) {
+      /* chips can still scan cells by familyId */
+    }
+    } catch (_) {
+      /* never let a bad song blob take down Landscape */
+    }
     return song;
   }
 
   /**
-   * Clip a chord list for Fretboard (max 8).
+   * Window a long teleprompter row when sending TO Landscape (not when opening Fretboard).
+   * Landscape / Arrangement send the whole cell the other way.
    * opts.start: optional window start index (default 0).
    * returns { chords, truncated, total, start, max }
    */
@@ -172,19 +316,17 @@
     const from = (clip.start || 0) + 1;
     const to = (clip.start || 0) + clip.chords.length;
     return (
-      'Fretboard max ' +
-      clip.max +
-      ' chords · sent ' +
+      'Landscape cell window ' +
       from +
       '–' +
       to +
       ' of ' +
       clip.total +
-      ' (full song stays in Landscape / Arrangement)'
+      ' · full row stays on the Fretboard'
     );
   }
 
-  function loadSong() {
+  function readSongFromDisk() {
     try {
       const raw = localStorage.getItem(SESSION_KEY);
       if (!raw) return null;
@@ -194,6 +336,19 @@
     } catch (_) {
       return null;
     }
+  }
+
+  function loadSong() {
+    if (_memSong) {
+      try {
+        return ensureSongShape(_memSong);
+      } catch (_) {
+        /* fall through to disk */
+      }
+    }
+    const disk = readSongFromDisk();
+    if (disk) _memSong = disk;
+    return _memSong || disk || null;
   }
 
   function newFamilyId() {
@@ -397,7 +552,17 @@
       src.name = famName;
     }
 
-    const fam = song.families[familyId];
+    healFamilies(song);
+    let fam = song.families[familyId];
+    if (!fam) {
+      fam = {
+        id: familyId,
+        name: stripLineageFromName(src.name || 'Cell') || 'Cell',
+        versionIds: [sourceCellId],
+      };
+      song.families[familyId] = fam;
+      src.familyId = familyId;
+    }
     let maxV = 0;
     (fam.versionIds || []).forEach(function (id) {
       const c = song.cells[id];
@@ -439,20 +604,179 @@
     return newId;
   }
 
+  /**
+   * Rebuild family.versionIds from cells that still carry familyId.
+   * A missing families[id] used to make the version chips vanish even
+   * though the sibling cells were still in the song.
+   */
+  function healFamilies(song) {
+    if (!song || !song.cells) return song;
+    if (!song.families || typeof song.families !== 'object') song.families = {};
+    // Re-stamp familyId onto cells still listed on a family. Editing a take
+    // used to rewrite the cell without putting it back on versionIds / familyId.
+    Object.keys(song.families).forEach(function (fid) {
+      const fam = song.families[fid];
+      if (!fam || !fam.versionIds) return;
+      fam.versionIds.forEach(function (id) {
+        const c = song.cells[id];
+        if (!c) return;
+        if (!c.id) c.id = id;
+        if (!c.familyId) c.familyId = fid;
+      });
+    });
+    const byFam = {};
+    Object.keys(song.cells).forEach(function (id) {
+      const c = song.cells[id];
+      if (!c || !c.familyId) return;
+      if (!c.id) c.id = id;
+      if (!byFam[c.familyId]) byFam[c.familyId] = [];
+      byFam[c.familyId].push(c);
+    });
+    Object.keys(byFam).forEach(function (fid) {
+      const members = byFam[fid];
+      let fam = song.families[fid];
+      if (!fam || typeof fam !== 'object') {
+        const named =
+          members.find(function (c) {
+            return c.versionIndex === 1;
+          }) || members[0];
+        fam = {
+          id: fid,
+          name: stripLineageFromName((named && named.name) || 'Cell') || 'Cell',
+          versionIds: [],
+        };
+        song.families[fid] = fam;
+      }
+      const have = {};
+      const nextIds = [];
+      (fam.versionIds || []).forEach(function (id) {
+        if (song.cells[id] && song.cells[id].familyId === fid && !have[id]) {
+          have[id] = true;
+          nextIds.push(id);
+        }
+      });
+      members.forEach(function (c) {
+        if (!have[c.id]) {
+          have[c.id] = true;
+          nextIds.push(c.id);
+        }
+      });
+      fam.versionIds = nextIds;
+      if (!fam.name) {
+        fam.name = stripLineageFromName((members[0] && members[0].name) || 'Cell') || 'Cell';
+      }
+    });
+    Object.keys(song.families).forEach(function (fid) {
+      const fam = song.families[fid];
+      if (!fam || !fam.versionIds || !fam.versionIds.length) {
+        delete song.families[fid];
+      }
+    });
+    return song;
+  }
+
+  /**
+   * If this cell lost familyId but other takes still point at it (or it
+   * still points at a parent), put it back on that family so chips return.
+   */
+  function adoptOrphanCell(song, cell) {
+    if (!song || !cell || cell.familyId) return cell;
+    const cells = song.cells || {};
+    const kids = Object.keys(cells)
+      .map(function (id) {
+        return cells[id];
+      })
+      .filter(function (c) {
+        return c && c.id !== cell.id && c.fromCellId === cell.id && c.familyId;
+      });
+    if (kids.length) {
+      cell.familyId = kids[0].familyId;
+      if (cell.versionIndex == null) cell.versionIndex = 1;
+      healFamilies(song);
+      return cell;
+    }
+    const parent =
+      cell.fromCellId && cells[cell.fromCellId] ? cells[cell.fromCellId] : null;
+    if (parent && parent.familyId) {
+      cell.familyId = parent.familyId;
+      healFamilies(song);
+    }
+    return cell;
+  }
+
   function familyVersions(song, familyId) {
+    if (!song || !familyId) return [];
     ensureSongShape(song);
-    const fam = song.families[familyId];
-    if (!fam) return [];
-    return (fam.versionIds || [])
-      .map((id) => song.cells[id])
-      .filter(Boolean)
-      .sort((a, b) => (a.versionIndex || 0) - (b.versionIndex || 0));
+    const seen = {};
+    const list = [];
+    const add = function (c, fallbackId) {
+      if (!c) return;
+      if (!c.id && fallbackId) c.id = fallbackId;
+      if (!c.id || seen[c.id]) return;
+      seen[c.id] = true;
+      list.push(c);
+    };
+    const fam = song.families && song.families[familyId];
+    if (fam && fam.versionIds) {
+      fam.versionIds.forEach(function (id) {
+        add(song.cells[id], id);
+      });
+    }
+    Object.keys(song.cells || {}).forEach(function (id) {
+      const c = song.cells[id];
+      if (c && c.familyId === familyId) add(c, id);
+    });
+    list.sort(function (a, b) {
+      return (a.versionIndex || 0) - (b.versionIndex || 0);
+    });
+    return list;
+  }
+
+  /** Cells linked by fromCellId when familyId was wiped. */
+  function lineageSiblings(song, cell) {
+    if (!song || !cell || !song.cells) return cell ? [cell] : [];
+    const ids = Object.keys(song.cells);
+    const list = [];
+    ids.forEach(function (id) {
+      const c = song.cells[id];
+      if (!c) return;
+      if (!c.id) c.id = id;
+      const same =
+        c.id === cell.id ||
+        (cell.fromCellId && (c.id === cell.fromCellId || c.fromCellId === cell.fromCellId)) ||
+        c.fromCellId === cell.id ||
+        (c.fromCellId && cell.id && c.fromCellId === cell.id);
+      if (same) list.push(c);
+    });
+    if (!list.length) list.push(cell);
+    list.sort(function (a, b) {
+      return (a.versionIndex || 0) - (b.versionIndex || 0);
+    });
+    return list;
   }
 
   function siblingsOfCell(song, cellId) {
-    const cell = song.cells[cellId];
-    if (!cell || !cell.familyId) return cell ? [cell] : [];
-    return familyVersions(song, cell.familyId);
+    const cell = song && song.cells ? song.cells[cellId] : null;
+    if (!cell) return [];
+    if (!cell.id) cell.id = cellId;
+    if (cell.familyId) {
+      const fam = familyVersions(song, cell.familyId);
+      if (fam.length > 1) return fam;
+      if (fam.length === 1) {
+        const lined = lineageSiblings(song, cell);
+        if (lined.length > 1) return lined;
+        return fam;
+      }
+    }
+    // Orphan with children / parent still in a family — show the row
+    adoptOrphanCell(song, cell);
+    if (cell.familyId) {
+      const fam2 = familyVersions(song, cell.familyId);
+      if (fam2.length) return fam2;
+    }
+    const lined = lineageSiblings(song, cell);
+    if (lined.length > 1) return lined;
+    return [cell];
   }
 
   /**
@@ -502,6 +826,7 @@
     const sectionsTouched = used.length;
 
     delete song.cells[cellId];
+    song._okToShrink = true;
 
     // Family bookkeeping
     Object.keys(song.families || {}).forEach((fid) => {
@@ -613,11 +938,42 @@
     // type === 'smooth' → no extra chords; play engine can VL across boundary
   }
 
+  // In-page working copy. Re-parsing localStorage on every load can drop
+  // siblings if a later write fails or ensureSongShape throws.
+  let _memSong = null;
+
   function saveSong(song, by) {
     if (!song) return false;
     ensureSongShape(song);
+    // Accidental wipe: a 0–1 cell write must not replace a family on disk
+    // unless delete/reset set _okToShrink.
+    if (!song._okToShrink) {
+      try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const prev = JSON.parse(raw);
+          const prevIds = prev && prev.cells ? Object.keys(prev.cells) : [];
+          const nextIds = Object.keys(song.cells || {});
+          if (prevIds.length > 1 && nextIds.length <= 1) {
+            prevIds.forEach(function (id) {
+              if (!song.cells[id]) song.cells[id] = prev.cells[id];
+            });
+            if (prev.families) {
+              if (!song.families) song.families = {};
+              Object.keys(prev.families).forEach(function (fid) {
+                if (!song.families[fid]) song.families[fid] = prev.families[fid];
+              });
+            }
+          }
+        }
+      } catch (_) {
+        /* keep the in-memory song */
+      }
+    }
+    delete song._okToShrink;
     song.updatedAt = now();
     song.updatedBy = by || song.updatedBy || 'unknown';
+    _memSong = song;
     try {
       localStorage.setItem(SESSION_KEY, JSON.stringify(song));
       return true;
@@ -681,6 +1037,8 @@
       ['maj9', [0, 2, 4, 7, 11]],
       ['min9', [0, 2, 3, 7, 10]],
       ['add9', [0, 2, 4, 7]],
+      ['6th', [0, 4, 7, 9]],
+      ['min6', [0, 3, 7, 9]],
       ['dim', [0, 3, 6]],
       ['aug', [0, 4, 8]],
       ['min', [0, 3, 7]],
@@ -710,6 +1068,7 @@
 
   /** Normalize Landscape chord → session chord (preserves custom pitch sets) */
   function fromLandscapeChord(c) {
+    if (!c || typeof c !== 'object') return null;
     const root = typeof c.root === 'number' ? ((c.root % 12) + 12) % 12 : pcFromName(c.root);
     const bass =
       c.bassPc != null
@@ -814,8 +1173,8 @@
       if (isCustom) {
         slot.mode = 'custom';
         slot.customRoot = root;
-        slot.customNotes = notes.length ? notes.slice() : [root];
-        if (slot.customNotes.indexOf(root) < 0) slot.customNotes.push(root);
+        slot.customNotes = notes.length ? notes.slice() : ch._rest ? [] : [root];
+        if (!ch._rest && slot.customNotes.indexOf(root) < 0) slot.customNotes.push(root);
       } else {
         slot.mode = 'named';
       }
@@ -834,7 +1193,7 @@
         if (chordTypes && chordTypes[typeIdx]) intervals = chordTypes[typeIdx].intervals;
         const toneIdx = intervals.findIndex((iv) => (root + iv) % 12 === bass);
         if (toneIdx >= 0) {
-          slot.bassMode = 'chordTone';
+          slot.bassMode = 'tone';
           slot.bassToneIdx = toneIdx;
           slot.bassNote = bass;
         } else {
@@ -846,8 +1205,45 @@
       slot.visible = true;
       slot._duration = ch.duration != null ? ch.duration : 4;
       slot._roman = ch.roman || '';
+      attachTeleprompterFieldsToSlot(slot, ch);
+      attachDiskStampsToSlot(slot, ch);
       return slot;
     });
+  }
+
+  function attachTeleprompterFieldsToSlot(slot, ch) {
+    if (!slot || !ch) return slot;
+    if (ch._tick != null) slot._tick = +ch._tick;
+    if (ch._tickEnd != null) slot._tickEnd = +ch._tickEnd;
+    if (ch.name) slot._label = String(ch.name);
+    if (ch._rest) slot._rest = true;
+    return slot;
+  }
+
+  function attachTeleprompterFieldsToChord(out, s) {
+    if (!out || !s) return out;
+    if (s._tick != null) out._tick = +s._tick;
+    if (s._tickEnd != null) out._tickEnd = +s._tickEnd;
+    if (s._rest) out._rest = true;
+    if (s._label) out.name = String(s._label);
+    return out;
+  }
+
+  /** Multi-disk ownership rides Fretboard slots so write-back does not flatten to write-home. */
+  function attachDiskStampsToSlot(slot, ch) {
+    if (!slot || !ch) return slot;
+    if (ch.localTonic != null) slot._localTonic = ((ch.localTonic % 12) + 12) % 12;
+    if (ch.localMode) slot._localMode = ch.localMode;
+    return slot;
+  }
+
+  function attachDiskStampsToChord(out, s) {
+    if (!out || !s) return out;
+    const t = s._localTonic != null ? s._localTonic : s.localTonic;
+    const m = s._localMode || s.localMode;
+    if (t != null) out.localTonic = ((t % 12) + 12) % 12;
+    if (m) out.localMode = m;
+    return out;
   }
 
   /** Fretboard progression → session chords (keeps custom pitch sets intact) */
@@ -856,7 +1252,7 @@
       let root = ((s.root % 12) + 12) % 12;
       let quality = typeIdxToQuality(s.typeIdx);
       let bass = root;
-      if (s.bassMode === 'chordTone' && chordTypes && chordTypes[s.typeIdx]) {
+      if ((s.bassMode === 'chordTone' || s.bassMode === 'tone') && chordTypes && chordTypes[s.typeIdx]) {
         const iv = chordTypes[s.typeIdx].intervals[s.bassToneIdx || 0] || 0;
         bass = (root + iv) % 12;
       } else if (s.bassMode === 'note') {
@@ -870,7 +1266,7 @@
         const exact = exactQualityFromNotes(notes, root);
         if (exact) {
           // True named chord (notes match a quality exactly)
-          return {
+          return attachDiskStampsToChord(attachTeleprompterFieldsToChord({
             root,
             quality: exact,
             duration: s._duration != null ? s._duration : 4,
@@ -879,21 +1275,21 @@
             region: '',
             tag: 'fretboard',
             notes,
-          };
+          }, s), s);
         }
         // Free pitch set — never force B·C·D·F# → Bm
-        return {
+        return attachDiskStampsToChord(attachTeleprompterFieldsToChord({
           root,
           quality: 'custom',
           custom: true,
           notes,
-          name: customChordLabel(root, notes),
+          name: s._label || customChordLabel(root, notes),
           duration: s._duration != null ? s._duration : 4,
           bass,
           roman: s._roman || '',
           region: 'custom',
           tag: 'custom',
-        };
+        }, s), s);
       }
 
       // Named chord — still attach derived notes when chordTypes known
@@ -913,7 +1309,7 @@
         tag: 'fretboard',
       };
       if (notes && notes.length) out.notes = notes;
-      return out;
+      return attachDiskStampsToChord(attachTeleprompterFieldsToChord(out, s), s);
     });
   }
 
@@ -1038,7 +1434,14 @@
 
   function readHandoffFromLocation() {
     if (typeof location === 'undefined') return null;
-    return decodeHandoffString(location.hash || '');
+    const fromHash = decodeHandoffString(location.hash || '');
+    if (fromHash) return fromHash;
+    try {
+      const q = location.search || '';
+      const m = q.match(/[?&]ih=([^&]+)/);
+      if (m && m[1]) return decodeHandoffString('ih=' + decodeURIComponent(m[1]));
+    } catch (_) {}
+    return null;
   }
 
   function clearHandoffHash() {
@@ -1081,7 +1484,7 @@
       fromVersionIndex: cell.fromVersionIndex != null ? cell.fromVersionIndex : null,
       fromKind: cell.fromKind || null,
       fromCellId: cell.fromCellId || null,
-      chords: (cell.chords || []).map(fromLandscapeChord),
+      chords: (cell.chords || []).map(fromLandscapeChord).filter(Boolean),
     };
     copyCellLineage(prev, dest);
     inferLineageOnCell(song, dest);
@@ -1124,17 +1527,20 @@
         };
       } else {
         let nextChords = expandHandoffChords(payload);
-        if (
-          prev &&
-          prev.chords &&
-          prev.chords.length > nextChords.length
-        ) {
+        // Same-id write-back: always merge so equal-length Fretboard slots
+        // keep prev localTonic / localMode (not only when the clip is shorter).
+        if (prev && prev.chords && prev.chords.length) {
           nextChords = mergeClipIntoChords(
             prev.chords,
             nextChords,
             payload.clipStart || 0,
             payload.clipMax || payload.windowLen || null
           );
+          const rebuilt = buildHandoffPayload(
+            Object.assign({}, payload, { chords: nextChords })
+          );
+          payload.chords = rebuilt.chords;
+          writeHandoffStorage(payload);
         }
         song.cells[cellId] = {
           id: cellId,
@@ -1170,7 +1576,12 @@
 
     const hash = encodeHandoff(payload);
     let url = relativeUrl;
-    if (hash) url += '#' + hash;
+    if (hash) {
+      // Query + hash: some file:// navigations drop one or the other.
+      const q = hash.indexOf('ih=') === 0 ? hash : 'ih=' + hash;
+      url += (relativeUrl.indexOf('?') >= 0 ? '&' : '?') + q;
+      url += '#' + hash;
+    }
     try {
       if (opts.newTab) {
         window.open(url, '_blank');
@@ -1402,7 +1813,11 @@
             chordIndex: song.focus.chordIndex || 0,
           }
         : { cellId: null, sectionId: null, chordIndex: 0 },
+      conductor: song.conductor ? normalizeConductor(song.conductor) : undefined,
+      teleprompter: song.teleprompter ? normalizeTeleprompter(song.teleprompter) : emptyTeleprompter(),
     };
+    if (!out.conductor) delete out.conductor;
+    return out;
   }
 
   function isSongPackage(data) {
@@ -1438,6 +1853,8 @@
         families: data.families || {},
         arrangement: data.arrangement || [],
         focus: data.focus || { cellId: null, sectionId: null, chordIndex: 0 },
+        conductor: data.conductor || undefined,
+        teleprompter: data.teleprompter || emptyTeleprompter(),
       };
     } else {
       return null;
@@ -1466,6 +1883,449 @@
     sec.cellId = sec.chain[0] || cellId;
   }
 
+  function lastEventAtOrBefore(list, tick) {
+    if (!list || !list.length) return null;
+    let pick = list[0];
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].tick <= tick) pick = list[i];
+      else break;
+    }
+    return pick;
+  }
+
+  function tickToSeconds(conductor, tick) {
+    const c = normalizeConductor(conductor);
+    const ppq = c.ppq;
+    const t = Math.max(0, +tick || 0);
+    let sec = 0;
+    let lastTick = 0;
+    let us = c.tempos[0].usPerQuarter;
+    for (let i = 0; i < c.tempos.length; i++) {
+      const ev = c.tempos[i];
+      if (ev.tick >= t) break;
+      sec += ((ev.tick - lastTick) / ppq) * (us / 1e6);
+      lastTick = ev.tick;
+      us = ev.usPerQuarter;
+    }
+    sec += ((t - lastTick) / ppq) * (us / 1e6);
+    return sec;
+  }
+
+  function ticksToMs(conductor, startTick, endTick) {
+    const a = tickToSeconds(conductor, startTick);
+    const b = tickToSeconds(conductor, endTick);
+    return Math.max(20, (b - a) * 1000);
+  }
+
+  /** Inverse of tickToSeconds. Used by DAW chase (MTC seconds → conductor tick). */
+  function secondsToTick(conductor, seconds) {
+    const c = normalizeConductor(conductor);
+    const ppq = c.ppq;
+    const target = Math.max(0, +seconds || 0);
+    let sec = 0;
+    let lastTick = 0;
+    let us = c.tempos[0].usPerQuarter;
+    for (let i = 0; i < c.tempos.length; i++) {
+      const nextTick = i + 1 < c.tempos.length ? c.tempos[i + 1].tick : Infinity;
+      const secPerTick = (us / 1e6) / ppq;
+      if (!isFinite(nextTick)) {
+        if (target <= sec) return lastTick;
+        return lastTick + (target - sec) / secPerTick;
+      }
+      const secToNext = (nextTick - lastTick) * secPerTick;
+      if (sec + secToNext >= target) {
+        return lastTick + (target - sec) / secPerTick;
+      }
+      sec += secToNext;
+      lastTick = nextTick;
+      us = c.tempos[i + 1].usPerQuarter;
+    }
+    return lastTick;
+  }
+
+  function barTicks(sig, ppq) {
+    const den = Math.max(1, sig.den || 4);
+    return (sig.num || 4) * ppq * (4 / den);
+  }
+
+  function beatTicks(sig, ppq) {
+    const den = Math.max(1, sig.den || 4);
+    return ppq * (4 / den);
+  }
+
+  function tickToBarBeat(conductor, tick, barOffset) {
+    const c = normalizeConductor(conductor);
+    const ppq = c.ppq;
+    const t = Math.max(0, +tick || 0);
+    let bar = 1 + (barOffset | 0);
+    let cursor = 0;
+    let guard = 0;
+    while (guard++ < 200000) {
+      const sig = lastEventAtOrBefore(c.timeSigs, cursor) || c.timeSigs[0];
+      const bt = barTicks(sig, ppq);
+      if (cursor + bt > t || bt <= 0) {
+        const into = t - cursor;
+        const beat = 1 + into / Math.max(1e-6, beatTicks(sig, ppq));
+        return { bar, beat, num: sig.num, den: sig.den };
+      }
+      cursor += bt;
+      bar += 1;
+    }
+    return { bar, beat: 1, num: 4, den: 4 };
+  }
+
+  function formatBarBeat(bb) {
+    if (!bb) return '';
+    const beat = Math.round(bb.beat * 100) / 100;
+    const beatStr = beat === (beat | 0) ? String(beat | 0) : String(beat);
+    return bb.bar + '.' + beatStr;
+  }
+
+  function clickTicksInRange(conductor, startTick, endTick) {
+    const c = normalizeConductor(conductor);
+    const ppq = c.ppq;
+    const start = Math.max(0, +startTick || 0);
+    const end = Math.max(start, +endTick || 0);
+    const out = [];
+    let cur = 0;
+    let guard = 0;
+    while (cur < end && guard++ < 200000) {
+      const sig = lastEventAtOrBefore(c.timeSigs, cur) || c.timeSigs[0];
+      const step = ((sig.clocks || 24) / 24) * ppq;
+      if (step <= 0) break;
+      if (cur >= start) {
+        const bb = tickToBarBeat(c, cur, 0);
+        const frac = bb.beat - 1;
+        out.push({ tick: cur, accent: Math.abs(frac) < 0.02 || frac < 0.02 });
+      }
+      cur += step;
+    }
+    return out;
+  }
+
+  function formatConductorReadout(conductor) {
+    if (!conductor || !conductor.tempos || !conductor.tempos.length) return 'No tempo map';
+    const c = normalizeConductor(conductor);
+    const bpms = [];
+    c.tempos.forEach((t) => {
+      const n = t.bpm;
+      if (!bpms.length || bpms[bpms.length - 1] !== n) bpms.push(n);
+    });
+    const sigs = [];
+    c.timeSigs.forEach((s) => {
+      const lab = s.num + '/' + s.den;
+      if (!sigs.length || sigs[sigs.length - 1] !== lab) sigs.push(lab);
+    });
+    let out = bpms.join(' → ') + ' BPM';
+    if (sigs.length) out += ' · ' + sigs.join(' → ');
+    return out;
+  }
+
+  function uniqueTempos(conductor) {
+    const c = normalizeConductor(conductor);
+    const out = [];
+    c.tempos.forEach((t) => {
+      if (!out.length || out[out.length - 1] !== t.bpm) out.push(t.bpm);
+    });
+    return out;
+  }
+
+  function readU16(b, i) {
+    return (b[i] << 8) | b[i + 1];
+  }
+
+  function readU32(b, i) {
+    return ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
+  }
+
+  function readVarLen(b, i) {
+    let v = 0;
+    for (let n = 0; n < 4 && i < b.length; n++) {
+      const x = b[i++];
+      v = (v << 7) | (x & 0x7f);
+      if (!(x & 0x80)) break;
+    }
+    return { v, i };
+  }
+
+  function parseTrackEvents(b, start, end, track, tempos, timeSigs, notes) {
+    let i = start;
+    let tick = 0;
+    let status = 0;
+    const active = new Map();
+
+    function release(ch, note, at) {
+      const k = (ch << 8) | note;
+      const on = active.get(k);
+      if (!on) return;
+      active.delete(k);
+      notes.push({
+        tick: on.tick,
+        endTick: Math.max(on.tick + 1, at),
+        note: note,
+        vel: on.vel,
+        channel: ch,
+        track: track,
+      });
+    }
+
+    while (i < end) {
+      const vl = readVarLen(b, i);
+      i = vl.i;
+      tick += vl.v;
+      if (i >= end) break;
+      let st = b[i];
+      if (st < 0x80) {
+        if (!status) break;
+        st = status;
+      } else {
+        i++;
+        if (st < 0xf0) status = st;
+      }
+
+      if (st === 0xff) {
+        if (i >= end) break;
+        const type = b[i++];
+        const ln = readVarLen(b, i);
+        i = ln.i;
+        const dataEnd = Math.min(end, i + ln.v);
+        if (type === 0x51 && ln.v >= 3) {
+          const us = (b[i] << 16) | (b[i + 1] << 8) | b[i + 2];
+          tempos.push({ tick, usPerQuarter: us, bpm: Math.round(60000000 / us) });
+        } else if (type === 0x58 && ln.v >= 4) {
+          timeSigs.push({
+            tick,
+            num: b[i],
+            den: 1 << b[i + 1],
+            clocks: b[i + 2],
+            thirtySeconds: b[i + 3],
+          });
+        }
+        i = dataEnd;
+        continue;
+      }
+      if (st === 0xf0 || st === 0xf7) {
+        const ln = readVarLen(b, i);
+        i = ln.i + ln.v;
+        continue;
+      }
+      const hi = st & 0xf0;
+      const ch = st & 0x0f;
+      if (hi === 0x80 || hi === 0x90) {
+        if (i + 1 >= end) break;
+        const note = b[i++];
+        const vel = b[i++];
+        if (hi === 0x80 || vel === 0) release(ch, note, tick);
+        else {
+          const k = (ch << 8) | note;
+          if (active.has(k)) release(ch, note, tick);
+          active.set(k, { tick, vel, ch });
+        }
+      } else if (hi === 0xc0 || hi === 0xd0) {
+        i += 1;
+      } else if (hi === 0xa0 || hi === 0xb0 || hi === 0xe0) {
+        i += 2;
+      } else {
+        break;
+      }
+    }
+    active.forEach((on, k) => {
+      notes.push({
+        tick: on.tick,
+        endTick: Math.max(on.tick + 1, tick),
+        note: k & 0xff,
+        vel: on.vel,
+        channel: on.ch,
+        track: track,
+      });
+    });
+  }
+
+  function parseSmf(bytes) {
+    const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    if (b.length < 14) throw new Error('Not a MIDI file (too short)');
+    if (b[0] !== 0x4d || b[1] !== 0x54 || b[2] !== 0x68 || b[3] !== 0x64) {
+      throw new Error('Not a MIDI file (missing MThd)');
+    }
+    const hdrLen = readU32(b, 4);
+    if (hdrLen < 6 || 8 + hdrLen > b.length) throw new Error('MIDI header is truncated');
+    const format = readU16(b, 8);
+    const ntrks = readU16(b, 10);
+    const division = readU16(b, 12);
+    if (division & 0x8000) throw new Error('SMPTE-timed MIDI is not supported');
+    const ppq = division || 480;
+    let off = 8 + hdrLen;
+    const tempos = [];
+    const timeSigs = [];
+    const notes = [];
+    let tracksParsed = 0;
+    let safety = 0;
+    while (tracksParsed < ntrks && off + 8 <= b.length && safety++ < 1024) {
+      if (b[off] !== 0x4d || b[off + 1] !== 0x54 || b[off + 2] !== 0x72 || b[off + 3] !== 0x6b) {
+        off++;
+        continue;
+      }
+      const tlen = readU32(b, off + 4);
+      const start = off + 8;
+      const end = Math.min(b.length, start + tlen);
+      parseTrackEvents(b, start, end, tracksParsed, tempos, timeSigs, notes);
+      off = start + tlen;
+      tracksParsed++;
+    }
+    const conductor = normalizeConductor({ ppq, tempos, timeSigs });
+    return { format, ntrks: tracksParsed, ppq: conductor.ppq, tempos: conductor.tempos, timeSigs: conductor.timeSigs, notes };
+  }
+
+  function extraExactQuality(notes, root) {
+    const set = new Set(normalizePcs(notes).map((n) => ((n - root) % 12 + 12) % 12));
+    const extra = [
+      ['6th', [0, 4, 7, 9]],
+      ['min6', [0, 3, 7, 9]],
+    ];
+    for (let i = 0; i < extra.length; i++) {
+      const ivs = extra[i][1];
+      if (ivs.length === set.size && ivs.every((iv) => set.has(iv))) return extra[i][0];
+    }
+    return exactQualityFromNotes(notes, root);
+  }
+
+  function inferNamedChord(pcs, bassPc) {
+    let best = null;
+    const roots = pcs.length ? pcs.slice() : [bassPc];
+    roots.forEach((root) => {
+      const q = extraExactQuality(pcs, root);
+      if (!q) return;
+      let score = 1;
+      if (root === bassPc) score += 8;
+      if (q === 'maj' || q === 'min') score += 2;
+      if (q === 'maj7' || q === 'min7' || q === 'dom7' || q === '6th') score += 1;
+      if (!best || score > best.score) best = { root, quality: q, score };
+    });
+    if (best) {
+      return {
+        root: best.root,
+        quality: best.quality,
+        custom: false,
+        name: NOTE_NAMES_SHARP[best.root] + (QUALITY_SHORT[best.quality] != null ? QUALITY_SHORT[best.quality] : ''),
+      };
+    }
+    return {
+      root: bassPc,
+      quality: 'custom',
+      custom: true,
+      name: customChordLabel(bassPc, pcs),
+    };
+  }
+
+  function roundBeats(beats) {
+    const q = Math.round(beats * 4) / 4;
+    return q > 0 ? q : 0.25;
+  }
+
+  function restChair(start, end, ppq) {
+    return {
+      root: 0,
+      quality: 'custom',
+      custom: true,
+      notes: [],
+      name: '(rest)',
+      duration: roundBeats((end - start) / ppq),
+      bass: 0,
+      roman: '',
+      tag: 'rest',
+      _tick: start,
+      _tickEnd: end,
+      _rest: true,
+    };
+  }
+
+  function midiNotesToChairs(parsed) {
+    const notes = (parsed.notes || []).slice().sort((a, b) => a.tick - b.tick || a.note - b.note);
+    const ppq = parsed.ppq || 480;
+    const slack = Math.max(1, Math.round(ppq / 48));
+    const chairs = [];
+    const warnings = [];
+    if (!notes.length) {
+      return { chairs, warnings: ['No notes in this MIDI file'] };
+    }
+    const clusters = [];
+    notes.forEach((n) => {
+      const last = clusters[clusters.length - 1];
+      if (last && n.tick - last.start <= slack) {
+        last.notes.push(n);
+      } else {
+        clusters.push({ start: n.tick, notes: [n] });
+      }
+    });
+    if (clusters[0].start > slack) {
+      chairs.push(restChair(0, clusters[0].start, ppq));
+    }
+    clusters.forEach((cl, i) => {
+      const nextStart = clusters[i + 1] ? clusters[i + 1].start : null;
+      let soundingEnd = cl.notes[0].endTick;
+      cl.notes.forEach((n) => {
+        if (n.endTick > soundingEnd) soundingEnd = n.endTick;
+      });
+      const end = nextStart != null ? nextStart : soundingEnd;
+      const midis = cl.notes.map((n) => n.note);
+      const bassMidi = Math.min.apply(null, midis);
+      const bassPc = ((bassMidi % 12) + 12) % 12;
+      const pcs = normalizePcs(midis);
+      const inf = inferNamedChord(pcs, bassPc);
+      const slash = bassPc !== inf.root;
+      const name = inf.name + (slash ? '/' + NOTE_NAMES_SHARP[bassPc] : '');
+      chairs.push({
+        root: inf.root,
+        quality: inf.custom ? 'custom' : inf.quality,
+        custom: !!inf.custom,
+        notes: pcs,
+        name,
+        duration: roundBeats((end - cl.start) / ppq),
+        bass: bassPc,
+        roman: '',
+        region: '',
+        tag: 'midi',
+        _tick: cl.start,
+        _tickEnd: end,
+        _rest: false,
+      });
+    });
+    if (chairs.some((c) => c.custom && !c._rest)) {
+      warnings.push('Some names are guesses — rename any chair that looks wrong.');
+    }
+    return { chairs, warnings };
+  }
+
+  function importMidiBytes(bytes) {
+    const parsed = parseSmf(bytes);
+    const built = midiNotesToChairs(parsed);
+    return {
+      format: parsed.format,
+      trackCount: parsed.ntrks,
+      conductor: {
+        ppq: parsed.ppq,
+        tempos: parsed.tempos,
+        timeSigs: parsed.timeSigs,
+      },
+      chairs: built.chairs,
+      warnings: built.warnings,
+    };
+  }
+
+  function compactChairName(ch, noteNameFn) {
+    if (!ch) return '?';
+    if (ch._rest) return '—';
+    if (ch.name) return ch.name;
+    const nameOf = noteNameFn || function (pc) { return NOTE_NAMES_SHARP[((pc % 12) + 12) % 12]; };
+    const root = nameOf(ch.root);
+    const suf = QUALITY_SHORT[ch.quality];
+    let s = root + (suf != null ? suf : ch.quality === 'custom' ? '·' : '');
+    if (ch.bass != null && ((ch.bass % 12) + 12) % 12 !== ((ch.root % 12) + 12) % 12) {
+      s += '/' + nameOf(ch.bass);
+    }
+    return s;
+  }
+
   global.IHSession = {
     SESSION_KEY,
     HANDOFF_KEY,
@@ -1477,6 +2337,7 @@
     emptySong,
     ensureSongShape,
     loadSong,
+    readSongFromDisk,
     saveSong,
     ensureCell,
     newCellId,
@@ -1494,6 +2355,8 @@
     findSiblingByVersion,
     familyVersions,
     siblingsOfCell,
+    healFamilies,
+    adoptOrphanCell,
     deleteCell,
     sectionChain,
     sectionRepChain,
@@ -1537,5 +2400,23 @@
     exportSongPackage,
     importSongPackage,
     isSongPackage,
+    emptyConductor,
+    emptyTeleprompter,
+    normalizeConductor,
+    normalizeTeleprompter,
+    tickToSeconds,
+    ticksToMs,
+    secondsToTick,
+    tickToBarBeat,
+    formatBarBeat,
+    clickTicksInRange,
+    formatConductorReadout,
+    uniqueTempos,
+    parseSmf,
+    importMidiBytes,
+    inferNamedChord,
+    compactChairName,
+    QUALITY_SHORT,
+    NOTE_NAMES_SHARP,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

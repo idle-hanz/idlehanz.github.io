@@ -10,6 +10,215 @@
   var REGION = HS.REGION;
   var SEAT = HS.SEAT;
 
+  SpatialMap.prototype._followFocusDisk = function () {
+    const i = this.playing >= 0 ? this.playing : this.current;
+    const ch = this.path && i >= 0 ? this.path[i] : null;
+    if (ch && this._diskForChord) return this._diskForChord(ch);
+    return this._activeDisk && this._activeDisk();
+  };
+
+  SpatialMap.prototype._wakeK = function () {
+    if (this._wakeFrom == null || this._wakeFrom < 0 || !this._wakeAt) return 1;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const ms = this._wakeMs || 2400;
+    let u = (now - this._wakeAt) / ms;
+    if (u < 0) u = 0;
+    if (u > 1) u = 1;
+    return u * u * (3 - 2 * u);
+  };
+
+  SpatialMap.prototype._followFocusWorld = function () {
+    const i = this.playing >= 0 ? this.playing : this.current;
+    if (this.nodes && this.nodes[i]) {
+      return { x: this.nodes[i].x, y: this.nodes[i].y };
+    }
+    const d = this._followFocusDisk();
+    return { x: (d && d.cx) || 0, y: (d && d.cy) || 0 };
+  };
+
+  SpatialMap.prototype._drawFocusOptions = function (ctx) {
+    const list = this._focusOptions || [];
+    if (!list.length) return;
+    const from = this._followFocusWorld();
+    const z = this.camera.zoom || 1;
+    const t = this.pulseT || 0;
+    const bloom = this._focusBloom ? this._focusBloom() : 0.5;
+    list.forEach((o, idx) => {
+      const breath = 0.88 + 0.12 * Math.sin(t * 0.85 + idx * 0.55);
+      const rise = bloom * breath;
+      if (o.kind === 'modulate') {
+        const gR = o.r || 64;
+        const rumour = o.rumoured ? 0.35 : 1;
+        const a = (0.2 + 0.75 * rise) * o.weight * rumour;
+        ctx.globalAlpha = a;
+        const fill = ctx.createRadialGradient(o.x, o.y, gR * 0.1, o.x, o.y, gR * 1.05);
+        fill.addColorStop(0, 'rgba(70, 42, 110, 0.45)');
+        fill.addColorStop(1, 'rgba(20, 10, 40, 0)');
+        ctx.fillStyle = fill;
+        ctx.beginPath();
+        ctx.ellipse(o.x, o.y, gR, gR * 0.88, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(o.x, o.y, gR * 1.02, gR * 1.02 * 0.88, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(196,170,255,' + (0.35 + 0.55 * rise) + ')';
+        ctx.lineWidth = 2 / z;
+        ctx.setLineDash([6 / z, 5 / z]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(230,214,255,' + (0.4 + 0.55 * rise) + ')';
+        ctx.font = `bold ${12 / z}px DM Sans, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(o.label || 'key', o.x, o.y - 4 / z);
+        if (o.relation) {
+          ctx.font = `${8.5 / z}px DM Sans, sans-serif`;
+          ctx.fillStyle = 'rgba(180,160,230,' + (0.3 + 0.45 * rise) + ')';
+          ctx.fillText(o.relation, o.x, o.y + 11 / z);
+        }
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(o.x, o.y);
+        ctx.strokeStyle = 'rgba(167,139,250,' + (0.08 + 0.28 * rise) + ')';
+        ctx.lineWidth = 1.1 / z;
+        ctx.stroke();
+        return;
+      }
+      const late = o.next && bloom > 0.62 ? (bloom - 0.62) / 0.38 : 0;
+      const a =
+        (o.next ? 0.38 + late * 0.55 : 0.16 + o.weight * 0.38) * rise;
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(o.x, o.y);
+      ctx.strokeStyle = o.next
+        ? 'rgba(255,226,170,' + a * 0.7 + ')'
+        : 'rgba(232,201,138,' + a * 0.45 + ')';
+      ctx.lineWidth = (o.next ? 1.8 : 0.9) / z;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      const rad = ((o.next ? 14 : 8 + o.weight * 7) / z) * (0.85 + 0.15 * rise);
+      const ember = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, rad * 2.6);
+      ember.addColorStop(0, 'rgba(255,236,196,' + a + ')');
+      ember.addColorStop(0.4, 'rgba(220,160,80,' + a * 0.4 + ')');
+      ember.addColorStop(1, 'rgba(80,40,10,0)');
+      ctx.fillStyle = ember;
+      ctx.beginPath();
+      ctx.arc(o.x, o.y, rad * 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  };
+
+  SpatialMap.prototype._drawFollowAtmosphere = function (ctx) {
+    const focus =
+      (this._focusLampWorld && this._focusLampWorld()) ||
+      this._followFocusWorld();
+    const disk = this._followFocusDisk();
+    const R = (disk && disk.R) || 120;
+    const fx = focus.x;
+    const fy = focus.y;
+    const z = this.camera.zoom || 1;
+    const pulse = 1 + 0.04 * Math.sin((this.pulseT || 0) * 1.4);
+
+    const glow = ctx.createRadialGradient(fx, fy, 4, fx, fy, R * 0.92 * pulse);
+    glow.addColorStop(0, 'rgba(255,228,176,0.14)');
+    glow.addColorStop(0.35, 'rgba(200,140,70,0.07)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(fx, fy, R * 0.95, 0, Math.PI * 2);
+    ctx.fill();
+
+    const cover = Math.max(R * 4.5, (Math.max(this.w || 500, this.h || 360) / z) * 1.4);
+    const fog = ctx.createRadialGradient(fx, fy, R * 0.28, fx, fy, cover);
+    fog.addColorStop(0, 'rgba(6,4,3,0)');
+    fog.addColorStop(0.38, 'rgba(5,3,2,0.22)');
+    fog.addColorStop(0.62, 'rgba(3,2,2,0.62)');
+    fog.addColorStop(0.82, 'rgba(1,1,1,0.86)');
+    fog.addColorStop(1, 'rgba(0,0,0,0.94)');
+    ctx.fillStyle = fog;
+    ctx.beginPath();
+    ctx.arc(fx, fy, cover, 0, Math.PI * 2);
+    ctx.fill();
+
+    const st = this._focusRunState && this._focusRunState();
+    const fadeT = this._focusFadeT ? this._focusFadeT() : 0;
+    if (st && st.nxt && fadeT > 0.02) {
+      const ix = st.nxt.cx || 0;
+      const iy = st.nxt.cy || 0;
+      const iR = st.nxt.R || R;
+      const dawn = ctx.createRadialGradient(ix, iy, iR * 0.08, ix, iy, iR * 1.05);
+      dawn.addColorStop(0, 'rgba(200,170,255,' + (0.04 + fadeT * 0.18) + ')');
+      dawn.addColorStop(0.45, 'rgba(140,110,200,' + fadeT * 0.09 + ')');
+      dawn.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = dawn;
+      ctx.beginPath();
+      ctx.arc(ix, iy, iR * 1.08, 0, Math.PI * 2);
+      ctx.fill();
+      const tooth = this._meshContactBetween
+        ? this._meshContactBetween(st.here, st.nxt)
+        : null;
+      if (tooth && fadeT > 0.28 && fadeT < 0.85) {
+        const hold = 1 - Math.abs(fadeT - 0.5) / 0.35;
+        const tw = Math.max(0, Math.min(1, hold));
+        const toothG = ctx.createRadialGradient(
+          tooth.x,
+          tooth.y,
+          4,
+          tooth.x,
+          tooth.y,
+          R * 0.55
+        );
+        toothG.addColorStop(0, 'rgba(255,236,200,' + (0.12 + tw * 0.28) + ')');
+        toothG.addColorStop(0.45, 'rgba(210,170,255,' + tw * 0.14 + ')');
+        toothG.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = toothG;
+        ctx.beginPath();
+        ctx.arc(tooth.x, tooth.y, R * 0.58, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+  };
+
+  /** Screen-space sounding name only — never the incoming key preview. */
+  SpatialMap.prototype._drawFocusFogName = function (ctx, w, h) {
+    const name = this._focusSoundingName ? this._focusSoundingName() : '';
+    if (!name) return;
+    const now =
+      typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (this._fogNameText !== name) {
+      this._fogNamePrev = this._fogNameText || '';
+      this._fogNamePrevSlot = this._fogNameSlot;
+      this._fogNameText = name;
+      this._fogNameAt = now;
+      this._fogNameSlot = this._focusNameSlotFor
+        ? this._focusNameSlotFor(name, w, h)
+        : 0;
+    }
+    const pockets = this._focusNamePockets
+      ? this._focusNamePockets(w, h)
+      : [{ x: w * 0.07, y: h * 0.78, align: 'left' }];
+    const fadeMs = 1100;
+    const u = Math.min(1, (now - (this._fogNameAt || now)) / fadeMs);
+    const size = Math.max(40, Math.min(w, h) * 0.082);
+    const paint = (text, slot, alpha) => {
+      if (!text || alpha < 0.02) return;
+      const p = pockets[slot] || pockets[0];
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.38;
+      ctx.fillStyle = '#e8d4a8';
+      ctx.font = '500 ' + size + 'px Cinzel, Georgia, serif';
+      ctx.textAlign = p.align || 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, p.x, p.y);
+      ctx.restore();
+    };
+    if (this._fogNamePrev && u < 1) {
+      paint(this._fogNamePrev, this._fogNamePrevSlot || 0, 1 - u);
+    }
+    paint(name, this._fogNameSlot || 0, u < 1 ? 0.15 + u * 0.85 : 1);
+  };
+
   SpatialMap.prototype._drawFunctionChart = function (ctx) {
     if (!this.functionChart || !this.functionNodes.length) return;
     const byId = {};
@@ -270,17 +479,36 @@
     const h = this.h;
     if (!w) return;
 
+    const followLook = this.cameraMode === 'follow' && this.mapView !== 'function';
     const g = ctx.createRadialGradient(w * 0.5, h * 0.42, 10, w * 0.5, h * 0.5, Math.max(w, h) * 0.7);
-    g.addColorStop(0, '#1a1410');
-    g.addColorStop(0.5, '#0c0b0a');
-    g.addColorStop(1, '#050505');
+    if (followLook) {
+      g.addColorStop(0, '#100c09');
+      g.addColorStop(0.45, '#070605');
+      g.addColorStop(1, '#010100');
+    } else {
+      g.addColorStop(0, '#1a1410');
+      g.addColorStop(0.5, '#0c0b0a');
+      g.addColorStop(1, '#050505');
+    }
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
 
     ctx.save();
     ctx.translate(w / 2, h / 2);
     ctx.scale(this.camera.zoom, this.camera.zoom);
+    if (this.camera.rot) ctx.rotate(this.camera.rot);
     ctx.translate(-this.camera.x, -this.camera.y);
+    const worldFillText = ctx.fillText.bind(ctx);
+    const lean = this.camera.rot || 0;
+    if (lean) {
+      ctx.fillText = function (text, x, y) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(-lean);
+        worldFillText(text, 0, 0);
+        ctx.restore();
+      };
+    }
 
     const M = global.HLMusic;
     if (!this.disks || !this.disks.length) this._rebuildDisks(false);
@@ -293,11 +521,21 @@
       .filter((d) => this.mapView !== 'function' || d.active)
       .slice()
       .sort((a, b) => (a.active ? 1 : 0) - (b.active ? 1 : 0));
+    const focusDisk = followLook
+      ? this._followFocusDisk && this._followFocusDisk()
+      : null;
     disksDraw.forEach((disk) => {
       const active = !!disk.active;
-      // Inactive disks must read as full second charts, not a faint ghost
-      const alpha = active ? 1 : 0.72;
-      ctx.globalAlpha = alpha;
+      const paint =
+        followLook && this._focusDiskPaint
+          ? this._focusDiskPaint(disk)
+          : null;
+      const faceA = paint ? Math.max(0.05, paint.face) : active ? 1 : 0.72;
+      const seatA = paint ? Math.max(0.04, paint.seats) : faceA;
+      const rimA = paint ? Math.max(0.05, paint.rim) : faceA;
+      const isFocus = paint ? paint.seats > 0.22 : !followLook || !focusDisk ||
+        (this._sameDiskRef && this._sameDiskRef(disk, focusDisk));
+      ctx.globalAlpha = faceA;
       const cx = disk.cx || 0;
       const cy = disk.cy || 0;
       const dR = disk.R || 120;
@@ -313,6 +551,7 @@
       ctx.fill();
 
       // Scale ring + shell ring
+      ctx.globalAlpha = rimA;
       ctx.beginPath();
       ctx.ellipse(cx, cy, dR * 0.72, dR * 0.72 * 0.88, 0, 0, Math.PI * 2);
       ctx.strokeStyle = active ? 'rgba(232,201,138,0.35)' : 'rgba(126,184,218,0.25)';
@@ -334,10 +573,12 @@
           ? M.circularHarmonicScale(disk.tonic, disk.mode)
           : [];
       const dragDim = this._mode === 'node' && active;
+      ctx.globalAlpha = seatA;
       seats.forEach((s) => {
         const rad = s.role === 'tonic' ? dR * SEAT.tonic : dR * SEAT.scale;
-        const sx = cx + Math.cos(s.angle) * rad;
-        const sy = cy + Math.sin(s.angle) * rad * SEAT.squash;
+        const ang = s.angle + (disk.rot || 0);
+        const sx = cx + Math.cos(ang) * rad;
+        const sy = cy + Math.sin(ang) * rad * SEAT.squash;
         const seatHover =
           !dragDim &&
           this.hover &&
@@ -382,7 +623,7 @@
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(s.roman, sx, sy - (active ? 2 / this.camera.zoom : 0));
-          if (active) {
+          if ((!followLook && active) || (followLook && isFocus)) {
             const nm = M.noteName(s.root);
             ctx.fillStyle = seatHover
               ? 'rgba(255,244,214,0.95)'
@@ -414,21 +655,23 @@
       ctx.fillStyle = active ? 'rgba(26,20,16,0.65)' : 'rgba(200,220,255,0.7)';
       ctx.fillText(active ? 'WRITE' : 'KEY', cx, cy + 11 / this.camera.zoom);
 
-      if (!active) {
-        ctx.fillStyle = 'rgba(160,180,210,0.55)';
-        ctx.font = `${8 / this.camera.zoom}px Crimson Text, Georgia, serif`;
-        ctx.fillText('traveled', cx, cy + dR * 0.95);
-      } else {
-        ctx.fillStyle = 'rgba(180,168,150,0.4)';
-        ctx.font = `${8 / this.camera.zoom}px Crimson Text, Georgia, serif`;
-        ctx.fillText('write home', cx, cy + dR * 1.18);
+      if (!followLook) {
+        if (!active) {
+          ctx.fillStyle = 'rgba(160,180,210,0.55)';
+          ctx.font = `${8 / this.camera.zoom}px Crimson Text, Georgia, serif`;
+          ctx.fillText('traveled', cx, cy + dR * 0.95);
+        } else {
+          ctx.fillStyle = 'rgba(180,168,150,0.4)';
+          ctx.font = `${8 / this.camera.zoom}px Crimson Text, Georgia, serif`;
+          ctx.fillText('write home', cx, cy + dR * 1.18);
+        }
       }
 
       ctx.globalAlpha = 1;
     });
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ Ghost adjacent-key halo (Chase only) Ã¢â€â‚¬Ã¢â€â‚¬
-    if (this.mapView === 'chase' && this.ghostDisks && this.ghostDisks.length) {
+    if (!followLook && this.mapView === 'chase' && this.ghostDisks && this.ghostDisks.length) {
       const z = this.camera.zoom || 1;
       this.ghostDisks.forEach((g) => {
         const gcx = g.cx || 0;
@@ -440,7 +683,7 @@
             (this.hover.type === 'ghostOption' &&
               this.hover.item &&
               this.hover.item.ghostDisk === g));
-        ctx.globalAlpha = hot ? 0.85 : 0.55;
+        ctx.globalAlpha = followLook ? (hot ? 0.28 : 0.1) : hot ? 0.85 : 0.55;
         ctx.beginPath();
         ctx.ellipse(gcx, gcy, gR * 1.05, gR * 1.05 * 0.88, 0, 0, Math.PI * 2);
         ctx.strokeStyle = hot ? 'rgba(167,139,250,0.75)' : 'rgba(167,139,250,0.35)';
@@ -530,7 +773,7 @@
       ctx.lineWidth = 2 / this.camera.zoom;
       ctx.stroke();
     }
-    if (empty && this._mode !== 'node') {
+    if (empty && this._mode !== 'node' && !followLook) {
       ctx.fillStyle = 'rgba(200,184,160,0.8)';
       ctx.font = `${10 / this.camera.zoom}px Crimson Text, Georgia, serif`;
       ctx.textAlign = 'center';
@@ -762,7 +1005,11 @@
       const st = this._edgeStyle(a, b);
       const playing = this.playing;
       let alpha = 1;
-      if (playing >= 0) {
+      if (followLook && playing >= 0) {
+        if (i < playing - 1) alpha = 0.08;
+        else if (i === playing - 1) alpha = 0.55;
+        else alpha = 0.06;
+      } else if (playing >= 0) {
         if (i < playing - 1) alpha = 0.28;
         else if (i === playing - 1) alpha = 0.95;
         else if (i >= playing) alpha = 0.4;
@@ -784,8 +1031,56 @@
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.globalAlpha = 1;
+      if (followLook && playing >= 0 && i < playing) {
+        const zW = this.camera.zoom || 1;
+        const age = playing - i;
+        const dust = Math.max(3, 9 - age);
+        for (let s = 1; s < dust; s++) {
+          const tt = s / dust;
+          const px =
+            (1 - tt) * (1 - tt) * ax + 2 * (1 - tt) * tt * mx + tt * tt * bx;
+          const py =
+            (1 - tt) * (1 - tt) * ay + 2 * (1 - tt) * tt * my + tt * tt * by;
+          ctx.beginPath();
+          ctx.arc(px, py, (1.6 + (1 - tt) * 1.4) / zW, 0, Math.PI * 2);
+          ctx.fillStyle =
+            'rgba(232,201,138,' + (0.14 / age) * (1 - tt * 0.4) + ')';
+          ctx.fill();
+        }
+      }
+      const wakeI = this._wakeFrom;
+      const wakeK = this._wakeK ? this._wakeK() : 1;
+      const wraps =
+        this._isLooping &&
+        this._isLooping() &&
+        wakeI === (this.nodes.length - 1) &&
+        playing === 0;
+      const isComet =
+        followLook &&
+        playing >= 0 &&
+        wakeI >= 0 &&
+        wakeK < 1 &&
+        ((i === wakeI && playing === wakeI + 1) ||
+          (wraps && i === this.nodes.length - 1));
+      if (isComet) {
+        const zW = this.camera.zoom || 1;
+        const fade = 1 - wakeK;
+        for (let s = 1; s <= 18; s++) {
+          const tt = s / 18;
+          const px =
+            (1 - tt) * (1 - tt) * ax + 2 * (1 - tt) * tt * mx + tt * tt * bx;
+          const py =
+            (1 - tt) * (1 - tt) * ay + 2 * (1 - tt) * tt * my + tt * tt * by;
+          const head = tt * tt;
+          ctx.beginPath();
+          ctx.arc(px, py, (1.2 + head * 5.5) / zW, 0, Math.PI * 2);
+          ctx.fillStyle =
+            'rgba(255,228,176,' + (0.06 + head * 0.45) * fade + ')';
+          ctx.fill();
+        }
+      }
       // Playhead bead on the edge into current step
-      if (playing >= 1 && i === playing - 1) {
+      if (playing >= 1 && i === playing - 1 && !followLook) {
         const t = 0.35 + 0.45 * (0.5 + 0.5 * Math.sin(this.pulseT * 3));
         const px = (1 - t) * (1 - t) * ax + 2 * (1 - t) * t * mx + t * t * bx;
         const py = (1 - t) * (1 - t) * ay + 2 * (1 - t) * t * my + t * t * by;
@@ -1007,27 +1302,113 @@
 
     // Primary path nodes â€” solid, numbered, heavier than hollow options
     this.nodes.forEach((n) => {
-      const reg = n.chord.region || 'diatonic';
-      const col = REGION[reg] || REGION.diatonic;
+      const vis = n.visitIndices || [n.i];
+      const groupCur = vis.indexOf(this.current) >= 0;
+      const groupPlay = vis.indexOf(this.playing) >= 0;
       const isCur = n.i === this.current;
       const isPlay = n.i === this.playing;
-      const aiming = this._mode === 'node' && this._dragNode && this._dragNode.i === n.i;
-      const div = this.divergent.indexOf(n.i) >= 0 && this.showAlt && this.altNodes.length;
+      const aiming =
+        this._mode === 'node' &&
+        this._dragNode &&
+        vis.indexOf(this._dragNode.i) >= 0;
+      if (n.drawBody === false) {
+        if (isCur && this._mode !== 'node' && this._pathDeleteWorld) {
+          const b = this._pathDeleteWorld(n);
+          if (b) {
+            const zDel = this.camera.zoom || 1;
+            const hovered =
+              this.hover &&
+              this.hover.type === 'pathDelete' &&
+              this.hover.item === n;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+            ctx.fillStyle = hovered ? 'rgba(224,122,106,0.95)' : 'rgba(20,14,12,0.9)';
+            ctx.fill();
+            ctx.strokeStyle = hovered ? '#fff4d6' : 'rgba(224,122,106,0.95)';
+            ctx.lineWidth = 1.3 / zDel;
+            ctx.stroke();
+            ctx.fillStyle = hovered ? '#1a1410' : '#e07a6a';
+            ctx.font = `bold ${12 / zDel}px DM Sans, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('×', b.x, b.y + 0.5 / zDel);
+          }
+        }
+        return;
+      }
+      const reg = n.chord.region || 'diatonic';
+      const col = REGION[reg] || REGION.diatonic;
+      const div =
+        vis.some((vi) => this.divergent.indexOf(vi) >= 0) &&
+        this.showAlt &&
+        this.altNodes.length;
       const x = n.x;
       const y = n.y;
-      const pulse = isPlay ? 1 + 0.08 * Math.sin(this.pulseT * 2) : 1;
-      const r = n.r * (isPlay || isCur || aiming ? 1.14 : 1) * pulse;
+      const playI = this.playing;
+      const wakeI = this._wakeFrom;
+      const wakeK = this._wakeK ? this._wakeK() : 1;
+      const isWake =
+        followLook &&
+        wakeI >= 0 &&
+        wakeK < 1 &&
+        vis.indexOf(wakeI) >= 0 &&
+        !groupPlay;
+      if (isWake) {
+        const zW = this.camera.zoom || 1;
+        const r0 = n.r * 1.04;
+        const r1 = 2.8 / zW;
+        const rr = r0 + (r1 - r0) * wakeK;
+        ctx.globalAlpha = 0.82 * (1 - wakeK * 0.78);
+        ctx.beginPath();
+        ctx.arc(x, y, rr, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(232,201,138,0.95)';
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        return;
+      }
+      if (followLook && playI >= 0 && vis[vis.length - 1] < playI && !groupPlay) {
+        const age = playI - vis[vis.length - 1];
+        const zW = this.camera.zoom || 1;
+        ctx.globalAlpha = Math.max(0.04, 0.2 / age);
+        ctx.beginPath();
+        ctx.arc(x, y, (2.4 + 1.2 / age) / zW, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(232,201,138,0.9)';
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        return;
+      }
+      const pulse = groupPlay
+        ? 1 + 0.018 * Math.sin((this.pulseT || 0) * 0.32)
+        : 1;
+      const r = n.r * (groupPlay || groupCur || aiming ? 1.06 : 1) * pulse;
       // Dim past steps while playing (journey)
       let nodeAlpha = 1;
-      if (this.playing >= 0 && n.i < this.playing) nodeAlpha = 0.4;
-      else if (this.playing >= 0 && n.i > this.playing) nodeAlpha = 0.55;
+      if (playI >= 0 && vis[vis.length - 1] < playI) nodeAlpha = 0.4;
+      else if (playI >= 0 && vis[0] > playI) nodeAlpha = 0.55;
+      if (followLook && !groupPlay && !groupCur) nodeAlpha *= 0.45;
       ctx.globalAlpha = nodeAlpha;
 
-      // Playhead / selection ring
-      if (isPlay || isCur) {
+      // Playhead / selection ring (any visit in a shared node)
+      if (groupPlay || groupCur) {
+        if (followLook && groupPlay) {
+          const halo = ctx.createRadialGradient(
+            x,
+            y,
+            r,
+            x,
+            y,
+            r + 18 / this.camera.zoom
+          );
+          halo.addColorStop(0, 'rgba(255,230,180,0.16)');
+          halo.addColorStop(1, 'rgba(255,200,120,0)');
+          ctx.fillStyle = halo;
+          ctx.beginPath();
+          ctx.arc(x, y, r + 18 / this.camera.zoom, 0, Math.PI * 2);
+          ctx.fill();
+        }
         ctx.beginPath();
         ctx.arc(x, y, r + 8 / this.camera.zoom, 0, Math.PI * 2);
-        ctx.strokeStyle = isPlay ? 'rgba(255,244,214,0.85)' : 'rgba(232,201,138,0.55)';
+        ctx.strokeStyle = groupPlay ? 'rgba(255,244,214,0.85)' : 'rgba(232,201,138,0.55)';
         ctx.lineWidth = 2.8 / this.camera.zoom;
         ctx.stroke();
       }
@@ -1055,23 +1436,59 @@
       } else {
         ctx.fillStyle = col.fill;
         ctx.fill();
-        if (isCur || isPlay) {
+        if (groupCur || groupPlay) {
           ctx.strokeStyle = '#fff4d6';
           ctx.lineWidth = 2.5 / this.camera.zoom;
           ctx.stroke();
         }
       }
 
-      // Step number badge
-      ctx.beginPath();
-      ctx.arc(x - r * 0.75, y - r * 0.75, 9 / this.camera.zoom, 0, Math.PI * 2);
-      ctx.fillStyle = isPlay ? '#fff4d6' : 'rgba(20,16,12,0.85)';
-      ctx.fill();
-      ctx.fillStyle = isPlay ? '#1a1410' : '#e8c98a';
-      ctx.font = `bold ${10 / this.camera.zoom}px DM Sans, sans-serif`;
+      // Step number badge — stack revisits / pivot visits (4 · 8), never last-wins
+      if (followLook) {
+        if (groupPlay) {
+          ctx.fillStyle = '#0a0a0a';
+          ctx.font = `bold ${Math.max(9, 12 / this.camera.zoom)}px DM Sans, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(n.chord.name, x, y);
+        }
+        ctx.globalAlpha = 1;
+        return;
+      }
+      const visitNums = n.visits && n.visits.length ? n.visits : [n.i + 1];
+      const badge = visitNums.join(' · ');
+      const zB = this.camera.zoom || 1;
+      ctx.font = `bold ${10 / zB}px DM Sans, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(String(n.i + 1), x - r * 0.75, y - r * 0.75);
+      const bx = x - r * 0.75;
+      const by = y - r * 0.75;
+      if (visitNums.length === 1) {
+        ctx.beginPath();
+        ctx.arc(bx, by, 9 / zB, 0, Math.PI * 2);
+        ctx.fillStyle = groupPlay ? '#fff4d6' : 'rgba(20,16,12,0.85)';
+        ctx.fill();
+        ctx.fillStyle = groupPlay ? '#1a1410' : '#e8c98a';
+        ctx.fillText(badge, bx, by);
+      } else {
+        const tw = ctx.measureText(badge).width;
+        const pad = 5 / zB;
+        const bh = 14 / zB;
+        const bw = tw + pad * 2;
+        const rx = bx - bw / 2;
+        const ry = by - bh / 2;
+        const rr = 7 / zB;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(rx, ry, bw, bh, rr);
+        else ctx.rect(rx, ry, bw, bh);
+        ctx.fillStyle = groupPlay ? '#fff4d6' : 'rgba(20,16,12,0.9)';
+        ctx.fill();
+        ctx.strokeStyle = groupPlay ? 'rgba(26,20,16,0.35)' : 'rgba(232,201,138,0.55)';
+        ctx.lineWidth = 1 / zB;
+        ctx.stroke();
+        ctx.fillStyle = groupPlay ? '#1a1410' : '#e8c98a';
+        ctx.fillText(badge, bx, by);
+      }
 
       // Other-key pip (owned by a different disk than write home)
       if (n.foreignKey) {
@@ -1113,7 +1530,11 @@
       ctx.fillStyle = aiming ? 'rgba(232,201,138,0.9)' : '#0a0a0a';
       ctx.font = `bold ${Math.max(9, 11 / this.camera.zoom)}px DM Sans, sans-serif`;
       ctx.textBaseline = 'middle';
-      ctx.fillText(n.chord.name, x, y);
+      const nameSrc =
+        groupCur && this.nodes[this.current] && this.nodes[this.current].chord
+          ? this.nodes[this.current]
+          : n;
+      ctx.fillText((nameSrc.chord && nameSrc.chord.name) || n.chord.name, x, y);
 
       if (aiming) {
         ctx.fillStyle = 'rgba(232,201,138,0.7)';
@@ -1150,7 +1571,53 @@
       ctx.globalAlpha = 1;
     });
 
+    if (followLook) this._drawFollowAtmosphere(ctx);
+    if (followLook) this._drawFocusOptions(ctx);
+
+    if (lean) ctx.fillText = worldFillText;
     ctx.restore();
+
+    if (followLook) {
+      const vg = ctx.createRadialGradient(
+        w * 0.5,
+        h * 0.48,
+        Math.min(w, h) * 0.16,
+        w * 0.5,
+        h * 0.5,
+        Math.max(w, h) * 0.64
+      );
+      vg.addColorStop(0, 'rgba(0,0,0,0)');
+      vg.addColorStop(0.48, 'rgba(0,0,0,0.28)');
+      vg.addColorStop(0.76, 'rgba(0,0,0,0.62)');
+      vg.addColorStop(1, 'rgba(0,0,0,0.88)');
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, w, h);
+      const smokeT = this.pulseT || 0;
+      ctx.globalAlpha = 0.045;
+      for (let s = 0; s < 3; s++) {
+        const sx = w * (0.35 + 0.18 * s) + Math.sin(smokeT * 0.07 + s) * 28;
+        const sy = h * (0.4 + 0.12 * s) + Math.cos(smokeT * 0.05 + s * 1.3) * 22;
+        const sr = Math.min(w, h) * (0.22 + s * 0.08);
+        const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+        sg.addColorStop(0, 'rgba(180,150,110,0.55)');
+        sg.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = sg;
+        ctx.beginPath();
+        ctx.ellipse(sx, sy, sr, sr * 0.62, s * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 0.035;
+      ctx.fillStyle = '#d8c4a0';
+      const seed = Math.floor(smokeT * 0.15);
+      for (let d = 0; d < 40; d++) {
+        const px = ((d * 97 + seed * 13) % 1000) / 1000 * w;
+        const py = ((d * 53 + seed * 7) % 1000) / 1000 * h;
+        ctx.fillRect(px, py, 1.1, 1.1);
+      }
+      ctx.globalAlpha = 1;
+      this._drawFocusFogName(ctx, w, h);
+      return;
+    }
 
     // Legend + tip (screen space)
     ctx.fillStyle = 'rgba(180,168,150,0.55)';
@@ -1212,7 +1679,7 @@
     ctx.fillText(
       this.mapView === 'function'
         ? 'In this key Â· gold diatonic Â· orange colours (sus/II) Â· blue V7 Â· purple borrow'
-        : 'Chase Â· solid = traveled keys Â· purple ghosts = nearby keys from pivot Â· I / V7â†’I plant home',
+        : 'Journey · two cogs + path · hover / aim shows nearby keys · I / V7→I plant home',
       10,
       14
     );

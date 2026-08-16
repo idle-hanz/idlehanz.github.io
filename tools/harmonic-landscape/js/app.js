@@ -559,13 +559,13 @@
     H.fillControls();
     H.wire();
     if (H.wirePolish) H.wirePolish();
-    // Prefer handoff / shared session; else start empty (no default pack)
+    // Boot is empty unless hash/query handoff. Resume is a button, not auto.
     if (!H.S()) {
       H.setSyncStatus(
         'ih-session.js missing · keep it next to the harmonic-landscape folder on Desktop'
       );
     }
-    const loaded = H.ingestHandoffOrSession();
+    const loaded = H.ingestHandoffOrSession({ resume: false });
     if (!loaded) {
       H.state.chords = [];
       H.state.selected = -1;
@@ -587,6 +587,21 @@
         : 'Empty · + Home to start · Journey / In this key switch the map'
     );
 
+    if (navigator.storage && navigator.storage.persist) {
+      try {
+        navigator.storage.persist();
+      } catch (_) {}
+    }
+    var persistNow = function () {
+      if (H.persistResumeFromState && H.state.chords && H.state.chords.length) {
+        H.persistResumeFromState();
+      }
+    };
+    window.addEventListener('pagehide', persistNow);
+    window.addEventListener('beforeunload', persistNow);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') persistNow();
+    });
     document.body.addEventListener('pointerdown', () => H.A().ensure(), { once: true });
     requestAnimationFrame(() => {
       H.map.resize();
@@ -642,6 +657,7 @@
         H.resyncPlaybackPreservingPlace();
       }
     });
+    if (global.HLMidiOut && global.HLMidiOut.wire) global.HLMidiOut.wire();
     H.$('#feel-filter').addEventListener('change', H.renderPacks);
     const titleInput = H.$('#seq-title');
     if (titleInput && titleInput.tagName === 'INPUT') {
@@ -713,6 +729,11 @@
         if (H.resumeSharedSession) H.resumeSharedSession();
       });
     }
+    if (H.$('#coach-resume')) {
+      H.$('#coach-resume').addEventListener('click', () => {
+        if (H.resumeSharedSession) H.resumeSharedSession();
+      });
+    }
     if (H.$('#coach-start-i')) {
       H.$('#coach-start-i').addEventListener('click', () => {
         if (H.startAtHome) H.startAtHome();
@@ -760,26 +781,27 @@
         }
       });
     }
-    if (H.$('#btn-reset-all')) {
-      H.$('#btn-reset-all').addEventListener('click', () => {
-        const ok = confirm(
-          'Full reset to empty?\n\n' +
-            '• Clears the path and undo history\n' +
-            '• Removes blue compare and map key disks\n' +
-            '• Starts a new cell (no feel pack)\n' +
-            '• Optional: also wipe saved session cells\n\n' +
-            'OK = reset Landscape\n' +
-            'Cancel = keep everything'
-        );
-        if (!ok) return;
-        const wipeSession = confirm(
-          'Also wipe the shared song session (all version cells in local storage)?\n\n' +
-            'OK = clear session too\n' +
-            'Cancel = keep saved versions, only reset this editor'
-        );
-        H.resetToEmpty({ clearSession: wipeSession, resetHome: false });
-      });
-    }
+    const resetAll = function () {
+      const ok = confirm(
+        'Full reset to empty?\n\n' +
+          '• Clears the path and undo history\n' +
+          '• Removes blue compare and map key disks\n' +
+          '• Starts a new cell (no feel pack)\n' +
+          '• Optional: also wipe saved session cells\n\n' +
+          'OK = reset Landscape\n' +
+          'Cancel = keep everything'
+      );
+      if (!ok) return;
+      const wipeSession = confirm(
+        'Also wipe the shared song session (all version cells in local storage)?\n\n' +
+          'OK = clear session too\n' +
+          'Cancel = keep saved versions, only reset this editor'
+      );
+      H.resetToEmpty({ clearSession: wipeSession, resetHome: false });
+    };
+    document.querySelectorAll('.js-reset-all').forEach(function (btn) {
+      btn.addEventListener('click', resetAll);
+    });
     if (H.$('#btn-export-txt')) H.$('#btn-export-txt').addEventListener('click', H.exportText);
     if (H.$('#btn-export-mid')) H.$('#btn-export-mid').addEventListener('click', H.exportMidi);
     if (H.$('#btn-save-project')) {
@@ -1051,8 +1073,41 @@
         const el = H.$('#cam-' + m);
         if (el) el.classList.toggle('active', mode === m);
       });
+      if (H.syncFocusCinema) H.syncFocusCinema();
+    };
+    H.syncFocusCinema = function () {
+      const on = !!(H.map && H.map.cameraMode === 'follow');
+      const app = document.querySelector('.app');
+      if (app) app.classList.toggle('focus-cinema', on);
+      const leave = function () {
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            if (!H.map) return;
+            if (H.map.resize) H.map.resize();
+            if (H.map._applyCameraForMode) H.map._applyCameraForMode();
+            if (H.map._refreshFocusOptions) H.map._refreshFocusOptions();
+          });
+        });
+      };
+      leave();
+    };
+    H.leaveFocusCinema = function () {
+      if (!H.map || H.map.cameraMode !== 'follow') return false;
+      H.map.setCameraMode('home');
+      H.syncCamButtons();
+      return true;
     };
     H.syncCamButtons();
+    if (H.$('#focus-leave')) {
+      H.$('#focus-leave').addEventListener('click', function () {
+        H.leaveFocusCinema();
+      });
+    }
+    if (H.$('#focus-play') && H.$('#btn-play')) {
+      H.$('#focus-play').addEventListener('click', function () {
+        H.$('#btn-play').click();
+      });
+    }
 
     document.addEventListener('keydown', (e) => {
       const typing =
@@ -1116,6 +1171,7 @@
           help.hidden = true;
           return;
         }
+        if (H.leaveFocusCinema && H.leaveFocusCinema()) return;
         H.stopPlaybackUI();
       } else if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
         e.preventDefault();

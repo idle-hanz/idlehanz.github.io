@@ -4,7 +4,7 @@ Editor lives on **`window.HLApp`** (`H` in each file).
 
 ## Load order
 
-1. Engine: `ih-session`, `music`, `compose`, `audio`, `packs`, then map:
+1. Engine: `ih-session`, `music`, `compose`, `audio`, `midi-out`, `packs`, then map:
    - `spatial.js` — ctor, camera, setPath/setOrigin API, `HLSpatial` export
    - `spatial-layout.js` — disks, seats, path/function layout
    - `spatial-input.js` — hit-test, pointer, aim/drag
@@ -39,7 +39,7 @@ Editor lives on **`window.HLApp`** (`H` in each file).
 | | **Journey** (Chase) | **In this key** (Function) |
 |--|---------------------|----------------------------|
 | Job | Multi-key path | Same-key atlas |
-| Map | Seats + path + purple leave-home ghosts | Diatonic / V7 / borrow chart |
+| Map | Two meshed cogs + path; purple ghosts on hover / aim | Diatonic / V7 / borrow chart |
 | Suggestions | From here list (+ ghosts) | Function toggles + From here |
 
 Map **next-move hollow dots** are retired (`setHorizon` is a no-op stub).
@@ -61,6 +61,7 @@ Map **next-move hollow dots** are retired (`setHorizon` is a no-op stub).
 | File | Role |
 |------|------|
 | `spatial.js` (~2.9k) | Map layout, hit, draw |
+| `midi-out.js` | Web MIDI output from `playChord` (not `.mid` file, not chase). Bass split / Speak / clock. |
 | `compose.js` | Suggest, VL, adjacent keys, establish options |
 | `hl-ui.js` | DOM + refreshMap |
 | `hl-map-bridge.js` | Map ↔ state glue |
@@ -72,7 +73,7 @@ Map **next-move hollow dots** are retired (`setHorizon` is a no-op stub).
 
 ## Song / Fretboard (shared `ih-session.js`)
 
-- Fretboard hard cap: **8** chords (`IHSession.FRETBOARD_MAX_CHORDS`). Landscape/Arrangement clip via `clipForFretboard` before handoff.
+- Fretboard holds a full Landscape/Arrangement **cell**. `clipForFretboard` is only for sending a teleprompter song row **to** Landscape (default window 8).
 - Section cycle: `reps` + optional `endCellId` (last rep) + `intoCellId` (after reps) + `seam`.
 - Song package: `format: idlehanz-song-package` via `exportSongPackage` / `importSongPackage`.
 - Design pin: `Desktop/Harmonic Landscape - Design Freeze.md`

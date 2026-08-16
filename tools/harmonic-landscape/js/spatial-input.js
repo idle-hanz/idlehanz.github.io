@@ -36,7 +36,15 @@
       if (!n) continue;
       const d = Math.hypot(w.x - n.x, w.y - n.y);
       const grabR = Math.max(cap, (n.r || 14) + 12);
-      if (d <= grabR && d < bestD) {
+      if (d > grabR) continue;
+      const curWin = best && best.i === this.current;
+      const thisCur = n.i === this.current;
+      const later = !best || n.i > best.i;
+      if (
+        !best ||
+        d < bestD - 0.5 ||
+        (Math.abs(d - bestD) < 0.5 && (thisCur || (!curWin && later)))
+      ) {
         bestD = d;
         best = n;
       }
@@ -60,6 +68,7 @@
     }
     if (!this.nodes || !this.nodes[index]) return false;
     const item = this.nodes[index];
+    if (this.ensureGhostHalo) this.ensureGhostHalo({ pivotIndex: index, force: true });
     this._mode = 'node';
     this._aimFromStrip = !!opts.fromStrip;
     this._aimArmed = !!opts.armed;
@@ -91,7 +100,7 @@
       }
       this._layoutAlts(index, alts);
       // Stripâ†’map: allow pads closer to origin (stacked steps need nearby seats)
-      if (this._aimFromStrip) {
+      if (this._aimFromStrip || opts.fromEdge) {
         const ox = this._dragOrigin.x;
         const oy = this._dragOrigin.y;
         this.alts = (this.alts || []).filter((a) => {
@@ -179,9 +188,14 @@
     const z = this.camera.zoom || 1;
     const lw = Math.max(1, this.w || 1);
     const lh = Math.max(1, this.h || 1);
+    const dx = (sx - lw / 2) / z;
+    const dy = (sy - lh / 2) / z;
+    const rot = this.camera.rot || 0;
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
     return {
-      x: (sx - lw / 2) / z + (this.camera.x || 0),
-      y: (sy - lh / 2) / z + (this.camera.y || 0),
+      x: dx * c + dy * s + (this.camera.x || 0),
+      y: -dx * s + dy * c + (this.camera.y || 0),
     };
   };
 
@@ -298,15 +312,28 @@
     // that target must stay clickable to APPEND another copy (Em Em repeats).
     // Old bias -30 made "click Em again" always re-select the first Em.
     let nearPath = false;
+    let bestPath = null;
+    let bestPathD = Infinity;
     for (let i = 0; i < this.nodes.length; i++) {
       const n = this.nodes[i];
       const d = Math.hypot(w.x - n.x, w.y - n.y);
       const grabR = Math.max(28, (n.r || 14) + 12);
       if (d <= grabR) {
         nearPath = true;
-        add({ type: 'path', item: n }, d, -30);
+        const curWin = bestPath && bestPath.i === this.current;
+        const thisCur = n.i === this.current;
+        const later = !bestPath || n.i > bestPath.i;
+        if (
+          !bestPath ||
+          d < bestPathD - 0.5 ||
+          (Math.abs(d - bestPathD) < 0.5 && (thisCur || (!curWin && later)))
+        ) {
+          bestPath = n;
+          bestPathD = d;
+        }
       }
     }
+    if (bestPath) add({ type: 'path', item: bestPath }, bestPathD, -30);
 
     // × on the selected step — highest priority so delete is always reachable
     if (
@@ -789,13 +816,27 @@
         this._keepCameraOnce = true;
         const newIndex = this.onInsertBetween(after);
         if (newIndex != null && this.beginAimAtIndex) {
-          this.beginAimAtIndex(newIndex);
-          // Stay unarmed until pointer travels ARM_PX â€” insert must not auto-snap
-          this._aimArmed = false;
-          this._moved = false;
-          this.canvas.style.cursor = 'grabbing';
-          // Continue as node aim with current pointer
+          // Write/select mode would otherwise treat this as reorder-only —
+          // edge insert is a place-then-aim: show gap seats immediately.
+          this._allowAim = true;
+          this._reorderOnly = false;
+          this._edgeInsertAim = true;
+          this.beginAimAtIndex(newIndex, { armed: true, fromEdge: true });
+          this._aimArmed = true;
+          this._moved = true;
+          this.canvas.style.cursor = 'crosshair';
           this._ptrDown = { x: e.clientX, y: e.clientY };
+          if (typeof global.HLApp !== 'undefined' && global.HLApp.setSyncStatus) {
+            const planted =
+              this._dragNode && this._dragNode.chord && this._dragNode.chord.name
+                ? this._dragNode.chord.name
+                : 'passing chord';
+            global.HLApp.setSyncStatus(
+              'Passing ' +
+                planted +
+                ' · drag a green/gold seat to change · release on empty space to cancel'
+            );
+          }
         }
       }
       // fall through if now in node mode
@@ -808,8 +849,14 @@
           ? Math.hypot(e.clientX - this._ptrDown.x, e.clientY - this._ptrDown.y)
           : 99;
       if (this._pendingClick && pd < 10) return;
-      this.camera.tx -= (e.clientX - this._last.x) / this.camera.zoom;
-      this.camera.ty -= (e.clientY - this._last.y) / this.camera.zoom;
+      const zPan = this.camera.zoom || 1;
+      const mdx = e.clientX - this._last.x;
+      const mdy = e.clientY - this._last.y;
+      const rot = this.camera.rot || 0;
+      const c = Math.cos(rot);
+      const s = Math.sin(rot);
+      this.camera.tx -= (mdx * c + mdy * s) / zPan;
+      this.camera.ty -= (-mdx * s + mdy * c) / zPan;
       this.camera.x = this.camera.tx;
       this.camera.y = this.camera.ty;
       this._userPanned = true;
@@ -941,6 +988,7 @@
     if (hit && hit.type === 'path') {
       this.canvas.style.cursor = 'pointer';
       const pi = hit.item && hit.item.i;
+      if (this.ensureGhostHalo) this.ensureGhostHalo({ pivotIndex: pi });
       const same =
         prev &&
         prev.type === 'path' &&
@@ -955,6 +1003,8 @@
       hit.type === 'hoverSuggest'
     ) {
       this.canvas.style.cursor = 'pointer';
+    } else if (hit && (hit.type === 'ghostOption' || hit.type === 'ghostDisk')) {
+      this.canvas.style.cursor = 'pointer';
     } else if (
       !hit ||
       (hit.type !== 'hoverSuggest' &&
@@ -962,7 +1012,8 @@
         hit.type !== 'ghostOption' &&
         hit.type !== 'ghostDisk')
     ) {
-      // Left the chord and its suggest fan â€” clear previews
+      if (this.hideGhostHalo) this.hideGhostHalo();
+      // Left the chord and its suggest fan — clear previews
       if (this.hoverSuggests && this.hoverSuggests.length && this.onHoverPath) {
         // null pathIndex signals clear
         this.onHoverPath(null, null);
@@ -1098,6 +1149,7 @@
     const wasNode = this._mode === 'node';
     const dragI = this._dragNode && this._dragNode.i;
     const dragCh = this._dragNode && this._dragNode.chord;
+    const edgeInsertAim = !!this._edgeInsertAim;
     // Require armed aim + real travel + locked distant target (tiny moves never rewrite)
     const travelPx =
       wasNode && this._ptrDown && e
@@ -1110,7 +1162,7 @@
       this.snapAlt &&
       this.snapAlt.chord &&
       travelPx >= 40;
-    const didAimCommit = !!canCommit;
+    let didAimCommit = !!canCommit;
     if (wasNode && this._dragNode) {
       if (canCommit) {
         const meta = {
@@ -1128,6 +1180,35 @@
         } else if (this.onSwapChord) {
           this.onSwapChord(this._dragNode.i, this.snapAlt.chord);
         }
+      } else if (edgeInsertAim) {
+        // Empty space (or not locked on a seat) cancels the planted passing chord.
+        // Releasing still on the new node keeps it.
+        let nearPlanted = false;
+        if (e && this._dragOrigin) {
+          const ptUp = this._eventCanvasXY(e);
+          const ww = this.screenToWorld(ptUp.sx, ptUp.sy);
+          nearPlanted =
+            Math.hypot(ww.x - this._dragOrigin.x, ww.y - this._dragOrigin.y) < 48;
+        }
+        if (this.onAimChange) this.onAimChange(this._dragNode.i, null, {});
+        if (nearPlanted) {
+          if (typeof global.HLApp !== 'undefined' && global.HLApp.setSyncStatus) {
+            const kept = (dragCh && dragCh.name) || 'passing chord';
+            global.HLApp.setSyncStatus(
+              'Kept ' + kept + ' · drag a seat to change · empty space cancels'
+            );
+          }
+        } else if (typeof global.HLApp !== 'undefined' && global.HLApp.undo) {
+          if (global.HLApp._sessionPushTimer) {
+            clearTimeout(global.HLApp._sessionPushTimer);
+            global.HLApp._sessionPushTimer = null;
+          }
+          global.HLApp.undo();
+          global.HLApp.setSyncStatus(
+            'Cancelled insert · released on empty space · no extra chord'
+          );
+        }
+        didAimCommit = false;
       } else if (this._moved && travelPx >= 28) {
         // Drop on another path step → reorder (no new chords). Drop on seat = above.
         let dropI = this._reorderDropI != null ? this._reorderDropI : -1;

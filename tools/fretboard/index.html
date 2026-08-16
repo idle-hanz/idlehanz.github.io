@@ -132,6 +132,60 @@
             box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.5) !important;
             animation: playPulse 0.85s ease-in-out infinite;
         }
+        .tp-row {
+            display: flex;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            gap: 0.35rem;
+            align-items: stretch;
+            padding: 0.15rem 0 0.35rem;
+        }
+        .prog-slot.tp-fat {
+            flex: 0 0 auto;
+            min-width: 168px !important;
+            max-width: 230px !important;
+        }
+        .tp-chip {
+            flex: 0 0 auto;
+            min-width: 2.55rem;
+            max-width: 5.5rem;
+            padding: 0.28rem 0.38rem 0.3rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--card-border);
+            background: var(--card-bg);
+            cursor: pointer;
+            line-height: 1.15;
+            user-select: none;
+        }
+        .tp-chip:hover { border-color: #94a3b8; }
+        .tp-chip .tp-bar {
+            display: block; font-size: 8px; font-weight: 500; color: var(--text-muted);
+        }
+        .tp-chip .tp-nm {
+            display: block; font-size: 11px; font-weight: 700; color: var(--text-main);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .tp-chip .tp-dur { display: block; font-size: 9px; color: var(--text-muted); }
+        .tp-chip.in-loop { outline: 1px dashed #8b5cf6; }
+        .tp-chip.is-a { box-shadow: inset 2px 0 0 #8b5cf6; }
+        .tp-chip.is-b { box-shadow: inset -2px 0 0 #8b5cf6; }
+        .prog-slot.in-loop { outline: 1px dashed #8b5cf6; }
+        .tele-bar {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.55rem;
+            margin: 0 0 0.55rem; font-size: 10px; color: var(--text-muted);
+        }
+        .tele-bar .tele-map { font-weight: 600; color: var(--text-main); max-width: 22rem; }
+        .tele-bar .tele-honest { font-style: italic; }
+        .tele-bar input[type="number"] {
+            width: 3.2rem; padding: 0.15rem 0.3rem; border-radius: 0.4rem;
+            border: 1px solid var(--card-border); background: var(--card-bg); color: var(--text-main);
+        }
+        .tele-dur {
+            width: 3.1rem; font-size: 10px; padding: 0.15rem 0.25rem; border-radius: 0.35rem;
+        }
+        .tele-label {
+            width: 100%; font-size: 11px; font-weight: 700; padding: 0.15rem 0.3rem; border-radius: 0.35rem;
+        }
         @keyframes playPulse {
             50% { box-shadow: 0 0 0 5px rgba(139, 92, 246, 0.22); }
         }
@@ -420,7 +474,7 @@
                     <ul class="list-disc pl-4 space-y-0.5">
                         <li>Red = this chord. Blue = the next one. Click a dot to hear a note.</li>
                         <li>The cards under the neck are the song. Click a card to study that chord.</li>
-                        <li><strong>Play</strong> (or <kbd>Space</kbd>) hears the row. Change the letter or type on a card — the neck follows.</li>
+                        <li><strong>Play</strong> (or <kbd>Space</kbd>) hears the row from this page. <strong>Chase</strong> follows the DAW (MTC + clock). They are not the same transport.</li>
                         <li>Eye on the <em>next</em> (blue) card: watch one chord become the next.</li>
                         <li>Scale / Key only paints the neck. It does not transpose your chords.</li>
                         <li><strong>Shift+click</strong> pins a grip you already play. DETECT names it.</li>
@@ -519,9 +573,11 @@
                             </div>
                             <div>
                                 <div class="font-semibold text-sm text-violet-600 dark:text-violet-300">PROGRESSION</div>
+                                <div id="tele-count" class="text-[10px]" style="color:var(--text-muted)"></div>
                             </div>
                         </div>
                         <div class="flex flex-wrap gap-1">
+                            <button type="button" class="chip text-[10px] px-2 py-1 rounded-xl font-medium" onclick="importMidiClick()" title="Import a Type 0 or Type 1 chord MIDI"><i class="fa-solid fa-file-import mr-1"></i>Import MIDI</button>
                             <button type="button" class="chip text-[10px] px-2 py-1 rounded-xl font-medium" onclick="addSlot()"><i class="fa-solid fa-plus mr-1"></i>Add</button>
                             <button type="button" id="solo-btn" class="chip text-[10px] px-2 py-1 rounded-xl font-medium" onclick="toggleSoloFocused()">
                                 <i class="fa-solid fa-headphones mr-1"></i><span id="solo-btn-label">Solo</span>
@@ -529,7 +585,38 @@
                             <button type="button" class="chip text-[10px] px-2 py-1 rounded-xl font-medium" onclick="showAllSlots()"><i class="fa-solid fa-eye mr-1"></i>All</button>
                         </div>
                     </div>
-                    <div class="flex flex-wrap items-stretch gap-1.5" id="progression-slots"></div>
+                    <div id="tele-bar" class="tele-bar">
+                        <input type="file" id="tele-midi-input" accept=".mid,.midi,audio/midi,audio/x-midi" class="hidden" onchange="onMidiFile(event)">
+                        <span id="tele-map-readout" class="tele-map">No map · Play is equal steps</span>
+                        <label class="inline-flex items-center gap-1 cursor-pointer" title="Scroll the row so the current chair stays in view while playing">
+                            <input type="checkbox" id="tele-follow" checked class="accent-violet-500" onchange="onTeleFollowChange()">Follow
+                        </label>
+                        <label class="inline-flex items-center gap-1 cursor-pointer font-semibold" title="Metronome on this page. Also in AUDIO on the right. Off until you tick it.">
+                            <input type="checkbox" id="tele-click" class="accent-amber-500" onchange="onTeleClickChange()">Click
+                        </label>
+                        <span class="tele-honest">Internal click — does not follow the DAW</span>
+                        <a href="midi-monitor.html" class="chip text-[10px] px-2 py-0.5 rounded-lg font-medium" title="Raw MIDI log">MIDI monitor</a>
+                        <select id="daw-port" class="field text-[10px] rounded-lg px-1 py-0.5 max-w-[10rem]" title="loopMIDI port the DAW Send To" onchange="onDawPortChange()">
+                            <option value="">MIDI port…</option>
+                        </select>
+                        <button type="button" id="daw-chase-btn" class="chip text-[10px] px-2 py-0.5 rounded-lg font-semibold" onclick="toggleDawChase()" title="Follow the DAW playhead on this row">Chase</button>
+                        <span id="daw-chase-status" class="tele-honest">this page’s Play</span>
+                        <label class="inline-flex items-center gap-1" title="Seconds to subtract from MTC. 0 = MTC 00:00:00 is the start of the imported map.">
+                            MTC −
+                            <input type="number" id="daw-offset" value="0" step="0.1" onchange="onDawOffsetChange()">
+                            s
+                        </label>
+                        <button type="button" class="chip text-[10px] px-2 py-0.5 rounded-lg font-medium" onclick="setLoopEnd('a')" title="Loop start = focused chair">A</button>
+                        <button type="button" class="chip text-[10px] px-2 py-0.5 rounded-lg font-medium" onclick="setLoopEnd('b')" title="Loop end = focused chair">B</button>
+                        <button type="button" class="chip text-[10px] px-2 py-0.5 rounded-lg font-medium" onclick="clearLoop()">Clear loop</button>
+                        <span id="tele-loop-lab">Loop off (whole row)</span>
+                        <label class="inline-flex items-center gap-1" title="Display offset if the file's bar 1 is not the song's bar 1">
+                            File bar 1 = song bar
+                            <input type="number" id="tele-bar-offset" value="1" step="1" onchange="onBarOffsetChange()">
+                        </label>
+                        <button type="button" id="tele-resume-btn" class="chip text-[10px] px-2 py-0.5 rounded-lg font-semibold hidden" onclick="resumeTeleprompter()">Resume teleprompter</button>
+                    </div>
+                    <div class="tp-row" id="progression-slots"></div>
                 </div>
             </div>
 
@@ -569,12 +656,17 @@
                         </div>
                         <div>
                             <label class="block text-[10px] mb-0.5" style="color:var(--text-muted)">Tempo <span id="tempo-val">90</span> BPM</label>
-                            <input type="range" id="audio-tempo" min="50" max="140" step="5" value="90" class="w-full accent-indigo-500">
+                            <input type="range" id="audio-tempo" min="40" max="180" step="1" value="90" class="w-full accent-indigo-500">
                         </div>
                         <label class="flex items-center gap-x-2 cursor-pointer text-xs">
                             <input type="checkbox" id="audio-loop" class="accent-violet-500">
                             <span>Loop progression</span>
                         </label>
+                        <label class="flex items-center gap-x-2 cursor-pointer text-xs font-semibold" title="Metronome on this page only. Tick this, then Play.">
+                            <input type="checkbox" id="audio-click" class="accent-amber-500" onchange="onTeleClickChange()">
+                            <span>Click</span>
+                        </label>
+                        <p class="text-[9px] leading-snug" style="color:var(--text-muted)">Click is off until you tick it. It follows this page’s tempo / map — it does not follow the DAW.</p>
                         <label class="block text-[10px]" style="color:var(--text-muted)">Volume <span id="vol-val">0.55</span></label>
                         <input type="range" id="audio-volume" min="0.1" max="1" step="0.05" value="0.55" class="w-full accent-emerald-500">
                         <label class="block text-[10px]" style="color:var(--text-muted)">Octave <span id="oct-val">+1</span></label>
@@ -649,7 +741,7 @@
             </div>
         </div>
     </div>
-    <script src="../ih-session.js?v=20260814l"></script>
+    <script src="../ih-session.js?v=20260816q"></script>
     <script>
     const NOTES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     const NOTES_FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
@@ -1025,6 +1117,44 @@
     let fretClipStart = 0;
     let fretClipWindow = 8;
     let sessionWriteKey = null;
+    // Teleprompter: Fretboard-owned long row + conductor (not a Landscape cell)
+    let tpActive = false;
+    let tpConductor = null;
+    let tpSourceName = '';
+    let tpBarOffset = 0;
+    let tpFollow = true;
+    let tpClick = false;
+    let tpLoopA = null;
+    let tpLoopB = null;
+    let tpMidiPortName = '';
+    let tpChaseOffsetSec = 0;
+    const daw = {
+        want: false,
+        access: null,
+        sysex: false,
+        portId: '',
+        running: false,
+        clockHeard: false,
+        mtcHeard: false,
+        sppHeard: false,
+        lastClockTs: 0,
+        clockTimes: [],
+        clockPeriod: 0,
+        clockBpm: 0,
+        lastClockPerf: 0,
+        fps: 25,
+        mtcNibbles: [0, 0, 0, 0, 0, 0, 0, 0],
+        mtcGot: 0,
+        lastMtcSec: null,
+        lastMtcPerf: 0,
+        lastMtcStamp: '',
+        songSec: 0,
+        cycleJump: false,
+        raf: 0,
+        lastUi: 0,
+        lastChair: -1,
+        err: ''
+    };
     // Morph: exclusive tones pulse current↔next; shared stay lit
     // morphMode: null | 'pair' (Next eye, red/blue) | 'mono' (Current eye, greyscale)
     let morphMode = null;
@@ -1074,13 +1204,29 @@
         return arr[((semi % 12) + 12) % 12];
     }
     function currentSlot() { return progression[progressionFocus]; }
+    function nextSlotIndex() {
+        if (progression.length < 2) return -1;
+        const lp = normalizedLoop();
+        if (lp) {
+            if (progressionFocus < lp.a || progressionFocus >= lp.b) return lp.a;
+            return progressionFocus + 1;
+        }
+        if (tpActive) {
+            return progressionFocus < progression.length - 1 ? progressionFocus + 1 : -1;
+        }
+        return (progressionFocus + 1) % progression.length;
+    }
     function nextSlot() {
-        if (progression.length < 2) return progression[0];
-        return progression[(progressionFocus + 1) % progression.length];
+        const i = nextSlotIndex();
+        if (i < 0) return null;
+        return progression[i];
     }
 
     // ——— Chord tones / bass / labels ———
     function slotIntervals(slot) {
+        if (slot && slot._rest) {
+            return { root: slot.customRoot || 0, intervals: [], labels: [], notes: [] };
+        }
         if (slot.mode === 'custom') {
             const root = slot.customRoot;
             const notes = [...new Set(slot.customNotes.map(n => ((n % 12) + 12) % 12))];
@@ -1117,6 +1263,9 @@
     }
 
     function slotDisplayName(slot) {
+        if (!slot) return '?';
+        if (slot._rest) return '(rest)';
+        if (slot._label) return slot._label;
         const info = slotIntervals(slot);
         let base;
         if (slot.mode === 'custom') base = `Custom ${getNoteName(info.root)}`;
@@ -1124,6 +1273,38 @@
         const bass = slotBassPc(slot);
         if (bass !== info.root) base += `/${getNoteName(bass)}`;
         return base;
+    }
+
+    function formatBeats(n) {
+        const x = +n;
+        if (!isFinite(x)) return '4';
+        if (Math.abs(x - Math.round(x)) < 0.02) return String(Math.round(x));
+        return String(Math.round(x * 100) / 100);
+    }
+
+    function compactChipName(slot) {
+        if (!slot) return '?';
+        if (slot._rest) return '—';
+        if (slot._label) return slot._label;
+        if (window.IHSession && IHSession.compactChairName) {
+            const quality = slot.mode === 'custom'
+                ? 'custom'
+                : (IHSession.typeIdxToQuality ? IHSession.typeIdxToQuality(slot.typeIdx) : 'maj');
+            return IHSession.compactChairName({
+                root: slot.mode === 'custom' ? slot.customRoot : slot.root,
+                quality,
+                name: '',
+                bass: slotBassPc(slot),
+                _rest: false
+            }, getNoteName);
+        }
+        return slotDisplayName(slot);
+    }
+
+    function chairBarLabel(slot) {
+        if (!tpConductor || !slot || slot._tick == null || !window.IHSession || !IHSession.tickToBarBeat) return '';
+        const bb = IHSession.tickToBarBeat(tpConductor, slot._tick, tpBarOffset);
+        return String(bb.bar);
     }
 
     function romanForSlot(slot) {
@@ -1555,7 +1736,8 @@
         const notes = new Set();
         pitchSetFromSlot(currentSlot()).forEach((n) => notes.add(n));
         if (progression.length > 1) {
-            pitchSetFromSlot(nextSlot()).forEach((n) => notes.add(n));
+            const nxt = nextSlot();
+            if (nxt) pitchSetFromSlot(nxt).forEach((n) => notes.add(n));
         }
         detectNotes = notes;
         detectNotesDirty = false;
@@ -2921,11 +3103,15 @@
     }
 
     function getPlayableIndices() {
+        const range = playRange();
         const vis = [];
-        progression.forEach((s, i) => {
-            if (s.visible !== false) vis.push(i);
-        });
-        return vis.length ? vis : progression.map((_, i) => i);
+        for (let i = range.a; i <= range.b; i++) {
+            if (progression[i] && progression[i].visible !== false) vis.push(i);
+        }
+        if (vis.length) return vis;
+        const all = [];
+        for (let i = range.a; i <= range.b; i++) if (progression[i]) all.push(i);
+        return all;
     }
 
     function updateProgPlayUI() {
@@ -2965,6 +3151,9 @@
     }
 
     function toggleProgressionPlay() {
+        if (daw.want) {
+            setDawChase(false);
+        }
         if (progPlaying) {
             stopProgressionPlay();
             return;
@@ -2983,28 +3172,35 @@
 
             let pos = indices.indexOf(progressionFocus);
             if (pos < 0) pos = 0;
+            let deadline = a.currentTime;
 
             const tick = () => {
                 if (!progPlaying || gen !== progPlayGen) return;
                 const idx = indices[pos];
-                // Move board focus without fighting solo visibility logic oddly
                 progressionFocus = idx;
                 if (soloActive) {
                     progression.forEach((s, i) => { s.visible = i === progressionFocus; });
                 }
                 updateFretboard();
+                scrollChairIntoView(idx);
                 if (canAutoSeedDetect()) seedDetectFromPair();
-                playSlotPattern(progression[idx]);
+                const slot = progression[idx];
+                if (slot && !slot._rest) playSlotPattern(slot);
+                scheduleClicksForChair(idx);
 
                 pos++;
+                const looped = !!normalizedLoop() || audioLoop;
                 if (pos >= indices.length) {
-                    if (audioLoop) pos = 0;
+                    if (looped) pos = 0;
                     else {
                         stopProgressionPlay();
                         return;
                     }
                 }
-                progTimer = setTimeout(tick, chordEventMs());
+                const ms = slotDurationMs(idx);
+                deadline += ms / 1000;
+                const wait = Math.max(12, (deadline - a.currentTime) * 1000);
+                progTimer = setTimeout(tick, wait);
             };
             tick();
         });
@@ -3025,7 +3221,7 @@
         }
         updateFretboard();
         if (canAutoSeedDetect()) seedDetectFromPair();
-        playSlotPattern(progression[idx]);
+        if (progression[idx] && !progression[idx]._rest) playSlotPattern(progression[idx]);
     }
 
     function hitTestFret(canvasX, canvasY) {
@@ -3121,12 +3317,8 @@
 
     function onInstrumentChange() {
         const el = document.getElementById('instrument-type');
-        instrument = (el && el.value === 'bass') ? 'bass' : 'guitar';
-        const cfg = currentInstrumentCfg();
-        const n = cfg.defaultCount;
-        applyOpenMidi(defaultMidiFor(instrument, n));
-        populateInstrumentUI();
-        updateFretboard();
+        setInstrument((el && el.value === 'bass') ? 'bass' : 'guitar');
+        if (tpActive) persistTeleprompterToSong();
     }
 
     function onStringCountChange() {
@@ -3352,13 +3544,641 @@
     }
 
     // ——— Progression UI E ———
-    function addSlot() {
-        if (progression.length >= 8) {
-            setInstanceStatus('Max 8 chords in progression', false);
+    function rememberInstrument() {
+        try { localStorage.setItem('guitarAppInstrument', instrument); } catch (e) {}
+    }
+    function recallInstrument() {
+        try { return localStorage.getItem('guitarAppInstrument'); } catch (e) { return null; }
+    }
+    function setInstrument(kind, opts) {
+        opts = opts || {};
+        instrument = kind === 'bass' ? 'bass' : 'guitar';
+        const el = document.getElementById('instrument-type');
+        if (el) el.value = instrument;
+        if (!opts.keepTuning) {
+            const cfg = currentInstrumentCfg();
+            applyOpenMidi(defaultMidiFor(instrument, cfg.defaultCount));
+        }
+        populateInstrumentUI();
+        rememberInstrument();
+        if (!opts.silent) updateFretboard();
+    }
+    function normalizedLoop() {
+        if (tpLoopA == null || tpLoopB == null || !progression.length) return null;
+        let a = Math.max(0, Math.min(progression.length - 1, tpLoopA | 0));
+        let b = Math.max(0, Math.min(progression.length - 1, tpLoopB | 0));
+        if (a > b) { const t = a; a = b; b = t; }
+        return { a, b };
+    }
+    function playRange() {
+        return normalizedLoop() || { a: 0, b: Math.max(0, progression.length - 1) };
+    }
+    function slotDurationMs(idx) {
+        const slot = progression[idx];
+        if (tpConductor && slot && slot._tick != null && slot._tickEnd != null && window.IHSession && IHSession.ticksToMs) {
+            return IHSession.ticksToMs(tpConductor, slot._tick, slot._tickEnd);
+        }
+        if (slot && slot._duration != null) {
+            readAudioControls();
+            return Math.max(80, (+slot._duration) * (60000 / Math.max(40, audioTempo)));
+        }
+        return chordEventMs();
+    }
+    function playClick(when, accent) {
+        const a = ensureAudio();
+        if (!a) return;
+        const t0 = (when != null && when >= a.currentTime) ? when : a.currentTime + 0.004;
+        const osc = a.createOscillator();
+        const g = a.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(accent ? 2000 : 1200, t0);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(accent ? 0.5 : 0.32, t0 + 0.0015);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.035);
+        osc.connect(g);
+        g.connect(masterGain || a.destination);
+        osc.start(t0);
+        osc.stop(t0 + 0.045);
+    }
+    function scheduleClicksForChair(idx) {
+        if (daw.want) return;
+        if (!tpClick) return;
+        const slot = progression[idx];
+        if (!slot) return;
+        const a = ensureAudio();
+        if (!a) return;
+        if (tpConductor && slot._tick != null && slot._tickEnd != null && window.IHSession && IHSession.clickTicksInRange) {
+            const clicks = IHSession.clickTicksInRange(tpConductor, slot._tick, slot._tickEnd);
+            const t0 = a.currentTime + 0.03;
+            const startSec = IHSession.tickToSeconds(tpConductor, slot._tick);
+            clicks.forEach((cl) => {
+                const rel = IHSession.tickToSeconds(tpConductor, cl.tick) - startSec;
+                if (rel >= -0.001) playClick(t0 + Math.max(0, rel), cl.accent);
+            });
             return;
         }
+        readAudioControls();
+        const beats = slot._duration != null ? Math.max(0.25, +slot._duration) : 1;
+        const beatSec = 60 / Math.max(40, audioTempo);
+        const t0 = a.currentTime + 0.03;
+        for (let b = 0; b < beats - 0.001; b++) {
+            playClick(t0 + b * beatSec, b === 0 || b % 4 === 0);
+        }
+    }
+    function scrollChairIntoView(idx) {
+        if (!tpFollow) return;
+        const el = document.querySelector('#progression-slots [data-slot-index="' + idx + '"]');
+        if (el && el.scrollIntoView) {
+            el.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+        }
+    }
+    function updateTeleBar() {
+        const map = document.getElementById('tele-map-readout');
+        if (map) {
+            if (tpConductor && window.IHSession && IHSession.formatConductorReadout) {
+                map.textContent = IHSession.formatConductorReadout(tpConductor) + (tpSourceName ? ' · ' + tpSourceName : '');
+            } else if (progression.some((s) => s && s._duration != null)) {
+                map.textContent = audioTempo + ' BPM · chairs follow beats';
+            } else {
+                map.textContent = 'No map · Play is equal steps';
+            }
+        }
+        const loopLab = document.getElementById('tele-loop-lab');
+        if (loopLab) {
+            const lp = normalizedLoop();
+            loopLab.textContent = lp ? ('Loop ' + (lp.a + 1) + '–' + (lp.b + 1)) : 'Loop off (whole row)';
+        }
+        const resume = document.getElementById('tele-resume-btn');
+        if (resume && window.IHSession && IHSession.loadSong) {
+            const song = IHSession.loadSong();
+            const has = !!(song && song.teleprompter && song.teleprompter.chairs && song.teleprompter.chairs.length);
+            resume.classList.toggle('hidden', !(has && !tpActive));
+        }
+        const off = document.getElementById('tele-bar-offset');
+        if (off && document.activeElement !== off) off.value = String(1 + (tpBarOffset | 0));
+        const follow = document.getElementById('tele-follow');
+        if (follow) follow.checked = !!tpFollow;
+        ['tele-click', 'audio-click'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.checked = !!tpClick;
+        });
+        const count = document.getElementById('tele-count');
+        if (count) {
+            count.textContent = progression.length
+                ? (progression.length + ' chair' + (progression.length === 1 ? '' : 's') + (tpActive ? ' · teleprompter' : ''))
+                : '';
+        }
+        if (typeof updateDawUi === 'function') updateDawUi();
+    }
+    function persistTeleprompterToSong() {
+        if (!window.IHSession) return null;
+        let song = IHSession.loadSong();
+        if (!song) {
+            song = IHSession.emptySong({
+                title: getSessionName(),
+                updatedBy: 'fretboard'
+            });
+        }
+        if (tpConductor) song.conductor = IHSession.normalizeConductor(tpConductor);
+        const chairs = IHSession.fretboardSlotsToChords(progression, chordTypes);
+        const prev = song.teleprompter && song.teleprompter.chairs ? song.teleprompter.chairs : [];
+        song.teleprompter = IHSession.normalizeTeleprompter({
+            sourceName: tpSourceName,
+            barOffset: tpBarOffset,
+            followPlayhead: tpFollow,
+            clickEnabled: tpClick,
+            loop: (tpLoopA != null && tpLoopB != null) ? { a: tpLoopA, b: tpLoopB } : null,
+            chairs: tpActive ? chairs : prev,
+            instrument,
+            midiPortName: tpMidiPortName,
+            chaseOffsetSec: tpChaseOffsetSec
+        });
+        IHSession.saveSong(song, 'fretboard');
+        return song;
+    }
+    function applyTeleprompter(tp, conductor) {
+        if (!tp || !tp.chairs || !tp.chairs.length || !window.IHSession) return false;
+        const slots = IHSession.chordsToFretboardSlots(tp.chairs, newSlot, chordTypes);
+        if (!slots.length) return false;
+        stopProgressionPlay();
+        progression = slots;
+        progressionFocus = 0;
+        fretClipStart = 0;
+        fretClipWindow = 8;
+        tpActive = true;
+        tpConductor = conductor ? IHSession.normalizeConductor(conductor) : null;
+        tpSourceName = tp.sourceName || '';
+        tpBarOffset = tp.barOffset | 0;
+        tpFollow = tp.followPlayhead !== false;
+        tpClick = !!tp.clickEnabled;
+        tpMidiPortName = tp.midiPortName || tpMidiPortName || '';
+        tpChaseOffsetSec = tp.chaseOffsetSec != null ? +tp.chaseOffsetSec : tpChaseOffsetSec;
+        daw.offsetReady = true;
+        if (tp.loop && tp.loop.a != null && tp.loop.b != null) {
+            tpLoopA = tp.loop.a | 0;
+            tpLoopB = tp.loop.b | 0;
+        } else {
+            tpLoopA = null;
+            tpLoopB = null;
+        }
+        if (tp.instrument === 'bass' || tp.instrument === 'guitar') {
+            setInstrument(tp.instrument, { silent: true, keepTuning: false });
+        }
+        updateTeleBar();
+        renderProgressionSlots();
+        updateFretboard();
+        return true;
+    }
+    function tryRestoreTeleprompterFromSong() {
+        if (!window.IHSession) return false;
+        const song = IHSession.loadSong();
+        if (!song || !song.teleprompter || !song.teleprompter.chairs || !song.teleprompter.chairs.length) return false;
+        return applyTeleprompter(song.teleprompter, song.conductor);
+    }
+    function resumeTeleprompter() {
+        if (tryRestoreTeleprompterFromSong()) {
+            setIhSyncStatus('Resumed teleprompter');
+            setInstanceStatus('Resumed teleprompter row', true);
+        }
+    }
+    function importMidiClick() {
+        const el = document.getElementById('tele-midi-input');
+        if (el) el.click();
+    }
+    function onMidiFile(ev) {
+        const f = ev.target && ev.target.files && ev.target.files[0];
+        if (ev.target) ev.target.value = '';
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                applyImportedMidi(new Uint8Array(reader.result), f.name);
+            } catch (err) {
+                alert('Could not import MIDI: ' + (err && err.message ? err.message : err));
+            }
+        };
+        reader.readAsArrayBuffer(f);
+    }
+    function applyImportedMidi(bytes, name) {
+        if (!window.IHSession || !IHSession.importMidiBytes) {
+            alert('ih-session.js is missing the MIDI importer. Hard-refresh this page.');
+            return;
+        }
+        const imp = IHSession.importMidiBytes(bytes);
+        if (!imp.chairs || !imp.chairs.length) {
+            alert('No notes found in that MIDI file.');
+            return;
+        }
+        const slots = IHSession.chordsToFretboardSlots(imp.chairs, newSlot, chordTypes);
+        if (!slots.length) {
+            alert('Could not turn those notes into chairs.');
+            return;
+        }
+        stopProgressionPlay();
+        if (typeof stopPairMorph === 'function') stopPairMorph();
+        progression = slots;
+        progressionFocus = 0;
+        fretClipStart = 0;
+        fretClipWindow = 8;
+        tpActive = true;
+        tpConductor = imp.conductor;
+        tpSourceName = name || '';
+        tpLoopA = null;
+        tpLoopB = null;
+        const pref = recallInstrument();
+        setInstrument((pref === 'guitar' || pref === 'bass') ? pref : 'bass', { silent: true });
+        if (typeof setScaleDisplay === 'function') setScaleDisplay('chords');
+        persistTeleprompterToSong();
+        saveLastSession();
+        updateTeleBar();
+        renderProgressionSlots();
+        updateFretboard();
+        const n = slots.length;
+        setIhSyncStatus('Imported ' + n + ' chairs · does not follow the DAW');
+        setInstanceStatus('Imported “' + (name || 'MIDI') + '” · ' + n + ' chairs', true);
+        if (imp.warnings && imp.warnings.length) console.log('[teleprompter]', imp.warnings.join(' '));
+    }
+    function setLoopEnd(which) {
+        if (which === 'a') tpLoopA = progressionFocus;
+        else tpLoopB = progressionFocus;
+        if (tpActive) persistTeleprompterToSong();
+        updateTeleBar();
+        renderProgressionSlots();
+    }
+    function clearLoop() {
+        tpLoopA = null;
+        tpLoopB = null;
+        if (tpActive) persistTeleprompterToSong();
+        updateTeleBar();
+        renderProgressionSlots();
+    }
+    function onTeleFollowChange() {
+        const el = document.getElementById('tele-follow');
+        tpFollow = !!(el && el.checked);
+        if (tpActive) persistTeleprompterToSong();
+    }
+    function onTeleClickChange() {
+        const a = document.getElementById('audio-click');
+        const b = document.getElementById('tele-click');
+        const src = (document.activeElement && (document.activeElement.id === 'audio-click' || document.activeElement.id === 'tele-click'))
+            ? document.activeElement
+            : (a || b);
+        tpClick = !!(src && src.checked);
+        if (a && a !== src) a.checked = tpClick;
+        if (b && b !== src) b.checked = tpClick;
+        if (tpActive) persistTeleprompterToSong();
+    }
+    function onBarOffsetChange() {
+        const el = document.getElementById('tele-bar-offset');
+        const n = el ? parseInt(el.value, 10) : 1;
+        tpBarOffset = (isFinite(n) ? n : 1) - 1;
+        if (tpActive) persistTeleprompterToSong();
+        renderProgressionSlots();
+    }
+
+    function pad2(n) {
+        return String(Math.max(0, n | 0)).padStart(2, '0');
+    }
+    function formatMtcStamp(h, m, s, f, fps) {
+        return pad2(h) + ':' + pad2(m) + ':' + pad2(s) + ':' + pad2(f) + ' @' + (fps || daw.fps || 25);
+    }
+    function mtcPartsToSec(h, m, s, f, fps) {
+        const rate = fps > 0 ? fps : 25;
+        return (h | 0) * 3600 + (m | 0) * 60 + (s | 0) + (f | 0) / rate;
+    }
+    function decodeMtcNibbles() {
+        const n = daw.mtcNibbles;
+        const frames = (n[1] << 4) | n[0];
+        const seconds = (n[3] << 4) | n[2];
+        const minutes = (n[5] << 4) | n[4];
+        const hours = n[6] | ((n[7] & 1) << 4);
+        const rateBits = (n[7] >> 1) & 3;
+        const fps = [24, 25, 29.97, 30][rateBits] || 25;
+        return { h: hours, m: minutes, s: seconds, f: frames, fps: fps };
+    }
+    function dawHasMap() {
+        return !!(tpConductor && window.IHSession && IHSession.secondsToTick);
+    }
+    function chairIndexAtSongSec(sec) {
+        if (!progression.length) return null;
+        if (dawHasMap()) {
+            const tick = IHSession.secondsToTick(tpConductor, sec);
+            let fallback = null;
+            for (let i = 0; i < progression.length; i++) {
+                const slot = progression[i];
+                if (slot._tick == null) continue;
+                const end = slot._tickEnd != null ? slot._tickEnd : slot._tick;
+                if (tick >= slot._tick && tick < end) return i;
+                if (tick >= slot._tick) fallback = i;
+            }
+            if (fallback != null) return fallback;
+            return 0;
+        }
+        if (!progression.some((s) => s && s._duration != null)) return null;
+        const bpm = daw.clockBpm || audioTempo || 90;
+        const beatSec = 60 / Math.max(1, bpm);
+        let t = 0;
+        for (let i = 0; i < progression.length; i++) {
+            const beats = progression[i]._duration != null ? +progression[i]._duration : 4;
+            const dur = Math.max(0.05, beats * beatSec);
+            if (sec < t + dur) return i;
+            t += dur;
+        }
+        return progression.length - 1;
+    }
+    function applyDawSongTime(sec, forceUi) {
+        daw.songSec = sec;
+        if (!daw.want) {
+            if (forceUi) updateDawUi();
+            return;
+        }
+        const idx = chairIndexAtSongSec(sec);
+        if (idx == null) {
+            if (forceUi) updateDawUi();
+            return;
+        }
+        if (idx !== daw.lastChair) {
+            daw.lastChair = idx;
+            progressionFocus = idx;
+            if (soloActive) {
+                progression.forEach((s, i) => { s.visible = i === progressionFocus; });
+            }
+            updateFretboard();
+            scrollChairIntoView(idx);
+            if (typeof canAutoSeedDetect === 'function' && canAutoSeedDetect()) seedDetectFromPair();
+            renderProgressionSlots();
+            updateDawUi();
+            return;
+        }
+        if (forceUi || performance.now() - daw.lastUi > 200) updateDawUi();
+    }
+    function commitMtc(h, m, s, f, fps, why) {
+        daw.fps = fps > 0 ? fps : daw.fps || 25;
+        daw.mtcHeard = true;
+        const mtcSec = mtcPartsToSec(h, m, s, f, daw.fps);
+        if (daw.lastMtcSec != null && mtcSec + 0.25 < daw.lastMtcSec) {
+            daw.cycleJump = true;
+        }
+        daw.lastMtcSec = mtcSec;
+        daw.lastMtcPerf = performance.now();
+        daw.lastMtcStamp = formatMtcStamp(h, m, s, f, daw.fps);
+        applyDawSongTime(mtcSec - (tpChaseOffsetSec || 0), true);
+        if (why) { /* keep for future log */ }
+    }
+    function updateDawUi() {
+        const now = performance.now();
+        if (now - daw.lastUi < 80 && daw.want) {
+            /* still refresh status at a modest rate */
+        }
+        daw.lastUi = now;
+        const st = document.getElementById('daw-chase-status');
+        const btn = document.getElementById('daw-chase-btn');
+        const off = document.getElementById('daw-offset');
+        if (off && document.activeElement !== off) {
+            if (String(off.value) !== String(tpChaseOffsetSec)) off.value = String(tpChaseOffsetSec || 0);
+        }
+        if (btn) {
+            btn.textContent = daw.want ? 'Chasing' : 'Chase';
+            btn.classList.toggle('bg-emerald-100', !!daw.want);
+            btn.classList.toggle('text-emerald-800', !!daw.want);
+            btn.classList.toggle('border-emerald-400', !!daw.want);
+        }
+        if (!st) return;
+        if (!navigator.requestMIDIAccess) {
+            st.textContent = 'Need Chrome/Edge — not following';
+            return;
+        }
+        if (daw.err === 'denied') {
+            st.textContent = 'Web MIDI denied — not following';
+            return;
+        }
+        if (!daw.access) {
+            st.textContent = daw.want ? 'Allow Web MIDI…' : 'this page’s Play';
+            return;
+        }
+        if (!daw.portId) {
+            st.textContent = daw.want ? 'Pick the loopMIDI port' : 'this page’s Play';
+            return;
+        }
+        const clockFresh = daw.lastClockPerf && (now - daw.lastClockPerf) < 400;
+        const mtcFresh = daw.lastMtcPerf && (now - daw.lastMtcPerf) < 400;
+        const bpm = daw.clockBpm ? (Math.round(daw.clockBpm * 10) / 10) : 0;
+        const bits = [];
+        if (daw.want && daw.running && (mtcFresh || clockFresh)) bits.push('Following DAW');
+        else if (daw.want && daw.running) bits.push('Chase on · waiting for clock/MTC');
+        else if (daw.want && !daw.running) bits.push(daw.mtcHeard ? 'DAW stopped' : 'Chase on · DAW not playing');
+        else bits.push('this page’s Play');
+        if (daw.lastMtcStamp) bits.push(daw.lastMtcStamp);
+        if (bpm) bits.push(bpm + ' BPM');
+        if (clockFresh) bits.push('clock');
+        bits.push(daw.sppHeard ? 'SPP heard' : 'no SPP');
+        if (daw.cycleJump) bits.push('MTC jumped');
+        if (daw.want && !dawHasMap() && !progression.some((s) => s && s._duration != null)) {
+            bits.push('no map — cannot name bars');
+        }
+        st.textContent = bits.join(' · ');
+    }
+    function dawRaf() {
+        daw.raf = requestAnimationFrame(dawRaf);
+        if (!daw.want || !daw.running || daw.lastMtcSec == null) return;
+        const sec = daw.lastMtcSec - (tpChaseOffsetSec || 0) + (performance.now() - daw.lastMtcPerf) / 1000;
+        applyDawSongTime(sec);
+    }
+    function startDawRaf() {
+        if (!daw.raf) daw.raf = requestAnimationFrame(dawRaf);
+    }
+    function stopDawRaf() {
+        if (daw.raf) cancelAnimationFrame(daw.raf);
+        daw.raf = 0;
+    }
+    function onDawMidi(ev) {
+        const data = ev.data;
+        if (!data || !data.length) return;
+        const ts = ev.timeStamp || performance.now();
+        const s = data[0];
+        if (s === 0xF8) {
+            if (daw.lastClockTs) {
+                const dt = ts - daw.lastClockTs;
+                if (dt > 2 && dt < 250) {
+                    daw.clockTimes.push(dt);
+                    if (daw.clockTimes.length > 16) daw.clockTimes.shift();
+                    let sum = 0;
+                    for (let i = 0; i < daw.clockTimes.length; i++) sum += daw.clockTimes[i];
+                    daw.clockPeriod = sum / daw.clockTimes.length;
+                    daw.clockBpm = 60000 / (daw.clockPeriod * 24);
+                }
+            }
+            daw.lastClockTs = ts;
+            daw.lastClockPerf = performance.now();
+            daw.clockHeard = true;
+            if (daw.want && !daw.lastMtcStamp) updateDawUi();
+            return;
+        }
+        if (s === 0xFA || s === 0xFB) {
+            daw.running = true;
+            if (daw.want) {
+                stopProgressionPlay();
+                startDawRaf();
+            }
+            updateDawUi();
+            return;
+        }
+        if (s === 0xFC) {
+            daw.running = false;
+            updateDawUi();
+            return;
+        }
+        if (s === 0xF2) {
+            daw.sppHeard = true;
+            updateDawUi();
+            return;
+        }
+        if (s === 0xF1 && data.length > 1) {
+            const nibble = data[1];
+            const idx = (nibble >> 4) & 7;
+            daw.mtcNibbles[idx] = nibble & 0x0F;
+            daw.mtcGot |= (1 << idx);
+            if (idx === 7 && daw.mtcGot === 0xFF) {
+                const p = decodeMtcNibbles();
+                commitMtc(p.h, p.m, p.s, p.f, p.fps, 'qf');
+                daw.mtcGot = 0;
+            }
+            return;
+        }
+        if (s === 0xF0 && data.length >= 10 && data[1] === 0x7F && data[3] === 0x01 && data[4] === 0x01) {
+            const rateBits = (data[5] >> 5) & 3;
+            const fps = [24, 25, 29.97, 30][rateBits] || 25;
+            commitMtc(data[5] & 0x1F, data[6], data[7], data[8], fps, 'full');
+        }
+    }
+    function detachDawInputs() {
+        if (!daw.access) return;
+        daw.access.inputs.forEach(function (p) { p.onmidimessage = null; });
+    }
+    function listenDawPort(id) {
+        detachDawInputs();
+        daw.portId = id || '';
+        if (!id || !daw.access) {
+            updateDawUi();
+            return;
+        }
+        const port = daw.access.inputs.get(id);
+        if (!port) {
+            updateDawUi();
+            return;
+        }
+        port.onmidimessage = onDawMidi;
+        tpMidiPortName = port.name || '';
+        if (tpActive) persistTeleprompterToSong();
+        updateDawUi();
+    }
+    function fillDawPorts() {
+        const sel = document.getElementById('daw-port');
+        if (!sel || !daw.access) return;
+        const ports = Array.from(daw.access.inputs.values());
+        const prev = daw.portId || '';
+        sel.innerHTML = '';
+        const blank = document.createElement('option');
+        blank.value = '';
+        blank.textContent = ports.length ? 'Select MIDI input…' : 'No MIDI inputs';
+        sel.appendChild(blank);
+        ports.forEach(function (p) {
+            const o = document.createElement('option');
+            o.value = p.id;
+            o.textContent = p.name || p.id;
+            sel.appendChild(o);
+        });
+        let pick = prev && ports.some(function (p) { return p.id === prev; }) ? prev : '';
+        if (!pick && tpMidiPortName) {
+            const named = ports.find(function (p) { return p.name === tpMidiPortName; });
+            if (named) pick = named.id;
+        }
+        if (!pick) {
+            const prefer = ports.find(function (p) {
+                return /idle|hanz|chase|loopmidi|loop midi/i.test(p.name || '');
+            });
+            if (prefer) pick = prefer.id;
+        }
+        if (pick) {
+            sel.value = pick;
+            listenDawPort(pick);
+        } else {
+            updateDawUi();
+        }
+    }
+    async function enableDawMidi() {
+        if (!navigator.requestMIDIAccess) {
+            daw.err = 'nosupport';
+            updateDawUi();
+            return false;
+        }
+        try {
+            daw.access = await navigator.requestMIDIAccess({ sysex: true });
+            daw.sysex = true;
+        } catch (e1) {
+            try {
+                daw.access = await navigator.requestMIDIAccess({ sysex: false });
+                daw.sysex = false;
+            } catch (e2) {
+                daw.err = 'denied';
+                updateDawUi();
+                return false;
+            }
+        }
+        daw.err = '';
+        daw.access.onstatechange = function () { fillDawPorts(); };
+        fillDawPorts();
+        return true;
+    }
+    async function setDawChase(on) {
+        daw.want = !!on;
+        if (daw.want) {
+            stopProgressionPlay();
+            if (typeof stopPairMorph === 'function') stopPairMorph();
+            if (!daw.access) {
+                const ok = await enableDawMidi();
+                if (!ok) {
+                    daw.want = false;
+                    updateDawUi();
+                    return;
+                }
+            }
+            if (!daw.portId) fillDawPorts();
+            startDawRaf();
+            if (daw.lastMtcSec != null) applyDawSongTime(daw.lastMtcSec - (tpChaseOffsetSec || 0));
+        } else {
+            daw.running = daw.running;
+            stopDawRaf();
+            daw.lastChair = -1;
+        }
+        updateDawUi();
+        renderProgressionSlots();
+    }
+    async function toggleDawChase() {
+        await setDawChase(!daw.want);
+    }
+    async function onDawPortChange() {
+        if (!daw.access) {
+            const ok = await enableDawMidi();
+            if (!ok) return;
+        }
+        const sel = document.getElementById('daw-port');
+        listenDawPort(sel ? sel.value : '');
+    }
+    function onDawOffsetChange() {
+        const el = document.getElementById('daw-offset');
+        const n = el ? parseFloat(el.value) : 0;
+        tpChaseOffsetSec = isFinite(n) ? n : 0;
+        if (tpActive) persistTeleprompterToSong();
+        if (daw.lastMtcSec != null && daw.want) {
+            applyDawSongTime(daw.lastMtcSec - tpChaseOffsetSec);
+        }
+        updateDawUi();
+    }
+    function addSlot() {
         progression.push(newSlot(0, 0));
         updateFretboard();
+        if (tpActive) persistTeleprompterToSong();
     }
     function removeSlot(idx) {
         if (progression.length <= 1) return;
@@ -3366,6 +4186,7 @@
         if (progressionFocus >= progression.length) progressionFocus = progression.length - 1;
         if (progression.length < 2) stopPairMorph();
         updateFretboard();
+        if (tpActive) persistTeleprompterToSong();
     }
     function moveSlot(idx, dir) {
         const j = idx + dir;
@@ -3374,6 +4195,7 @@
         if (progressionFocus === idx) progressionFocus = j;
         else if (progressionFocus === j) progressionFocus = idx;
         updateFretboard();
+        if (tpActive) persistTeleprompterToSong();
     }
     // Solo: toggle — on = only focused chord; off = restore prior visibility
     let soloActive = false;
@@ -3444,18 +4266,32 @@
         const host = document.getElementById('progression-slots');
         if (!host) return;
         host.innerHTML = '';
+        updateTeleBar();
+        const nextIdx = nextSlotIndex();
+        const lp = normalizedLoop();
         progression.forEach((slot, idx) => {
-            if (idx > 0) {
-                const arr = document.createElement('div');
-                arr.className = 'flow-arrow hidden sm:flex items-center px-0.5 text-[10px]';
-                arr.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
-                host.appendChild(arr);
-            }
             const isCur = idx === progressionFocus;
-            const isNext = progression.length > 1 && idx === (progressionFocus + 1) % progression.length;
-            const isPlaying = progPlaying && isCur;
+            const isNext = nextIdx >= 0 && idx === nextIdx && !isCur;
+            const isPlaying = (progPlaying || (daw.want && daw.running)) && isCur;
+            const isFat = isCur || isNext || progression.length <= 2;
+            const inLoop = !!(lp && idx >= lp.a && idx <= lp.b);
+            if (!isFat) {
+                const chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = 'tp-chip' + (inLoop ? ' in-loop' : '') + (idx === tpLoopA ? ' is-a' : '') + (idx === tpLoopB ? ' is-b' : '');
+                chip.dataset.slotIndex = String(idx);
+                const bar = chairBarLabel(slot);
+                chip.innerHTML =
+                    (bar ? '<span class="tp-bar">' + bar + '</span>' : '') +
+                    '<span class="tp-nm">' + compactChipName(slot) + '</span>' +
+                    '<span class="tp-dur">' + formatBeats(slot._duration != null ? slot._duration : 4) + '</span>';
+                chip.title = slotDisplayName(slot) + ' · ' + formatBeats(slot._duration != null ? slot._duration : 4) + ' beats';
+                chip.onclick = () => setProgressionFocus(idx);
+                host.appendChild(chip);
+                return;
+            }
             const div = document.createElement('div');
-            div.className = `prog-slot rounded-xl flex-1 cursor-pointer ${isCur?'role-current':''} ${isNext&&!isCur?'role-next':''} ${!slot.visible?'hidden-slot':''} ${isPlaying?'playing-now':''}`;
+            div.className = `prog-slot tp-fat rounded-xl cursor-pointer ${isCur?'role-current':''} ${isNext&&!isCur?'role-next':''} ${!slot.visible?'hidden-slot':''} ${isPlaying?'playing-now':''}${inLoop?' in-loop':''}`;
             div.dataset.slotIndex = String(idx);
             if (isCur) div.dataset.role = 'current';
             else if (isNext) div.dataset.role = 'next';
@@ -3548,6 +4384,43 @@
 
             const body = document.createElement('div');
             body.className = 'space-y-1';
+
+            const labelInp = document.createElement('input');
+            labelInp.type = 'text';
+            labelInp.className = 'field tele-label';
+            labelInp.value = slot._label || slotDisplayName(slot);
+            labelInp.title = 'Rename this chair (guesses from MIDI can be wrong)';
+            labelInp.onclick = (e) => e.stopPropagation();
+            labelInp.onchange = () => {
+                slot._label = labelInp.value.trim();
+                if (tpActive) persistTeleprompterToSong();
+                updateFretboard();
+            };
+            body.appendChild(labelInp);
+
+            const durRow = document.createElement('label');
+            durRow.className = 'flex items-center justify-between gap-1 text-[10px]';
+            durRow.style.color = 'var(--text-muted)';
+            const barTxt = chairBarLabel(slot);
+            durRow.appendChild(document.createTextNode((barTxt ? 'Bar ' + barTxt + ' · ' : '') + 'Beats'));
+            const durInp = document.createElement('input');
+            durInp.type = 'number';
+            durInp.min = '0.25';
+            durInp.step = '0.25';
+            durInp.className = 'field tele-dur';
+            durInp.value = formatBeats(slot._duration != null ? slot._duration : 4);
+            durInp.onclick = (e) => e.stopPropagation();
+            durInp.onchange = () => {
+                const v = Math.max(0.25, +durInp.value || 4);
+                slot._duration = v;
+                if (tpConductor && slot._tick != null) {
+                    slot._tickEnd = slot._tick + v * (tpConductor.ppq || 480);
+                }
+                if (tpActive) persistTeleprompterToSong();
+                updateFretboard();
+            };
+            durRow.appendChild(durInp);
+            body.appendChild(durRow);
 
             if (slot.mode === 'named') {
                 const row = document.createElement('div'); row.className = 'grid grid-cols-2 gap-1';
@@ -4451,7 +5324,10 @@
         if (canAutoSeedDetect()) {
             const notes = new Set();
             pitchSetFromSlot(currentSlot()).forEach(n => notes.add(n));
-            if (progression.length > 1) pitchSetFromSlot(nextSlot()).forEach(n => notes.add(n));
+            if (progression.length > 1) {
+                const nxtSeed = nextSlot();
+                if (nxtSeed) pitchSetFromSlot(nxtSeed).forEach(n => notes.add(n));
+            }
             detectNotes = notes;
             renderDetectChips();
             renderDetectRootPin();
@@ -4679,9 +5555,22 @@
                 bassMode: s.bassMode,
                 bassToneIdx: s.bassToneIdx,
                 bassNote: s.bassNote,
-                visible: s.visible !== false
+                visible: s.visible !== false,
+                _duration: s._duration != null ? s._duration : 4,
+                _tick: s._tick,
+                _tickEnd: s._tickEnd,
+                _label: s._label || '',
+                _rest: !!s._rest
             })),
             progressionFocus,
+            tpActive,
+            tpConductor,
+            tpSourceName,
+            tpBarOffset,
+            tpFollow,
+            tpClick,
+            tpLoopA,
+            tpLoopB,
             scaleRoot,
             scaleType,
             startFret,
@@ -4746,10 +5635,25 @@
                 slot.bassToneIdx = +(s.bassToneIdx || 0);
                 slot.bassNote = ((+(s.bassNote || 0) % 12) + 12) % 12;
                 slot.visible = s.visible !== false;
+                if (s._duration != null) slot._duration = +s._duration;
+                if (s._tick != null) slot._tick = +s._tick;
+                if (s._tickEnd != null) slot._tickEnd = +s._tickEnd;
+                if (s._label) slot._label = String(s._label);
+                if (s._rest) slot._rest = true;
                 return slot;
             });
             progressionFocus = Math.max(0, Math.min(progression.length - 1, +(data.progressionFocus || 0)));
         }
+        if (typeof data.tpActive === 'boolean') tpActive = data.tpActive;
+        else tpActive = !!(data.tpConductor && data.progression && data.progression.length > 8);
+        if (data.tpConductor && window.IHSession) tpConductor = IHSession.normalizeConductor(data.tpConductor);
+        else tpConductor = null;
+        if (data.tpSourceName != null) tpSourceName = String(data.tpSourceName);
+        if (data.tpBarOffset != null) tpBarOffset = data.tpBarOffset | 0;
+        if (typeof data.tpFollow === 'boolean') tpFollow = data.tpFollow;
+        if (typeof data.tpClick === 'boolean') tpClick = data.tpClick;
+        tpLoopA = data.tpLoopA != null ? data.tpLoopA | 0 : null;
+        tpLoopB = data.tpLoopB != null ? data.tpLoopB | 0 : null;
 
         if (data.scaleRoot != null) scaleRoot = ((+data.scaleRoot % 12) + 12) % 12;
         if (data.scaleType && scaleTypes[data.scaleType]) scaleType = data.scaleType;
@@ -5090,6 +5994,14 @@
                     toggleHelpPanel(false);
                     return;
                 }
+                if (daw.want) {
+                    setDawChase(false);
+                    return;
+                }
+                if (typeof progPlaying !== 'undefined' && progPlaying) {
+                    stopProgressionPlay();
+                    return;
+                }
                 if (document.body.classList.contains('board-focus')) {
                     toggleBoardFocus();
                     return;
@@ -5160,15 +6072,27 @@
         renderProgressionSlots();
         refreshInstanceList();
         initCoachBar();
-        // Restore last session if present; else fresh defaults
+        // Incoming cell beats last Fretboard snapshot (C–G–Am–F).
         if (tryIngestLandscapeHandoff()) {
             seedDetectFromPair();
             setDetectMode('chord');
             markSessionClean('From Landscape');
-        } else if (!restoreLastSession()) {
+        } else if (tryLoadFocusedSongCell()) {
             seedDetectFromPair();
             setDetectMode('chord');
-            markSessionClean('');
+            markSessionClean('Session cell');
+        } else if (!restoreLastSession()) {
+            if (tryRestoreTeleprompterFromSong()) {
+                seedDetectFromPair();
+                setDetectMode('chord');
+                markSessionClean(tpSourceName || 'Teleprompter');
+            } else {
+                seedDetectFromPair();
+                setDetectMode('chord');
+                markSessionClean('');
+            }
+        } else {
+            setIhSyncStatus('Last Fretboard session · open a cell from Arrangement with 🎸');
         }
         setMorphSpeed(morphRate, { skipDraw: true }); // sync speed buttons only
         syncScaleDisplayUI();
@@ -5179,6 +6103,7 @@
             resizeCanvas(); // builds layout + draws board
             updateSessionTitleUI();
             updateNeckViewUI();
+            updateDawUi();
             console.log('%c[Guitar App] Ready · board neck zoom', 'color:#16a34a');
             maybeStartDemoFromUrl();
         });
@@ -5193,35 +6118,16 @@
     function applyChordsFromSession(chords, meta) {
         meta = meta || {};
         if (!window.IHSession || !chords || !chords.length) return false;
-        // Hard cap matches addSlot (max 8) — never inflate past the UI limit
-        let list = chords;
-        let clipNote = '';
-        let clipStart = meta.clipStart != null ? +meta.clipStart : 0;
-        if (IHSession.clipForFretboard && chords.length > 8 && meta.clipStart == null) {
-            const clip = IHSession.clipForFretboard(chords, { focus: meta.focus });
-            list = clip.chords;
-            clipStart = clip.start || 0;
-            if (clip.truncated) {
-                clipNote = IHSession.fretboardClipMessage
-                    ? IHSession.fretboardClipMessage(clip)
-                    : 'Max 8 chords · truncated from ' + clip.total;
-            }
-        } else if (list.length > 8) {
-            list = list.slice(0, 8);
-            clipNote = 'Max 8 chords · truncated from ' + chords.length;
-        }
-        fretClipStart = clipStart;
+        // Cells arrive whole. Teleprompter rows stay on song.teleprompter (tpActive stays false here).
+        const list = chords;
+        fretClipStart = 0;
         fretClipWindow = list.length;
+        tpActive = false;
         const slots = IHSession.chordsToFretboardSlots(list, newSlot, chordTypes);
         if (!slots.length) return false;
         progression = slots;
         const focusRaw = +(meta.focus || 0);
-        const focusLocal = meta.clipStart != null ? focusRaw : focusRaw - clipStart;
-        progressionFocus = Math.max(0, Math.min(progression.length - 1, focusLocal));
-        if (clipNote) {
-            setIhSyncStatus(clipNote);
-            setInstanceStatus(clipNote, true);
-        }
+        progressionFocus = Math.max(0, Math.min(progression.length - 1, focusRaw));
         if (meta.key && meta.key.tonic != null) {
             scaleRoot = ((+meta.key.tonic % 12) + 12) % 12;
             const mode = meta.key.mode || 'minor';
@@ -5271,36 +6177,39 @@
             if (ok) {
                 // Do not rewrite the song on arrival — Landscape already saved.
                 // Auto-push was stomping song.key to C and stripping disk stamps.
-                setIhSyncStatus('Loaded from Landscape');
-                setInstanceStatus('Progression from Harmonic Landscape', true);
+                setIhSyncStatus('Loaded “' + (handoff.cellName || handoff.title || 'cell') + '”');
+                setInstanceStatus('From Arrangement / Landscape', true);
                 return true;
             }
         }
-        // Focused cell in song session (if newer path without hash)
+        return tryLoadFocusedSongCell();
+    }
+
+    function tryLoadFocusedSongCell() {
+        if (!window.IHSession) return false;
         const song = IHSession.loadSong();
         const cell = song && IHSession.getFocusedCell(song);
-        // Only auto-load focused cell if handoff storage says it was for us recently
-        const ho = IHSession.readHandoffStorage();
-        if (ho && ho.to === 'fretboard' && cell && cell.chords && cell.chords.length) {
-            const age = Date.now() - Date.parse(ho.t || 0);
-            if (age >= 0 && age < 120000) {
-                applyChordsFromSession(cell.chords, {
-                    focus: song.focus && song.focus.chordIndex,
-                    key: song.key,
-                    bpm: song.bpm,
-                    cellName: cell.name,
-                    title: song.title,
-                });
-                setIhSyncStatus('Loaded session cell');
-                return true;
-            }
-        }
-        return false;
+        if (!cell || !cell.chords || !cell.chords.length) return false;
+        const ok = applyChordsFromSession(cell.chords, {
+            focus: song.focus && song.focus.chordIndex,
+            key: song.key,
+            bpm: song.bpm,
+            cellName: cell.name,
+            title: song.title,
+        });
+        if (!ok) return false;
+        setIhSyncStatus('Loaded session cell “' + (cell.name || 'cell') + '”');
+        setInstanceStatus('Loaded from shared session', true);
+        return true;
     }
 
     function pushProgressionToSongSession(by, cellId, cellName) {
         if (!window.IHSession) return null;
         const chords = IHSession.fretboardSlotsToChords(progression, chordTypes);
+        // Long teleprompter row stays on song.teleprompter — never smash a Landscape cell.
+        if (tpActive) {
+            return persistTeleprompterToSong();
+        }
         let song = IHSession.loadSong() || IHSession.emptySong({
             title: cellName || 'Untitled',
             bpm: audioTempo,
@@ -5350,8 +6259,37 @@
         }
         const chords = IHSession.fretboardSlotsToChords(progression, chordTypes);
         const cellName = ((document.getElementById('instance-name') || {}).value || 'From fretboard').slice(0, 48);
-        const song = pushProgressionToSongSession('fretboard', null, cellName);
-        const cellId = song && song.focus && song.focus.cellId;
+        const longRow = tpActive;
+        let sendChords = chords;
+        let clipStart = fretClipStart || 0;
+        let clipMax = fretClipWindow || Math.min(IHSession.FRETBOARD_MAX_CHORDS, chords.length);
+        let sendFocus = clipStart + progressionFocus;
+        let song;
+        let cellId;
+        if (longRow) {
+            if (chords.length > IHSession.FRETBOARD_MAX_CHORDS) {
+                const clip = IHSession.clipForFretboard(chords, { focus: progressionFocus });
+                sendChords = clip.chords;
+                const from = (clip.start || 0) + 1;
+                const to = (clip.start || 0) + sendChords.length;
+                const ok = confirm(
+                    'Landscape still takes 8 chairs. Send ' + from + '–' + to + ' of ' + clip.total +
+                    ' as a new Landscape cell? The full row stays on this page and the existing Landscape cell is not overwritten.'
+                );
+                if (!ok) return;
+                sendFocus = Math.max(0, Math.min(sendChords.length - 1, progressionFocus - (clip.start || 0)));
+            } else {
+                sendFocus = Math.max(0, Math.min(sendChords.length - 1, progressionFocus));
+            }
+            // New cell + clipStart 0 so Landscape does not merge into an existing cell.
+            clipStart = 0;
+            clipMax = sendChords.length;
+            song = persistTeleprompterToSong();
+            cellId = IHSession.newCellId('tele');
+        } else {
+            song = pushProgressionToSongSession('fretboard', null, cellName);
+            cellId = song && song.focus && song.focus.cellId;
+        }
         const keepKey =
             sessionWriteKey ||
             (song && song.key && song.key.tonic != null ? song.key : null);
@@ -5366,10 +6304,10 @@
             },
             cellId,
             cellName,
-            focus: (fretClipStart || 0) + progressionFocus,
-            clipStart: fretClipStart || 0,
-            clipMax: fretClipWindow || progression.length,
-            chords,
+            focus: sendFocus,
+            clipStart,
+            clipMax,
+            chords: sendChords,
         });
         const ok = IHSession.openWithHandoff(IHSession.PATHS.landscapeFromFretboard, payload);
         setIhSyncStatus(ok ? 'Opened Landscape' : 'Could not open Landscape');
@@ -5383,16 +6321,20 @@
         const song = IHSession.loadSong();
         const cell = song && IHSession.getFocusedCell(song);
         if (!cell || !cell.chords || !cell.chords.length) {
-            setIhSyncStatus('No focused cell — send from Landscape first');
+            setIhSyncStatus('No cell here — in Arrangement click 🎸 on the cell (same tab)');
             return;
         }
-        applyChordsFromSession(cell.chords, {
+        const ok = applyChordsFromSession(cell.chords, {
             focus: song.focus && song.focus.chordIndex,
             key: song.key,
             bpm: song.bpm,
             cellName: cell.name,
             title: song.title,
         });
+        if (!ok) {
+            setIhSyncStatus('Could not apply “' + (cell.name || 'cell') + '”');
+            return;
+        }
         markSessionClean(cell.name || 'Session');
         setIhSyncStatus('Pulled “' + (cell.name || 'cell') + '”');
         setInstanceStatus('Loaded from shared session', true);
@@ -5425,6 +6367,17 @@
     window.panNeckBy = panNeckBy;
     window.zoomNeck = zoomNeck;
     window.addSlot = addSlot;
+    window.importMidiClick = importMidiClick;
+    window.onMidiFile = onMidiFile;
+    window.setLoopEnd = setLoopEnd;
+    window.clearLoop = clearLoop;
+    window.onTeleFollowChange = onTeleFollowChange;
+    window.onTeleClickChange = onTeleClickChange;
+    window.onBarOffsetChange = onBarOffsetChange;
+    window.toggleDawChase = toggleDawChase;
+    window.onDawPortChange = onDawPortChange;
+    window.onDawOffsetChange = onDawOffsetChange;
+    window.resumeTeleprompter = resumeTeleprompter;
     window.toggleSoloFocused = toggleSoloFocused;
     window.showAllSlots = showAllSlots;
     window.stepProgression = stepProgression;
@@ -5490,6 +6443,7 @@
         loadBoard: function () {
             if (typeof stopMorph === 'function') stopMorph();
             if (typeof stopProgressionPlay === 'function') stopProgressionPlay();
+            if (typeof setDawChase === 'function' && daw.want) setDawChase(false);
             if (typeof soloActive !== 'undefined' && soloActive && typeof showAllSlots === 'function') showAllSlots();
             if (typeof clearScalePath === 'function') clearScalePath();
             if (typeof clearShapePins === 'function') clearShapePins();
@@ -5499,6 +6453,10 @@
             if (instSel) instSel.value = 'guitar';
             if (typeof applyOpenMidi === 'function') applyOpenMidi([64, 59, 55, 50, 45, 40]);
             if (typeof populateInstrumentUI === 'function') populateInstrumentUI();
+            tpActive = false;
+            tpConductor = null;
+            tpLoopA = null;
+            tpLoopB = null;
             progression = [newSlot(0, 0), newSlot(7, 0), newSlot(9, 1), newSlot(5, 0)];
             progressionFocus = 0;
             scaleRoot = 0;

@@ -46,6 +46,14 @@
     this.ghostDisks = [];
     /** Establish-home pads on ghost disks */
     this.ghostOptions = [];
+    /** Ghosts stay off until hover / aim / leave-home */
+    this._ghostsVisible = false;
+    this._ghostPivotIndex = null;
+    this._forceGhostHalo = false;
+    /** Pitch-class key of the meshed-cog contact (Journey) */
+    this._meshPivotPitch = null;
+    /** Shared rim contacts: { root, fam, pitchKey, x, y, a, b } */
+    this._meshContacts = [];
     this.path = [];
     this.nodes = [];
     this.altPath = [];
@@ -64,7 +72,11 @@
     this.showHorizon = false;
     this.horizon = [];
     this.showAlt = true;
-    this.camera = { x: 0, y: 0, zoom: 1, tx: 0, ty: 0, tz: 1 };
+    this.camera = { x: 0, y: 0, zoom: 1, tx: 0, ty: 0, tz: 1, rot: 0, tr: 0 };
+    this._playStepAt = 0;
+    this._playStepMs = 0;
+    this._playRot0 = 0;
+    this._playRot1 = 0;
     this.hover = null;
     this.snapAlt = null;
     this.pulseT = 0;
@@ -123,6 +135,7 @@
     this._snapSticky = null;
     this._last = null;
     this._pendingEdgeInsert = null;
+    this._edgeInsertAim = false;
     this._aimFromStrip = false;
     this._reorderDropI = -1;
     this._pendingClick = null;
@@ -132,6 +145,7 @@
     this._pathDirty = false;
     this.hoverSuggests = [];
     this.hoverSuggestPathIndex = -1;
+    if (this.hideGhostHalo) this.hideGhostHalo();
     if (this.canvas) this.canvas.style.cursor = 'grab';
   };
 
@@ -154,7 +168,10 @@
     c.addEventListener('pointerup', (e) => this._up(e));
     c.addEventListener('pointercancel', (e) => this._up(e));
     c.addEventListener('pointerleave', () => {
-      if (this._mode !== 'node') this.hover = null;
+      if (this._mode !== 'node') {
+        this.hover = null;
+        if (this.hideGhostHalo) this.hideGhostHalo();
+      }
     });
     // Double-click writes in Select/browse mode (single click is preview only)
     c.addEventListener('dblclick', (e) => {
@@ -445,24 +462,55 @@
   };
 
   SpatialMap.prototype.setCameraMode = function (mode) {
-    const next = mode === 'follow' || mode === 'fit' ? mode : 'home';
+    const next =
+      mode === 'follow' || mode === 'focus'
+        ? 'follow'
+        : mode === 'fit'
+          ? 'fit'
+          : 'home';
     const prev = this.cameraMode;
     this.cameraMode = next;
     // Explicit Home lock click â†’ re-centre; Fit always re-frames
     if (next === 'home' && prev !== 'home') {
       this._userPanned = false;
       this._forceHomeCenter = true;
+      this.camera.tr = 0;
     }
     if (next === 'fit') this._userPanned = false;
     this._freezeCamera = false;
+    this._lookX = null;
+    this._lookY = null;
     this._applyCameraForMode();
+    if (this._refreshFocusOptions) this._refreshFocusOptions();
   };
 
   SpatialMap.prototype.setPlaying = function (i) {
+    const prev = this.playing;
     this.playing = i;
-    if (this.cameraMode === 'follow' && i >= 0 && this.nodes[i] && this._mode !== 'node') {
-      this.camera.tx = this.nodes[i].x;
-      this.camera.ty = this.nodes[i].y;
+    if (i !== prev) {
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      this._playStepAt = now;
+      if (prev >= 0 && i >= 0) {
+        this._wakeFrom = prev;
+        this._wakeAt = now;
+        this._wakeMs = 2400;
+      } else {
+        this._wakeFrom = -1;
+      }
+      const ch = i >= 0 && this.path ? this.path[i] : null;
+      this._playStepMs = this._stepDurationMs ? this._stepDurationMs(ch) : 2000;
+      if (i < 0) {
+        this.camera.tr = this._restRotation ? this._restRotation() : 0;
+      }
+      if (this._refreshFocusOptions) this._refreshFocusOptions();
+    }
+    if (this.cameraMode === 'follow' && i >= 0 && this._followDriftTarget) {
+      const drift = this._followDriftTarget();
+      if (drift) {
+        this.camera.tx = drift.tx;
+        this.camera.ty = drift.ty;
+        this.camera.tz = drift.tz;
+      }
     }
   };
 
@@ -487,6 +535,8 @@
       x: this.camera.x,
       y: this.camera.y,
       zoom: this.camera.zoom,
+      rot: this.camera.rot || 0,
+      tr: this.camera.tr || 0,
     };
   };
 
@@ -496,6 +546,8 @@
     this.camera.tx = snap.tx;
     this.camera.ty = snap.ty;
     this.camera.tz = snap.tz > 0 ? snap.tz : 1;
+    if (snap.rot != null) this.camera.rot = snap.rot;
+    if (snap.tr != null) this.camera.tr = snap.tr;
     // Hard-snap zoom so ChaseÃ¢â€ â€Function never eases to a different scale
     if (opts.snap !== false) {
       this.camera.x = snap.tx;
@@ -523,20 +575,31 @@
         this._mode === 'edgePending' ||
         this._freezeCamera ||
         this._keepCameraOnce;
+      if (this._tickPlayRotation) this._tickPlayRotation();
+      const followPlay =
+        this.playing >= 0 && this.cameraMode === 'follow';
       if (interact) {
         cam.x = cam.tx;
         cam.y = cam.ty;
         cam.zoom = cam.tz;
+        if (!followPlay) cam.rot = cam.tr || 0;
       } else {
-        // Gentler ease (was 0.12 â€” snappy enough to feel like a jolt)
-        const k = 0.08;
+        const k = followPlay ? 0.016 : 0.08;
         cam.x += (cam.tx - cam.x) * k;
         cam.y += (cam.ty - cam.y) * k;
         cam.zoom += (cam.tz - cam.zoom) * k;
-        // Snap when close enough to avoid endless micro-drift
-        if (Math.abs(cam.tx - cam.x) < 0.15) cam.x = cam.tx;
-        if (Math.abs(cam.ty - cam.y) < 0.15) cam.y = cam.ty;
-        if (Math.abs(cam.tz - cam.zoom) < 0.002) cam.zoom = cam.tz;
+        if (!followPlay) {
+          let d = (cam.tr || 0) - (cam.rot || 0);
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          cam.rot = (cam.rot || 0) + d * 0.08;
+          if (Math.abs(d) < 0.002) cam.rot = cam.tr || 0;
+        }
+        if (!followPlay) {
+          if (Math.abs(cam.tx - cam.x) < 0.15) cam.x = cam.tx;
+          if (Math.abs(cam.ty - cam.y) < 0.15) cam.y = cam.ty;
+          if (Math.abs(cam.tz - cam.zoom) < 0.002) cam.zoom = cam.tz;
+        }
       }
       this.draw();
     };
@@ -545,9 +608,16 @@
 
   SpatialMap.prototype.focusHome = function () {
     this.cameraMode = 'home';
-    this.camera.tx = 0;
-    this.camera.ty = 0;
-    this.camera.tz = 1;
+    this._userPanned = false;
+    this._forceHomeCenter = true;
+    this.camera.tr = 0;
+    this.camera.rot = 0;
+    if (this._applyCameraForMode) this._applyCameraForMode();
+    else {
+      this.camera.tx = 0;
+      this.camera.ty = 0;
+      this.camera.tz = 1;
+    }
   };
 
   /** Pan camera so a multi-key disk sits near the viewport centre. */
@@ -677,10 +747,188 @@
     // Arithmetic mean of 11 and 0 is the classic wrong answer
     assert(Math.round((11 + 0) / 2) % 12 === 6, 'sanity: arithmetic mean is F#');
 
+    // 8–11) Journey cogs: visit stack, hidden ghosts, meshed pivot, one node
+    const M = global.HLMusic;
+    if (M && M.makeChord && M.seatForChord) {
+      const em = M.makeChord(4, 'min', { duration: 4 });
+      em.localTonic = 4;
+      em.localMode = 'minor';
+      const fs7 = M.makeChord(6, 'dom7', { duration: 4 });
+      fs7.localTonic = 11;
+      fs7.localMode = 'minor';
+      const fs7s = M.makeChord(6, 'dom7', { duration: 4, bassPc: 10 });
+      fs7s.localTonic = 11;
+      fs7s.localMode = 'minor';
+      if (M.withBass) {
+        try {
+          const slashed = M.withBass(fs7s, 10);
+          if (slashed) Object.assign(fs7s, slashed, { localTonic: 11, localMode: 'minor' });
+        } catch (_) {}
+      }
+      const bm = M.makeChord(11, 'min', { duration: 4 });
+      bm.localTonic = 11;
+      bm.localMode = 'minor';
+
+      map.origin = { tonic: 11, mode: 'minor' };
+      map.mapView = 'chase';
+      map.w = 600;
+      map.h = 400;
+      map._ghostsVisible = false;
+      map.setPath([em, fs7, bm, fs7s], 3);
+
+      const vNodes = (map.nodes || []).filter((n) => n && n.chord && n.chord.root === 6);
+      const stacked = vNodes.find((n) => n.visits && n.visits.length > 1);
+      assert(
+        stacked && stacked.visits.indexOf(2) >= 0 && stacked.visits.indexOf(4) >= 0,
+        'F#7 visits 2 and 4 both listed, got ' + JSON.stringify(stacked && stacked.visits)
+      );
+      const bodies = vNodes.filter((n) => n.drawBody !== false);
+      assert(bodies.length === 1, 'one shared F#7 body, got ' + bodies.length);
+      if (vNodes.length >= 2) {
+        assert(
+          Math.hypot(vNodes[0].x - vNodes[1].x, vNodes[0].y - vNodes[1].y) < 1,
+          'revisit nodes share one seat'
+        );
+      }
+
+      assert(
+        !map.ghostDisks || map.ghostDisks.length === 0,
+        'ghosts off until hover, got ' + ((map.ghostDisks && map.ghostDisks.length) || 0)
+      );
+      const hadCompose = !!global.HLCompose;
+      if (!global.HLCompose || !global.HLCompose.adjacentKeys) {
+        global.HLCompose = {
+          adjacentKeys: function () {
+            return [{ tonic: 6, mode: 'minor', relation: 'Dominant key' }];
+          },
+          establishHomeOptions: function () {
+            return [{ id: 'tonic', label: 'F#m', job: 'land', route: [fs7] }];
+          },
+        };
+      }
+      if (map.ensureGhostHalo) map.ensureGhostHalo({ pivotIndex: 1, force: true });
+      assert(
+        map.ghostDisks && map.ghostDisks.length > 0,
+        'ghosts appear on hover/aim'
+      );
+      if (map.hideGhostHalo) map.hideGhostHalo();
+      assert(
+        !map.ghostDisks || map.ghostDisks.length === 0,
+        'ghosts hide after leave'
+      );
+      if (!hadCompose) global.HLCompose = undefined;
+
+      const home = (map.disks || []).find((d) => d.active);
+      const other = (map.disks || []).find((d) => !d.active);
+      assert(home && other, 'write-home + traveled disk');
+
+      // Screenshot case: Fm home + Gm traveled. F is named on both rims.
+      // Mesh at F (the shared tooth), not at Gm (the other hub).
+      const gm = M.makeChord(7, 'min', { duration: 4 });
+      gm.localTonic = 7;
+      gm.localMode = 'harmonic';
+      const fHome = M.makeChord(5, 'maj', { duration: 4 });
+      fHome.localTonic = 5;
+      fHome.localMode = 'minor';
+      const cm = M.makeChord(0, 'min', { duration: 4 });
+      cm.localTonic = 7;
+      cm.localMode = 'harmonic';
+      const fGm = M.makeChord(5, 'maj', { duration: 4 });
+      fGm.localTonic = 7;
+      fGm.localMode = 'harmonic';
+      const ds = M.makeChord(3, 'maj', { duration: 4 });
+      ds.localTonic = 5;
+      ds.localMode = 'minor';
+      const asm = M.makeChord(10, 'min', { duration: 4 });
+      asm.localTonic = 5;
+      asm.localMode = 'minor';
+      map.origin = { tonic: 5, mode: 'minor' };
+      map.setPath([gm, fHome, cm, fGm, ds, asm], 3);
+      const fNodes = (map.nodes || []).filter((n) => n && n.chord && n.chord.root === 5);
+      const fBodies = fNodes.filter((n) => n.drawBody !== false);
+      assert(fBodies.length === 1, 'one shared F node, got ' + fBodies.length);
+      const fVis = fNodes[0] && fNodes[0].visits;
+      assert(
+        fVis && fVis.indexOf(2) >= 0 && fVis.indexOf(4) >= 0,
+        'F visits 2 and 4 both show, got ' + JSON.stringify(fVis)
+      );
+      const fmDisk = (map.disks || []).find((d) => d.active);
+      const gmDisk = (map.disks || []).find((d) => !d.active);
+      assert(fmDisk && gmDisk && gmDisk.meshed, 'Gm disk meshes to Fm');
+      const contact = (map._meshContacts || [])[0];
+      assert(contact && contact.root === 5, 'cog tooth is F, got ' + (contact && contact.root));
+      const tooth = (fmDisk.R || 120) * (global.HLSpatial.SEAT.scale || 0.72);
+      const angF = map._rawSeatAngle(fmDisk, 5) + (fmDisk.rot || 0);
+      const fmF = map._diskSeatXY(fmDisk, angF, tooth);
+      const angG = map._rawSeatAngle(gmDisk, 5) + (gmDisk.rot || 0);
+      const gmF = map._diskSeatXY(gmDisk, angG, tooth);
+      const fGap = Math.hypot(fmF.x - gmF.x, fmF.y - gmF.y);
+      assert(fGap < 2, 'F teeth coincide, gap=' + fGap.toFixed(2));
+
+      map.cameraMode = 'home';
+      map._userPanned = false;
+      map._forceHomeCenter = true;
+      map._applyCameraForMode();
+      assert(
+        Math.abs(map.camera.tx) < (fmDisk.R || 120) * 0.4,
+        'Home sits on write-home, tx=' + map.camera.tx.toFixed(1)
+      );
+      assert(map.camera.tz >= 0.82, 'Home zoom is close, tz=' + map.camera.tz.toFixed(2));
+      map.cameraMode = 'fit';
+      map._applyCameraForMode();
+      assert(map.camera.tz >= 0.82, 'Fit stays cinematic, tz=' + map.camera.tz.toFixed(2));
+      const homeTx = 0;
+      assert(
+        Math.abs(map.camera.tx - homeTx) > 1 || map.camera.tz !== 1,
+        'Fit is a different shot than Home'
+      );
+
+      const homeOwned = M.makeChord(5, 'min', { duration: 4 });
+      homeOwned.localTonic = 5;
+      homeOwned.localMode = 'minor';
+      const leaveF = M.makeChord(5, 'maj', { duration: 4 });
+      leaveF.localTonic = 5;
+      leaveF.localMode = 'minor';
+      const landGm = M.makeChord(7, 'min', { duration: 4 });
+      landGm.localTonic = 7;
+      landGm.localMode = 'harmonic';
+      map.origin = { tonic: 5, mode: 'minor' };
+      map.setPath([homeOwned, leaveF, landGm], 0);
+      const dest = (map.disks || []).find((d) => !d.active);
+      const destUp = map._uprightRotForDisk(dest);
+      const homeUp = map._uprightRotForDisk(map._activeDisk());
+      const hint = map._lerpAngle(homeUp, destUp, 0.055);
+      const r0 = map._rotationAtBeats(0);
+      const rMid = map._rotationAtBeats(4);
+      const rArrive = map._rotationAtBeats(8);
+      assert(Math.abs(r0 - homeUp) < 0.05, 'start of home key is home tonic-up');
+      assert(
+        Math.abs(rArrive - hint) < 0.06,
+        'key change is a hint toward dest, not a full tumble'
+      );
+      const midGap = Math.abs(map._lerpAngle(homeUp, hint, 0.5) - rMid);
+      assert(midGap < 0.08, 'mid-key rotation is halfway, gap=' + midGap.toFixed(3));
+      map.stateLoop = true;
+      const oldLoop = map._isLooping;
+      map._isLooping = function () {
+        return true;
+      };
+      const loopEnd = map._rotationAtBeats(12);
+      const loopWrap = map._rotationAtBeats(0);
+      assert(
+        Math.abs(loopEnd - homeUp) < 0.08 && Math.abs(loopWrap - homeUp) < 0.08,
+        'loop wrap meets at home tonic-up (no jolt)'
+      );
+      map._isLooping = oldLoop;
+    } else {
+      assert(true, 'skip journey layout (HLMusic missing)');
+    }
+
+    const journeyExtra = M && M.makeChord ? 9 : 0;
     return {
       ok: failures.length === 0,
       failures,
-      passed: 7 - failures.length,
+      passed: 7 + journeyExtra - failures.length,
     };
   }
 

@@ -64,13 +64,17 @@ H.stopPlayheadLoop = function () {
     H.updatePlayBtn();
     H.renderSlots();
     H.renderTimeStrip();
+    if (H._endABListen) H._endABListen({ silent: true });
   }
 
   H.isLiveLoop = function () {
-    if (H._loopLive) return true;
-    if (H._transportMeta && H._transportMeta.loop && H.A() && H.A().isPlaying && H.A().isPlaying()) {
-      return true;
+    const playing = !!(H.A() && H.A().isPlaying && H.A().isPlaying());
+    if (!playing) {
+      H._loopLive = false;
+      return false;
     }
+    if (H._loopLive) return true;
+    if (H._transportMeta && H._transportMeta.loop) return true;
     return !!(H.A() && H.A().isLooping && H.A().isLooping());
   }
 
@@ -174,7 +178,7 @@ H.stopPlayheadLoop = function () {
         return;
       }
       H.stopPlayheadLoop();
-      H.A().stopPlayback();
+      H.A().stopPlayback({ keepClock: true });
       if (H.map) H.map.setPlaying(-1);
     }
     const from = Math.max(0, opts.fromIndex != null ? opts.fromIndex : 0);
@@ -201,6 +205,7 @@ H.stopPlayheadLoop = function () {
     H.A().playSequence(slice, bpm, {
       loop,
       pulse: H.state.pulse,
+      clock: true,
       startAt: opts.startAt || null,
       onLoop: function () {
         if (opts.onLoop) opts.onLoop();
@@ -212,8 +217,10 @@ H.stopPlayheadLoop = function () {
             ? H._transportMeta.fromIndex
             : from;
         const idx = fromNow + i;
-        H._playingIndex = idx;
-        if (H.map) H.map.setPlaying(opts.chords ? -1 : idx);
+        H._playingIndex = opts.guestMap ? i : idx;
+        if (H.map) {
+          H.map.setPlaying(opts.guestMap ? i : opts.chords ? -1 : idx);
+        }
         if (!opts.chords) {
           // Optional follow: default off so duration/inspector stay on the step you picked
           if (H.state.followPlayhead) {
@@ -246,7 +253,8 @@ H.stopPlayheadLoop = function () {
         H._loopLive = false;
         H._playingIndex = -1;
         H.stopPlayheadLoop();
-        if (H.map) H.map.setPlaying(-1);
+        // handoff = A/B A→B: keep the lamp on the last chord, no rest-rot snap
+        if (!opts.handoff && H.map) H.map.setPlaying(-1);
         H.renderTimeStrip();
         H.renderSlots();
         H.updatePlayBtn();
@@ -285,10 +293,29 @@ H.stopPlayheadLoop = function () {
     H.playSeq({ fromIndex: from, once: !H.state.loop, force: true, label: 'From step ' + (from + 1) });
   }
 
-  /** A then B: current cell, then comparison version. */
+  /** Put the gold path back after a guest B listen. Map only — not the cell. */
+  H._endABListen = function (opts) {
+    opts = opts || {};
+    if (!H._abListening) return;
+    H._abListening = false;
+    H._abMapChords = null;
+    if (H._abTimer) {
+      clearTimeout(H._abTimer);
+      H._abTimer = 0;
+    }
+    if (H.map && H.map.setPath && H.state.chords && H.state.chords.length) {
+      const sel = H.state.selected >= 0 ? H.state.selected : 0;
+      H.map.setPath(H.state.chords, sel);
+    }
+    if (H.map && !opts.keepPlaying) H.map.setPlaying(-1);
+    if (!opts.silent) H.setSyncStatus('A/B done · back on this take');
+  };
+
+  /** A then B: current cell, then comparison version on the same Focus path. */
   H.playAB = function () {
     if (!H.state.chords.length) return;
     H.A().ensure();
+    if (H._endABListen) H._endABListen({ silent: true });
     if (H.A().isPlaying()) H.stopPlaybackUI();
     const song = H.S() && H.S().loadSong();
     let other = song ? H.resolveCompareCell(song) : null;
@@ -303,20 +330,41 @@ H.stopPlayheadLoop = function () {
       once: true,
       loop: false,
       force: true,
+      handoff: !!(other && other.chords && other.chords.length),
       label: 'A · ' + nameA,
       onEnd: () => {
         if (!other || !other.chords || !other.chords.length) {
           H.setSyncStatus('A/B · no comparison version (Alt-click a version chip)');
           return;
         }
-        const bChords = other.chords.map((sc) => H.sessionChordToLandscape(sc));
-        setTimeout(() => {
+        const bChords = other.chords
+          .map((sc) => (H.sessionChordToLandscape ? H.sessionChordToLandscape(sc) : sc))
+          .filter(function (ch) {
+            return ch && (ch.notes || ch.root != null);
+          });
+        if (!bChords.length) {
+          H.setSyncStatus('A/B · comparison take has no playable chords');
+          return;
+        }
+        H._abListening = true;
+        H._abMapChords = bChords;
+        if (H.map && H.map.setPath) {
+          H.map.setPath(bChords, 0);
+          H.map.setPlaying(0);
+        }
+        H._abTimer = setTimeout(() => {
+          H._abTimer = 0;
+          if (!H._abListening) return;
           H.playSeq({
             chords: bChords,
             once: true,
             loop: false,
             force: true,
-            label: 'B · ' + nameB + ' (blue path)',
+            guestMap: true,
+            label: 'B · ' + nameB + ' (compare take)',
+            onEnd: () => {
+              H._endABListen();
+            },
           });
         }, 280);
       },
@@ -329,6 +377,11 @@ H.stopPlayheadLoop = function () {
     if (b) {
       b.textContent = playing ? 'Stop' : H.state.loop ? 'Play ↻' : 'Play';
       b.classList.toggle('on', playing);
+    }
+    const fb = H.$('#focus-play');
+    if (fb) {
+      fb.textContent = playing ? 'Stop' : H.state.loop ? 'Play ↻' : 'Play';
+      fb.classList.toggle('on', playing);
     }
     const bf = H.$('#btn-play-from');
     if (bf) bf.classList.toggle('on', false);

@@ -49,13 +49,21 @@
 
     header {
       display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.55rem 1rem;
-      padding: 0.55rem 1rem;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.35rem;
+      padding: 0.45rem 0.85rem 0.5rem;
       border-bottom: 1px solid var(--line);
       background: linear-gradient(180deg, #14110e, #0b0a09);
       z-index: 5;
+    }
+    .header-top,
+    .header-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem 0.7rem;
+      min-width: 0;
     }
     .brand h1 {
       margin: 0;
@@ -71,15 +79,38 @@
       font-size: 0.82rem;
       color: var(--muted);
     }
-    .nav { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.7rem; font-size: 0.78rem; }
-    .nav a { color: var(--muted); }
-    .header-views { margin-right: 0.25rem; }
-    .ctrls {
-      margin-left: auto;
+    .nav {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.4rem 0.6rem;
       align-items: center;
+      gap: 0.4rem 0.65rem;
+      font-size: 0.78rem;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .nav a { color: var(--muted); }
+    #sync-status {
+      max-width: 28rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .header-views { margin-right: 0.15rem; }
+    .ctrls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 0.55rem;
+      align-items: center;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .midi-dock {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.35rem 0.5rem;
+      flex: 0 1 auto;
+      margin-left: auto;
     }
     label.ctl {
       display: flex;
@@ -100,6 +131,103 @@
       font-size: 0.82rem;
     }
     input[type="number"] { width: 3.4rem; }
+    #midi-out-port {
+      max-width: 11.5rem;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 0.78rem;
+    }
+    #midi-out-speak {
+      max-width: 6.4rem;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 0.78rem;
+    }
+    .midi-panel { position: relative; flex: 0 0 auto; }
+    .midi-panel > summary {
+      list-style: none;
+      cursor: pointer;
+    }
+    .midi-panel > summary::-webkit-details-marker { display: none; }
+    .midi-panel[open] > summary {
+      border-color: var(--gold);
+      color: var(--gold2);
+    }
+    .midi-panel-body {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 6px);
+      z-index: 40;
+      width: 27.5rem;
+      padding: 0.65rem 0.75rem 0.75rem;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+    .midi-panel-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem 0.55rem;
+    }
+    .midi-stream {
+      display: grid;
+      grid-template-columns: 2.5rem 1fr;
+      gap: 0.3rem 0.45rem;
+      align-items: center;
+    }
+    .midi-stream > strong {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--gold);
+    }
+    .midi-stream-ctrls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.3rem 0.4rem;
+    }
+    .midi-vel {
+      min-width: 8.4rem;
+    }
+    .midi-vel input[type="range"] {
+      width: 5.4rem;
+    }
+    .midi-vel-n {
+      min-width: 1.55rem;
+      font-variant-numeric: tabular-nums;
+      font-size: 0.75rem;
+      color: var(--text);
+    }
+    #midi-pad-ch, #midi-bass-ch {
+      max-width: 3.4rem;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 0.78rem;
+    }
+    #midi-pad-oct, #midi-bass-oct {
+      max-width: 3.8rem;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 0.78rem;
+    }
+    #midi-pad-spr {
+      max-width: 8.4rem;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 0.78rem;
+    }
+    #midi-bass-spr {
+      max-width: 7.2rem;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 0.78rem;
+    }
     input[type="checkbox"] { accent-color: var(--gold); }
     input[type="range"] { accent-color: var(--gold); width: 100%; }
 
@@ -521,6 +649,50 @@
 
     /* Map — chrome in normal flow (not over the canvas). Absolute overlay stole
        clicks on top seats and scrollbar thrash made size/layout unstable. */
+    .app.focus-cinema > header,
+    .app.focus-cinema > #coach,
+    .app.focus-cinema > #gesture-legend {
+      display: none !important;
+    }
+    .app.focus-cinema > main {
+      grid-template-columns: 1fr !important;
+      height: 100vh;
+    }
+    .app.focus-cinema .col-seq,
+    .app.focus-cinema .col-horizon,
+    .app.focus-cinema .map-chrome,
+    .app.focus-cinema .map-footer {
+      display: none !important;
+    }
+    .app.focus-cinema .map-wrap {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      height: 100vh;
+      min-height: 100vh;
+      background: #010100;
+    }
+    .app.focus-cinema #map {
+      height: 100vh;
+    }
+    .focus-exit {
+      display: none;
+      position: fixed;
+      top: 0.85rem;
+      right: 0.95rem;
+      z-index: 90;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .app.focus-cinema .focus-exit {
+      display: flex;
+    }
+    .focus-exit .hint {
+      margin: 0;
+      color: rgba(200,184,160,0.55);
+      font-size: 0.78rem;
+    }
+
     .map-wrap {
       position: relative;
       min-height: 0;
@@ -1086,7 +1258,14 @@
       box-shadow: 0 0 0 2px rgba(232, 201, 138, 0.35);
     }
     .ver-chip.armed .ver-preview { color: var(--gold2); }
-    .transport { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+    .transport {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      align-items: center;
+      flex: 0 0 auto;
+      margin-left: auto;
+    }
 
     #export-out {
       width: 100%;
@@ -1346,42 +1525,146 @@
 <body>
   <div class="app">
     <header>
-      <div class="brand">
-        <h1>Harmonic Landscape</h1>
-        <p>Sequence is the document · space is the compass</p>
-      </div>
-      <nav class="nav">
-        <div class="map-view-switch header-views" role="group" aria-label="Map view">
-          <button type="button" class="btn primary active" data-map-view="chase" title="Journey: your path across keys">Journey</button>
-          <button type="button" class="btn ghost" data-map-view="function" title="In this key: same-key atlas">In this key</button>
+      <div class="header-top">
+        <div class="brand">
+          <h1>Harmonic Landscape</h1>
+          <p>Sequence is the document · space is the compass</p>
         </div>
-        <button type="button" class="btn ghost" id="btn-resume-header" title="Reload the last cell from the shared song session">Resume</button>
-        <button type="button" class="btn primary" id="btn-fret" title="Send sequence to Guitar Fretboard">→ Fretboard</button>
-        <button type="button" class="btn" id="btn-arrange" title="Open Arrangement">Arrangement</button>
-        <span id="sync-status" class="key" style="font-size:0.72rem;color:var(--muted)"></span>
-      </nav>
-      <div class="ctrls">
-        <label class="ctl" title="Pick the destination key — map does not move until you hit Land here">Write home
-          <select id="tonic"></select>
-        </label>
-        <label class="ctl" title="Mode for the staged write home — applied with Land here">Mode
-          <select id="mode"></select>
-        </label>
-        <button type="button" class="btn ghost" id="btn-land-home" title="Switch write home to the staged key and plant its tonic (I / i) after the selected step. Earlier path stays on its disks.">Land here</button>
-        <span id="staged-badge" class="staged-badge" title="Dropdown key differs from the live map — click Land here to commit">Staged <em id="staged-label">—</em></span>
-        <button type="button" class="btn ghost" id="btn-transpose-all" title="Sit the whole path on the Write home wheel. Notes stay put. Shift+click if you really want to transpose pitches.">On this wheel</button>
-        <label class="ctl">BPM
-          <input type="number" id="bpm" min="40" max="200" value="96">
-        </label>
-        <label class="ctl"><input type="checkbox" id="loop" checked> Loop</label>
-        <label class="ctl"><input type="checkbox" id="pulse"> Pulse</label>
-        <label class="ctl" title="When on, selection jumps with the playhead (harder to edit while looping)"><input type="checkbox" id="follow-playhead"> Follow sel</label>
+        <nav class="nav">
+          <div class="map-view-switch header-views" role="group" aria-label="Map view">
+            <button type="button" class="btn primary active" data-map-view="chase" title="Journey: your path across keys">Journey</button>
+            <button type="button" class="btn ghost" data-map-view="function" title="In this key: same-key atlas">In this key</button>
+          </div>
+          <button type="button" class="btn ghost" id="btn-resume-header" title="Reload the last cell from this page's session">Resume</button>
+          <button type="button" class="btn primary" id="btn-fret" title="Send sequence to Guitar Fretboard">→ Fretboard</button>
+          <button type="button" class="btn" id="btn-arrange" title="Open Arrangement">Arrangement</button>
+          <span id="sync-status" class="key" style="font-size:0.72rem;color:var(--muted)"></span>
+        </nav>
         <div class="transport">
-          <button type="button" class="btn primary" id="btn-play" title="Play from start (Space)">Play</button>
+          <button type="button" class="btn primary" id="btn-play" title="Play / stop (Space)">Play</button>
           <button type="button" class="btn" id="btn-play-from" title="Play from selected step (Shift+Space)">From sel</button>
           <button type="button" class="btn" id="btn-ab" title="Hear this version, then blue comparison">A/B</button>
-          <button type="button" class="btn ghost" id="btn-stop" title="Stop (Esc)">Stop</button>
           <button type="button" class="btn ghost" id="btn-keys-help" title="Keyboard shortcuts (?)">?</button>
+        </div>
+      </div>
+      <div class="header-bar">
+        <div class="ctrls">
+          <label class="ctl" title="Pick the destination key — map does not move until you hit Land here">Write home
+            <select id="tonic"></select>
+          </label>
+          <label class="ctl" title="Mode for the staged write home — applied with Land here">Mode
+            <select id="mode"></select>
+          </label>
+          <button type="button" class="btn ghost" id="btn-land-home" title="Switch write home to the staged key and plant its tonic (I / i) after the selected step. Earlier path stays on its disks.">Land here</button>
+          <span id="staged-badge" class="staged-badge" title="Dropdown key differs from the live map — click Land here to commit">Staged <em id="staged-label">—</em></span>
+          <button type="button" class="btn ghost" id="btn-transpose-all" title="Sit the whole path on the Write home wheel. Notes stay put. Shift+click if you really want to transpose pitches.">On this wheel</button>
+          <label class="ctl">BPM
+            <input type="number" id="bpm" min="40" max="200" value="96">
+          </label>
+          <label class="ctl"><input type="checkbox" id="loop" checked> Loop</label>
+          <label class="ctl"><input type="checkbox" id="pulse"> Pulse</label>
+          <label class="ctl" title="When on, selection jumps with the playhead (harder to edit while looping)"><input type="checkbox" id="follow-playhead"> Follow sel</label>
+        </div>
+        <div class="midi-dock">
+          <label class="ctl" title="Realtime notes to a USB synth, DIN interface, or a second loopMIDI port. Not Idle Hanz Chase (that is DAW → Fretboard). Hover stays in the browser.">Synth
+            <select id="midi-out-port" aria-label="MIDI output port">
+              <option value="">Off</option>
+            </select>
+          </label>
+          <details class="midi-panel" title="Mute, split, Speak, clock, range, velocity, level, and channels. Landscape tones stay put.">
+            <summary class="btn ghost">MIDI</summary>
+            <div class="midi-panel-body">
+              <div class="midi-panel-row">
+                <label class="ctl" title="When a synth port is live, silence Landscape's own chord tones. Pulse click is unchanged."><input type="checkbox" id="midi-out-mute"> Mute tones</label>
+                <label class="ctl" title="Send bass notes on the bass channel and pad notes on the pad channel. Off = both streams on the pad channel."><input type="checkbox" id="midi-out-split"> Bass split</label>
+                <label class="ctl" title="Send MIDI clock + start/stop on this synth port while Play runs. Tempo only — no song position. Do not use Idle Hanz Chase. Pulse click stays in the browser."><input type="checkbox" id="midi-out-clock"> Clock</label>
+                <button type="button" class="btn ghost" id="btn-midi-panic" title="All notes off on the synth">Panic</button>
+              </div>
+              <div class="midi-panel-row">
+                <label class="ctl" title="Hold = pad. Pulse = bass on each beat. Walk = bass root, then pinch a pad chord-tone (that note leaves the pad). Stab = short hits. Click / Play both figure.">Speak
+                  <select id="midi-out-speak" aria-label="MIDI speak figure">
+                    <option value="hold">Hold</option>
+                    <option value="pulse">Pulse</option>
+                    <option value="walk">Walk</option>
+                    <option value="stab">Stab</option>
+                  </select>
+                </label>
+              </div>
+              <div class="midi-stream">
+                <strong>Pad</strong>
+                <div class="midi-stream-ctrls">
+                  <label class="ctl" title="MIDI channel for pad / upper notes">Ch
+                    <select id="midi-pad-ch" aria-label="Pad MIDI channel"></select>
+                  </label>
+                  <label class="ctl" title="Stop sending pad notes. Bass keeps going."><input type="checkbox" id="midi-pad-mute"> Mute</label>
+                  <label class="ctl">Oct
+                    <select id="midi-pad-oct" aria-label="Pad octave">
+                      <option value="-3">-3</option>
+                      <option value="-2">-2</option>
+                      <option value="-1">-1</option>
+                      <option value="0" selected>0</option>
+                      <option value="1">+1</option>
+                      <option value="2">+2</option>
+                      <option value="3">+3</option>
+                    </select>
+                  </label>
+                  <label class="ctl">Spr
+                    <select id="midi-pad-spr" aria-label="Pad voicing">
+                      <option value="close">Close</option>
+                      <option value="written" selected>As written</option>
+                      <option value="open">Open</option>
+                      <option value="shell">Shell</option>
+                      <option value="rootless">Rootless</option>
+                      <option value="drop2">Drop 2</option>
+                    </select>
+                  </label>
+                  <label class="ctl midi-vel" title="MIDI velocity for pad / upper notes">Vel
+                    <input type="range" id="midi-pad-vel" min="1" max="127" value="72" aria-label="Pad velocity">
+                    <span class="midi-vel-n" id="midi-pad-vel-n">72</span>
+                  </label>
+                  <label class="ctl midi-vel" title="CC7 volume on the pad channel. Use this when Kontakt ignores velocity.">Lvl
+                    <input type="range" id="midi-pad-lvl" min="0" max="127" value="100" aria-label="Pad level">
+                    <span class="midi-vel-n" id="midi-pad-lvl-n">100</span>
+                  </label>
+                </div>
+              </div>
+              <div class="midi-stream">
+                <strong>Bass</strong>
+                <div class="midi-stream-ctrls">
+                  <label class="ctl" title="MIDI channel for the bass stream when Bass split is on">Ch
+                    <select id="midi-bass-ch" aria-label="Bass MIDI channel"></select>
+                  </label>
+                  <label class="ctl" title="Stop sending bass notes. Pad keeps going."><input type="checkbox" id="midi-bass-mute"> Mute</label>
+                  <label class="ctl">Oct
+                    <select id="midi-bass-oct" aria-label="Bass octave">
+                      <option value="-3">-3</option>
+                      <option value="-2">-2</option>
+                      <option value="-1">-1</option>
+                      <option value="0" selected>0</option>
+                      <option value="1">+1</option>
+                      <option value="2">+2</option>
+                      <option value="3">+3</option>
+                    </select>
+                  </label>
+                  <label class="ctl">Spr
+                    <select id="midi-bass-spr" aria-label="Bass spread">
+                      <option value="0" selected>1 note</option>
+                      <option value="1">+8va</option>
+                      <option value="2">±8va</option>
+                    </select>
+                  </label>
+                  <label class="ctl midi-vel" title="MIDI velocity for the bass stream">Vel
+                    <input type="range" id="midi-bass-vel" min="1" max="127" value="95" aria-label="Bass velocity">
+                    <span class="midi-vel-n" id="midi-bass-vel-n">95</span>
+                  </label>
+                  <label class="ctl midi-vel" title="CC7 volume on the bass channel. Used when Bass split is on.">Lvl
+                    <input type="range" id="midi-bass-lvl" min="0" max="127" value="100" aria-label="Bass level">
+                    <span class="midi-vel-n" id="midi-bass-lvl-n">100</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </details>
         </div>
       </div>
     </header>
@@ -1396,6 +1679,7 @@
       </ol>
       <div class="coach-actions">
         <button type="button" class="btn primary" id="coach-start-i" title="Plant the tonic and start">+ Start on I</button>
+        <button type="button" class="btn ghost" id="coach-resume" title="Reload the last cell from this page's session">Resume</button>
         <button type="button" class="btn ghost" id="coach-dismiss" title="Hide this tip">Got it</button>
       </div>
     </div>
@@ -1449,18 +1733,21 @@
           <h2>Build</h2>
           <div class="empty-start" id="empty-start" hidden>
             <p class="empty-title">Empty path</p>
-            <p class="empty-hint">Stay in Select to browse. Switch to Write (or double-click) to add. In this key opens theory layers when you need them.</p>
+            <p class="empty-hint">Stay in Select to browse. Switch to Write (or double-click) to add. Resume is the last cell on this page — not a project file.</p>
+            <p class="empty-hint" id="resume-store">Last cell stored: …</p>
             <div class="empty-actions">
               <button type="button" class="btn primary" id="btn-empty-home" title="Start the path on the tonic">+ Start on I</button>
-              <button type="button" class="btn primary" id="btn-resume-session" title="Reload the last cell from the shared song session">Resume session</button>
+              <button type="button" class="btn primary" id="btn-resume-session" title="Reload the last cell from this page's session">Resume</button>
               <button type="button" class="btn" id="btn-empty-demo" title="Load Speed of Pain colour demo">Demo: SoP</button>
               <button type="button" class="btn ghost" id="btn-empty-feel" title="Open feel packs">Feels…</button>
+              <button type="button" class="btn ghost btn-danger js-reset-all" title="Empty slate">Reset</button>
             </div>
           </div>
           <div class="add-row" id="edit-essentials">
             <button type="button" class="btn ghost btn-danger" id="btn-del-step" title="Delete selected step · Backspace / Delete">Delete</button>
             <button type="button" class="btn ghost" id="btn-undo" title="Ctrl+Z">Undo</button>
             <button type="button" class="btn ghost" id="btn-redo-edit" title="Ctrl+Y">Redo</button>
+            <button type="button" class="btn ghost btn-danger js-reset-all" id="btn-reset-all" title="Empty slate — clear the path. Confirm twice to wipe versions too.">Reset</button>
             <button type="button" class="btn primary" id="btn-ways-home" title="Ranked last→first joins for this looping cell">Ways home</button>
           </div>
           <details class="fold" id="fold-build">
@@ -1475,7 +1762,7 @@
             <button type="button" class="btn ghost" id="btn-quick-v" title="Append V / V7 of write home">+ V</button>
             <button type="button" class="btn ghost" id="btn-dup" title="Duplicate step · Ctrl+D">Dup</button>
             <button type="button" class="btn ghost" id="btn-clear" title="Clear path only — write home and versions stay">Clear</button>
-            <button type="button" class="btn ghost btn-danger" id="btn-reset-all" title="Empty slate">Reset</button>
+            <button type="button" class="btn ghost btn-danger js-reset-all" title="Empty slate">Reset</button>
           </div>
             </div>
           </details>
@@ -1544,11 +1831,11 @@
           <summary>Save, load &amp; export</summary>
           <div class="fold-body">
             <div class="row" style="flex-wrap:wrap;gap:0.35rem">
-              <button type="button" class="btn primary" id="btn-save-project" title="Download full project as .hl.json (chords, key, BPM, style)">Save project</button>
-              <button type="button" class="btn primary" id="btn-load-project" title="Open a .hl.json project file">Load project</button>
+              <button type="button" class="btn primary" id="btn-save-project" title="Download project as .hl.json (this take, its versions, key, BPM, style)">Save project</button>
+              <button type="button" class="btn primary" id="btn-load-project" title="Open a .hl.json project file (restores versions)">Load project</button>
               <input type="file" id="project-file-input" accept=".json,.hl.json,application/json" hidden />
             </div>
-            <p class="hint" style="margin:0.35rem 0 0.25rem">Project file = portable save. Browser session still auto-updates for Fretboard / Arrangement.</p>
+            <p class="hint" style="margin:0.35rem 0 0.25rem">Project file = this take plus its versions (Darken, Reharm, …). Browser session still auto-updates for Fretboard / Arrangement.</p>
             <div class="row" style="flex-wrap:wrap;gap:0.35rem;margin-top:0.35rem">
               <button type="button" class="btn ghost" id="btn-export-txt" title="Plain-text chord list download">Text</button>
               <button type="button" class="btn ghost" id="btn-export-mid" title="MIDI download">MIDI</button>
@@ -1572,7 +1859,7 @@
             <div class="map-tools">
               <button type="button" class="btn ghost active" id="cam-home" title="Lock camera on home (no jolt)">Home</button>
               <button type="button" class="btn ghost" id="cam-fit" title="Frame whole path">Fit</button>
-              <button type="button" class="btn ghost" id="cam-follow" title="Follow playhead">Follow</button>
+              <button type="button" class="btn ghost" id="cam-follow" title="Focus: cinematic play · the sounding wheel fills the stage">Focus</button>
               <button type="button" class="btn ghost" id="btn-home" title="Recentre">◎</button>
               <span class="map-sep" aria-hidden="true"></span>
               <div class="map-gesture-modes" id="map-gesture-modes" title="Select never writes. Write = click to add. Shift+drag aims.">
@@ -1641,6 +1928,12 @@
     </main>
   </div>
 
+  <div class="focus-exit" id="focus-exit">
+    <button type="button" class="btn primary" id="focus-play" title="Play / stop (Space)">Play</button>
+    <button type="button" class="btn ghost" id="focus-leave" title="Leave Focus">Esc</button>
+    <span class="hint">Space play · Esc leave Focus</span>
+  </div>
+
   <div id="help-overlay" class="help-overlay" hidden>
     <div class="help-card" role="dialog" aria-labelledby="help-title">
       <h3 id="help-title">Keyboard</h3>
@@ -1653,7 +1946,8 @@
         <dt><kbd>Del</kbd> / <kbd>Backspace</kbd></dt><dd>Delete selected step (also map × / timeline × / Delete button)</dd>
         <dt><kbd>Select</kbd></dt><dd>Preview &amp; reorder — never adds</dd>
         <dt><kbd>Write</kbd></dt><dd>Click map to add</dd>
-        <dt><kbd>Esc</kbd></dt><dd>Stop playback</dd>
+        <dt><kbd>Esc</kbd></dt><dd>Stop playback (also all-notes-off on the synth)</dd>
+        <dt>Synth</dt><dd>Header port + <strong>MIDI</strong> panel. Mute / split / Speak / clock / Panic. Pad+Bass: channel, mute, oct, spr, vel, CC7 level. Hover stays local. Do not pick Idle Hanz Chase.</dd>
         <dt><kbd>?</kbd></dt><dd>This help</dd>
       </dl>
       <div class="row">
@@ -1662,28 +1956,29 @@
     </div>
   </div>
 
-  <script src="../ih-session.js?v=20260814n"></script>
+  <script src="../ih-session.js?v=20260816q"></script>
   <script src="js/music.js?v=20260814n"></script>
   <script src="js/compose.js?v=20260814n"></script>
-  <script src="js/audio.js?v=20260814n"></script>
+  <script src="js/audio.js?v=20260816w"></script>
+  <script src="js/midi-out.js?v=20260816z"></script>
   <script src="js/packs.js?v=20260814n"></script>
-  <script src="js/spatial.js?v=20260814n"></script>
-  <script src="js/spatial-layout.js?v=20260814n"></script>
-  <script src="js/spatial-input.js?v=20260814n"></script>
-  <script src="js/spatial-draw.js?v=20260814n"></script>
+  <script src="js/spatial.js?v=20260816z"></script>
+  <script src="js/spatial-layout.js?v=20260817c"></script>
+  <script src="js/spatial-input.js?v=20260816z"></script>
+  <script src="js/spatial-draw.js?v=20260817c"></script>
   <!-- App modules (shared HLApp namespace) — order matters -->
   <script src="js/hl-core.js?v=20260814n"></script>
   <script src="js/hl-styles.js?v=20260814n"></script>
   <script src="js/hl-context-menu.js?v=20260814n"></script>
-  <script src="js/hl-undo.js?v=20260814n"></script>
-  <script src="js/hl-session.js?v=20260814n"></script>
-  <script src="js/hl-map-bridge.js?v=20260814n"></script>
-  <script src="js/hl-versions.js?v=20260814n"></script>
-  <script src="js/hl-edit.js?v=20260814n"></script>
-  <script src="js/hl-horizon.js?v=20260814n"></script>
-  <script src="js/hl-playback.js?v=20260814n"></script>
-  <script src="js/hl-ui.js?v=20260814n"></script>
+  <script src="js/hl-undo.js?v=20260816q"></script>
+  <script src="js/hl-session.js?v=20260816q"></script>
+  <script src="js/hl-map-bridge.js?v=20260816j"></script>
+  <script src="js/hl-versions.js?v=20260816q"></script>
+  <script src="js/hl-edit.js?v=20260816q"></script>
+  <script src="js/hl-horizon.js?v=20260816c"></script>
+  <script src="js/hl-playback.js?v=20260817d"></script>
+  <script src="js/hl-ui.js?v=20260817d"></script>
   <script src="js/hl-polish.js?v=20260814n"></script>
-  <script src="js/app.js?v=20260814n"></script>
+  <script src="js/app.js?v=20260816t"></script>
 </body>
 </html>

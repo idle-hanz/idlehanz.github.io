@@ -5,22 +5,324 @@
   "use strict";
   var H = global.HLApp;
   if (!H) throw new Error("HLApp missing - load hl-core.js first");
-H.setSyncStatus = function (msg) {
+  var LAST_CELL_KEY = 'hl_resume_cell_v1';
+  var OPFS_NAME = 'hl-last-cell.json';
+  var IDB_NAME = 'hl-resume';
+  var IDB_STORE = 'kv';
+
+  H.plainCellFromState = function () {
+    if (!H.state || !H.state.chords || !H.state.chords.length) return null;
+    const song = H.S() && H.S().loadSong ? H.S().loadSong() : null;
+    const prev = song && H.state.cellId && song.cells ? song.cells[H.state.cellId] : null;
+    return {
+      id: H.state.cellId || 'cell-last',
+      name: H.state.title || 'Cell',
+      packId: H.state.fromPackId || null,
+      familyId: prev && prev.familyId ? prev.familyId : null,
+      versionIndex: prev && prev.versionIndex != null ? prev.versionIndex : 1,
+      fromVersionIndex: prev && prev.fromVersionIndex != null ? prev.fromVersionIndex : null,
+      fromKind: prev && prev.fromKind ? prev.fromKind : null,
+      fromCellId: prev && prev.fromCellId ? prev.fromCellId : null,
+      chords: H.state.chords.map(function (c) {
+        if (!c) return null;
+        return {
+          root: c.root,
+          quality: c.quality || 'maj',
+          duration: c.duration != null ? c.duration : 4,
+          bass: c.bassPc != null ? c.bassPc : c.bass,
+          roman: c.roman || '',
+          region: c.region || '',
+          tag: c.tag || '',
+          name: c.name,
+          notes: (c.notes || []).slice(),
+          custom: !!(c.custom || c.quality === 'custom'),
+          localTonic: c.localTonic,
+          localMode: c.localMode,
+        };
+      }).filter(Boolean),
+    };
+  };
+
+  H.plainResumePayload = function (cell, meta) {
+    if (!cell || !cell.chords || !cell.chords.length) return null;
+    meta = meta || {};
+    return {
+      v: 1,
+      savedAt: new Date().toISOString(),
+      cell: cell,
+      tonic: meta.tonic != null ? meta.tonic : H.state.tonic,
+      mode: meta.mode || H.state.mode,
+      bpm: meta.bpm != null ? meta.bpm : H.state.bpm,
+      title: meta.title || cell.name,
+    };
+  };
+
+  H._idbOpen = function () {
+    return new Promise(function (resolve) {
+      if (!global.indexedDB) {
+        resolve(null);
+        return;
+      }
+      var req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = function () {
+        if (!req.result.objectStoreNames.contains(IDB_STORE)) {
+          req.result.createObjectStore(IDB_STORE);
+        }
+      };
+      req.onsuccess = function () {
+        resolve(req.result);
+      };
+      req.onerror = function () {
+        resolve(null);
+      };
+    });
+  };
+
+  H._idbSet = function (key, value) {
+    return H._idbOpen().then(function (db) {
+      if (!db) return false;
+      return new Promise(function (resolve) {
+        var tx = db.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).put(value, key);
+        tx.oncomplete = function () {
+          db.close();
+          resolve(true);
+        };
+        tx.onerror = function () {
+          db.close();
+          resolve(false);
+        };
+      });
+    });
+  };
+
+  H._idbGet = function (key) {
+    return H._idbOpen().then(function (db) {
+      if (!db) return null;
+      return new Promise(function (resolve) {
+        var tx = db.transaction(IDB_STORE, 'readonly');
+        var req = tx.objectStore(IDB_STORE).get(key);
+        req.onsuccess = function () {
+          db.close();
+          resolve(req.result || null);
+        };
+        req.onerror = function () {
+          db.close();
+          resolve(null);
+        };
+      });
+    });
+  };
+
+  H._opfsWrite = function (text) {
+    if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(false);
+    return navigator.storage
+      .getDirectory()
+      .then(function (root) {
+        return root.getFileHandle(OPFS_NAME, { create: true });
+      })
+      .then(function (fh) {
+        return fh.createWritable();
+      })
+      .then(function (w) {
+        return w.write(text).then(function () {
+          return w.close();
+        });
+      })
+      .then(function () {
+        return true;
+      })
+      .catch(function () {
+        return false;
+      });
+  };
+
+  H._opfsRead = function () {
+    if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(null);
+    return navigator.storage
+      .getDirectory()
+      .then(function (root) {
+        return root.getFileHandle(OPFS_NAME);
+      })
+      .then(function (fh) {
+        return fh.getFile();
+      })
+      .then(function (file) {
+        return file.text();
+      })
+      .then(function (text) {
+        return H._parseResumePayload(text);
+      })
+      .catch(function () {
+        return null;
+      });
+  };
+
+  H._parseResumePayload = function (raw) {
+    if (!raw) return null;
+    try {
+      var o = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (!o) return null;
+      if (o.cell && o.cell.chords && o.cell.chords.length) return o;
+      if (o.chords && o.chords.length) {
+        return {
+          cell: {
+            id: o.cellId || 'cell-last',
+            name: o.title || 'Cell',
+            chords: o.chords,
+          },
+          tonic: o.tonic,
+          mode: o.mode,
+          bpm: o.bpm,
+          title: o.title,
+        };
+      }
+    } catch (_) {}
+    return null;
+  };
+
+  H._persistResumeAsync = function (payload, text) {
+    if (navigator.storage && navigator.storage.persist) {
+      try {
+        navigator.storage.persist();
+      } catch (_) {}
+    }
+    H._idbSet('lastCell', payload);
+    H._opfsWrite(text);
+    if (text && text.length < 3500) {
+      try {
+        document.cookie =
+          'hlr=' + encodeURIComponent(text) + '; max-age=31536000; path=/';
+      } catch (_) {}
+    }
+  };
+
+  H.writeResumeSnapshot = function (cell, meta) {
+    var payload = H.plainResumePayload(cell, meta);
+    if (!payload) return false;
+    var text;
+    try {
+      text = JSON.stringify(payload);
+    } catch (_) {
+      return false;
+    }
+    H._resumeMem = payload;
+    var lsOk = false;
+    try {
+      localStorage.setItem(LAST_CELL_KEY, text);
+      lsOk = localStorage.getItem(LAST_CELL_KEY) === text;
+    } catch (_) {}
+    try {
+      sessionStorage.setItem(LAST_CELL_KEY, text);
+    } catch (_) {}
+    H._persistResumeAsync(payload, text);
+    return lsOk || true;
+  };
+
+  H.readResumeSnapshot = function () {
+    var stores = [];
+    try {
+      stores.push(localStorage);
+    } catch (_) {}
+    try {
+      stores.push(sessionStorage);
+    } catch (_) {}
+    for (var s = 0; s < stores.length; s++) {
+      try {
+        var parsed = H._parseResumePayload(stores[s].getItem(LAST_CELL_KEY));
+        if (parsed) return parsed;
+      } catch (_) {}
+    }
+    try {
+      var m = document.cookie && document.cookie.match(/(?:^|; )hlr=([^;]*)/);
+      if (m && m[1]) return H._parseResumePayload(decodeURIComponent(m[1]));
+    } catch (_) {}
+    return null;
+  };
+
+  H.persistResumeFromState = function () {
+    var cell = H.plainCellFromState();
+    if (!cell) return false;
+    if (H.rememberResumeCell) {
+      H.rememberResumeCell(cell, {
+        tonic: H.state.tonic,
+        mode: H.state.mode,
+        bpm: H.state.bpm,
+        title: cell.name,
+      });
+    }
+    return H.writeResumeSnapshot(cell, {
+      tonic: H.state.tonic,
+      mode: H.state.mode,
+      bpm: H.state.bpm,
+      title: cell.name,
+    });
+  };
+
+  H.setSyncStatus = function (msg) {
     H.state.syncMsg = msg || '';
     const el = H.$('#sync-status');
     if (el) el.textContent = H.state.syncMsg;
   }
 
+  H.rememberCellLineage = function (cell) {
+    if (!cell) return;
+    H.state.familyId = cell.familyId || null;
+    H.state.versionIndex = cell.versionIndex != null ? cell.versionIndex : 1;
+    H.state.fromVersionIndex = cell.fromVersionIndex != null ? cell.fromVersionIndex : null;
+    H.state.fromKind = cell.fromKind || null;
+    H.state.fromCellId = cell.fromCellId || null;
+  };
+
   /** Apply session chords (plain objects) into working Landscape chords */
   H.applySessionChords = function (chords, meta) {
     meta = meta || {};
-    H.state.chords = (chords || []).map((sc) => H.sessionChordToLandscape(sc));
+    const incoming = Array.isArray(chords) ? chords : [];
+    H.state.chords = incoming
+      .map((sc) => {
+        if (!sc) return null;
+        try {
+          return H.sessionChordToLandscape ? H.sessionChordToLandscape(sc) : sc;
+        } catch (err) {
+          console.error('applySessionChords hydrate', err);
+          return null;
+        }
+      })
+      .filter(Boolean);
+    if (!H.state.chords.length && incoming.length && H.M() && H.M().makeChord) {
+      H.state.chords = incoming.map(function (sc) {
+        if (!sc) return H.M().makeChord(0, 'maj', { duration: 4 });
+        try {
+          return H.M().makeChord(sc.root != null ? sc.root : 0, sc.quality || 'maj', {
+            duration: sc.duration != null ? sc.duration : 4,
+          });
+        } catch (_) {
+          return H.M().makeChord(0, 'maj', { duration: 4 });
+        }
+      });
+    }
     // Prefer explicit cell name from session — never overwrite with pack recognition
     if (meta.title) {
       H.state.title = meta.title;
       H.state.nameLocked = true;
     }
     if (meta.cellId) H.state.cellId = meta.cellId;
+    if (
+      meta.familyId != null ||
+      meta.versionIndex != null ||
+      meta.fromKind ||
+      meta.fromCellId
+    ) {
+      H.rememberCellLineage(meta);
+    } else if (meta.cellId && H.S() && H.S().loadSong) {
+      try {
+        const song = H.S().loadSong();
+        const cell = song && song.cells && song.cells[meta.cellId];
+        if (cell) H.rememberCellLineage(cell);
+      } catch (_) {
+        /* keep whatever lineage we have */
+      }
+    }
     if (meta.packId) H.state.fromPackId = meta.packId;
     if (meta.tonic != null) {
       H.state.tonic = meta.tonic;
@@ -59,9 +361,11 @@ H.setSyncStatus = function (msg) {
 
   H.ingestHandoffOrSession = function (opts) {
     opts = opts || {};
+    // Resume is not handoff. A leftover / empty ih= payload must not steal the button.
+    if (opts.resume === true) return H.resumeLastCell();
     if (!H.S()) return false;
 
-    // 1) URL hash handoff (works on file://)
+    // 1) URL hash / query handoff (works on file://)
     const handoff = H.S().readHandoffFromLocation() || H.S().readHandoffStorage();
     if (handoff && handoff.to === 'landscape' && handoff.cellId) {
       let chords = H.S().expandHandoffChords(handoff);
@@ -109,25 +413,93 @@ H.setSyncStatus = function (msg) {
       return true;
     }
 
-    if (opts.resume === false) return false;
-
-    const song = H.S().loadSong();
-    const cell = H.pickResumableCell(song);
-    if (cell && cell.chords && cell.chords.length) {
-      if (song.focus) song.focus.cellId = cell.id;
-      H.applySessionChords(cell.chords, {
-        title: cell.name || song.title,
-        cellId: cell.id,
-        packId: cell.packId,
-        tonic: song.key && song.key.tonic,
-        mode: song.key && song.key.mode,
-        bpm: song.bpm,
-        focusIndex: song.focus && song.focus.chordIndex,
-      });
-      return true;
-    }
     return false;
   }
+
+  H.rememberResumeCell = function (cell, meta) {
+    if (!cell || !cell.chords || !cell.chords.length) return;
+    meta = meta || {};
+    H._resumeMem = {
+      cell: cell,
+      tonic: meta.tonic,
+      mode: meta.mode,
+      bpm: meta.bpm,
+      title: meta.title || cell.name,
+    };
+  };
+
+  H.applyResumePayload = function (payload) {
+    if (!payload || !payload.cell || !payload.cell.chords || !payload.cell.chords.length) {
+      return false;
+    }
+    H.applySessionChords(payload.cell.chords, {
+      title: payload.title || payload.cell.name,
+      cellId: payload.cell.id,
+      packId: payload.cell.packId,
+      tonic: payload.tonic,
+      mode: payload.mode,
+      bpm: payload.bpm,
+      focusIndex: payload.focusIndex,
+    });
+    return !!(H.state.chords && H.state.chords.length);
+  };
+
+  /** Last cell this Landscape wrote — memory, then snapshot, then song. */
+  H.resumeLastCell = function () {
+    try {
+      if (H.applyResumePayload(H._resumeMem)) return true;
+      if (H.applyResumePayload(H.readResumeSnapshot && H.readResumeSnapshot())) return true;
+      const song = H.S() && H.S().loadSong ? H.S().loadSong() : null;
+      const cell = H.pickResumableCell(song);
+      if (!cell || !cell.chords || !cell.chords.length) return false;
+      return H.applyResumePayload({
+        cell: cell,
+        title: cell.name || (song && song.title),
+        tonic: song && song.key && song.key.tonic,
+        mode: song && song.key && song.key.mode,
+        bpm: song && song.bpm,
+        focusIndex: song && song.focus && song.focus.chordIndex,
+      });
+    } catch (err) {
+      H._resumeErr = 'Resume failed · ' + (err && err.message ? err.message : 'apply error');
+      return false;
+    }
+  };
+
+  H.resumeLastCellAsync = function () {
+    if (H.resumeLastCell()) return Promise.resolve(true);
+    return H._idbGet('lastCell')
+      .then(function (row) {
+        if (H.applyResumePayload(row)) return true;
+        return H._opfsRead();
+      })
+      .then(function (row) {
+        if (row === true) return true;
+        return H.applyResumePayload(row);
+      })
+      .catch(function (err) {
+        H._resumeErr =
+          'Resume failed · ' + (err && err.message ? err.message : 'async error');
+        return false;
+      });
+  };
+
+  H.describeResumeStore = function () {
+    const mem = H._resumeMem && H._resumeMem.cell && H._resumeMem.cell.chords
+      ? H._resumeMem.cell.chords.length
+      : 0;
+    const snap = H.readResumeSnapshot && H.readResumeSnapshot();
+    const snapN = snap && snap.cell && snap.cell.chords ? snap.cell.chords.length : 0;
+    let songN = 0;
+    try {
+      const song = H.S() && H.S().loadSong ? H.S().loadSong() : null;
+      const cell = H.pickResumableCell(song);
+      songN = cell && cell.chords ? cell.chords.length : 0;
+    } catch (_) {}
+    const n = Math.max(mem, snapN, songN);
+    if (!n) return 'Last cell stored: none';
+    return 'Last cell stored: ' + n + ' step' + (n === 1 ? '' : 's');
+  };
 
   H.pickResumableCell = function (song) {
     if (!song || !song.cells) return null;
@@ -144,31 +516,56 @@ H.setSyncStatus = function (msg) {
   };
 
   H.hasResumableSession = function () {
+    if (H.readResumeSnapshot && H.readResumeSnapshot()) return true;
     if (!H.S()) return false;
     return !!H.pickResumableCell(H.S().loadSong());
   };
 
-  H.resumeSharedSession = function () {
-    const ok = H.ingestHandoffOrSession({ resume: true });
+  H._finishResume = function (ok) {
     if (ok) {
       H.refreshAll();
       if (H.updateEmptyStart) H.updateEmptyStart();
-      H.setSyncStatus('Resumed · ' + (H.state.title || 'cell'));
+      H.setSyncStatus(
+        'Resumed · ' +
+          H.state.chords.length +
+          ' step' +
+          (H.state.chords.length === 1 ? '' : 's') +
+          ' · ' +
+          (H.state.title || 'cell')
+      );
     } else {
-      H.setSyncStatus('Nothing to resume · load a project or Demo: SoP');
+      H.setSyncStatus(
+        H._resumeErr ||
+          'Nothing to resume · last cell is the session, not a project file'
+      );
     }
     return ok;
   };
 
-  H.pushToSharedSession = function (by) {
-    if (!H.S() || !H.state.chords.length) return null;
-    let song = H.S().loadSong() || H.S().emptySong({
-      title: 'Untitled',
-      bpm: H.state.bpm,
-      tonic: H.state.tonic,
-      mode: H.state.mode,
-      updatedBy: by || 'landscape',
+  H.resumeSharedSession = function () {
+    H._resumeErr = '';
+    H.setSyncStatus('Resuming…');
+    return H.resumeLastCellAsync().then(function (ok) {
+      return H._finishResume(ok);
     });
+  };
+
+  H.pushToSharedSession = function (by) {
+    if (!H.state.chords.length) return null;
+    if (H.persistResumeFromState) H.persistResumeFromState();
+    if (!H.S()) return null;
+    let song = H.S().loadSong();
+    if (!song && H.S().readSongFromDisk) song = H.S().readSongFromDisk();
+    if (!song) {
+      song = H.S().emptySong({
+        title: 'Untitled',
+        bpm: H.state.bpm,
+        tonic: H.state.tonic,
+        mode: H.state.mode,
+        updatedBy: by || 'landscape',
+      });
+    }
+    if (!song.cells || typeof song.cells !== 'object') song.cells = {};
     // Song title is the piece name — do not overwrite with cell name
     if (!song.title || song.title === 'Untitled') {
       song.title = song.title || 'Untitled';
@@ -193,29 +590,70 @@ H.setSyncStatus = function (msg) {
       H.state.title = existing.name;
     }
     const prevCell = song.cells[cellId];
+    const nextChords = H.state.chords
+      .map((c) => H.S().fromLandscapeChord(c))
+      .filter(Boolean);
+    if (!nextChords.length) return song;
     const nextCell = {
       id: cellId,
       name: cellName,
       packId: H.state.fromPackId || (prevCell && prevCell.packId) || null,
-      familyId: prevCell && prevCell.familyId ? prevCell.familyId : null,
-      versionIndex: prevCell && prevCell.versionIndex != null ? prevCell.versionIndex : 1,
-      fromVersionIndex: prevCell && prevCell.fromVersionIndex != null ? prevCell.fromVersionIndex : null,
-      fromKind: prevCell && prevCell.fromKind ? prevCell.fromKind : null,
-      fromCellId: prevCell && prevCell.fromCellId ? prevCell.fromCellId : null,
-      chords: H.state.chords.map((c) => H.S().fromLandscapeChord(c)),
+      familyId:
+        (prevCell && prevCell.familyId) ||
+        H.state.familyId ||
+        null,
+      versionIndex:
+        prevCell && prevCell.versionIndex != null
+          ? prevCell.versionIndex
+          : H.state.versionIndex != null
+            ? H.state.versionIndex
+            : 1,
+      fromVersionIndex:
+        prevCell && prevCell.fromVersionIndex != null
+          ? prevCell.fromVersionIndex
+          : H.state.fromVersionIndex != null
+            ? H.state.fromVersionIndex
+            : null,
+      fromKind: (prevCell && prevCell.fromKind) || H.state.fromKind || null,
+      fromCellId: (prevCell && prevCell.fromCellId) || H.state.fromCellId || null,
+      chords: nextChords,
     };
     if (H.S().stripLineageFromName) {
       nextCell.name = H.S().stripLineageFromName(cellName) || cellName || 'Cell';
     }
     song.cells[cellId] = nextCell;
+    if (H.S().adoptOrphanCell) H.S().adoptOrphanCell(song, nextCell);
+    if (nextCell.familyId && song.families && song.families[nextCell.familyId]) {
+      const ids = song.families[nextCell.familyId].versionIds || [];
+      if (ids.indexOf(cellId) < 0) ids.push(cellId);
+      song.families[nextCell.familyId].versionIds = ids;
+    }
+    if (H.S().healFamilies) H.S().healFamilies(song);
+    H.rememberCellLineage(nextCell);
     H.state.title = nextCell.name;
     song.focus = {
       cellId,
       sectionId: song.focus && song.focus.sectionId ? song.focus.sectionId : null,
       chordIndex: Math.max(0, H.state.selected),
     };
-    H.S().saveSong(song, by || 'landscape');
-    H.setSyncStatus('Session saved · ' + (nextCell.name || cellName));
+    const resumeMeta = {
+      tonic: H.state.tonic,
+      mode: H.state.mode,
+      bpm: H.state.bpm,
+      title: nextCell.name,
+    };
+    if (H.rememberResumeCell) H.rememberResumeCell(nextCell, resumeMeta);
+    const saved = H.S().saveSong(song, by || 'landscape');
+    const snapOk = H.writeResumeSnapshot
+      ? H.writeResumeSnapshot(nextCell, resumeMeta)
+      : false;
+    if (saved || snapOk) {
+      H.setSyncStatus('Session saved · ' + (nextCell.name || cellName));
+    } else {
+      H.setSyncStatus(
+        'Session not stored · this file:// page cannot keep localStorage'
+      );
+    }
     return song;
   }
 
@@ -247,9 +685,12 @@ H.setSyncStatus = function (msg) {
   /**
    * Full project snapshot for Save / Load file (not just browser session).
    * Chords use session-friendly shape when ih-session is present.
+   * Version family (Darken / Reharm / …) is stored in `cells` + `families`
+   * so reload does not drop sibling takes.
    */
   H.buildProjectPayload = function () {
     const chordToJson = (c) => {
+      if (!c) return null;
       if (H.S() && H.S().fromLandscapeChord) return H.S().fromLandscapeChord(c);
       return {
         root: c.root,
@@ -266,7 +707,8 @@ H.setSyncStatus = function (msg) {
         custom: !!c.custom,
       };
     };
-    return {
+    const chords = (H.state.chords || []).map(chordToJson).filter(Boolean);
+    const payload = {
       format: 'harmonic-landscape-project',
       version: 1,
       savedAt: new Date().toISOString(),
@@ -300,8 +742,139 @@ H.setSyncStatus = function (msg) {
             valts: false,
             colours: false,
           },
-      chords: (H.state.chords || []).map(chordToJson),
+      chords: chords,
     };
+    const family = H.collectProjectFamily ? H.collectProjectFamily() : null;
+    if (family && family.cells && Object.keys(family.cells).length) {
+      payload.cells = family.cells;
+      payload.families = family.families || {};
+      const focusId = payload.cellId;
+      if (focusId && payload.cells[focusId]) {
+        payload.cells[focusId].chords = chords;
+        payload.cells[focusId].name = H.state.title || payload.cells[focusId].name;
+      }
+    }
+    return payload;
+  };
+
+  H.serializeSessionCell = function (cell) {
+    if (!cell) return null;
+    const toJson = function (c) {
+      if (!c) return null;
+      if (H.S() && H.S().fromLandscapeChord) return H.S().fromLandscapeChord(c);
+      return c;
+    };
+    return {
+      id: cell.id,
+      name: cell.name || 'Cell',
+      packId: cell.packId || null,
+      familyId: cell.familyId || null,
+      versionIndex: cell.versionIndex != null ? cell.versionIndex : 1,
+      fromVersionIndex: cell.fromVersionIndex != null ? cell.fromVersionIndex : null,
+      fromKind: cell.fromKind || null,
+      fromCellId: cell.fromCellId || null,
+      chords: (cell.chords || []).map(toJson).filter(Boolean),
+    };
+  };
+
+  /** Current take + its Darken/Reharm/… siblings for the project file. */
+  H.collectProjectFamily = function () {
+    const out = { cells: {}, families: {} };
+    if (!H.S() || !H.S().loadSong) return out;
+    const song = H.S().loadSong();
+    if (!song || !song.cells) return out;
+    const cellId = H.state.cellId;
+    const cur = (cellId && song.cells[cellId]) || null;
+    const fid = cur && cur.familyId;
+    const members =
+      fid && H.S().familyVersions
+        ? H.S().familyVersions(song, fid)
+        : cur
+          ? [cur]
+          : [];
+    members.forEach(function (c) {
+      const ser = H.serializeSessionCell(c);
+      if (ser && ser.id) out.cells[ser.id] = ser;
+    });
+    if (cur && !out.cells[cur.id]) {
+      const ser = H.serializeSessionCell(cur);
+      if (ser && ser.id) out.cells[ser.id] = ser;
+    }
+    if (fid && song.families && song.families[fid]) {
+      out.families[fid] = {
+        id: fid,
+        name: song.families[fid].name || 'Cell',
+        versionIds: (song.families[fid].versionIds || []).filter(function (id) {
+          return !!out.cells[id] || !!song.cells[id];
+        }),
+      };
+    }
+    return out;
+  };
+
+  H.restoreProjectFamily = function (data) {
+    if (!H.S() || !data || !data.cells || typeof data.cells !== 'object') return null;
+    const ids = Object.keys(data.cells);
+    if (!ids.length) return null;
+    let song = H.S().loadSong();
+    if (!song) {
+      song = H.S().emptySong({
+        title: data.title || 'Untitled',
+        bpm: data.bpm != null ? data.bpm : H.state.bpm,
+        tonic: data.tonic != null ? data.tonic : H.state.tonic,
+        mode: data.mode || H.state.mode,
+        updatedBy: 'landscape-load',
+      });
+    }
+    ids.forEach(function (id) {
+      const src = data.cells[id];
+      if (!src || typeof src !== 'object') return;
+      const prev = song.cells[id];
+      song.cells[id] = {
+        id: src.id || id,
+        name: src.name || (prev && prev.name) || 'Cell',
+        packId: src.packId || (prev && prev.packId) || null,
+        familyId: src.familyId || (prev && prev.familyId) || null,
+        versionIndex:
+          src.versionIndex != null
+            ? src.versionIndex
+            : prev && prev.versionIndex != null
+              ? prev.versionIndex
+              : 1,
+        fromVersionIndex:
+          src.fromVersionIndex != null
+            ? src.fromVersionIndex
+            : prev && prev.fromVersionIndex != null
+              ? prev.fromVersionIndex
+              : null,
+        fromKind: src.fromKind || (prev && prev.fromKind) || null,
+        fromCellId: src.fromCellId || (prev && prev.fromCellId) || null,
+        chords: Array.isArray(src.chords) ? src.chords.slice() : (prev && prev.chords) || [],
+      };
+    });
+    if (data.families && typeof data.families === 'object') {
+      if (!song.families) song.families = {};
+      Object.keys(data.families).forEach(function (fid) {
+        const f = data.families[fid];
+        if (!f) return;
+        const prev = song.families[fid];
+        const idsIn = Array.isArray(f.versionIds) ? f.versionIds.slice() : [];
+        song.families[fid] = {
+          id: f.id || fid,
+          name: f.name || (prev && prev.name) || 'Cell',
+          versionIds: idsIn.length ? idsIn : (prev && prev.versionIds) || [],
+        };
+      });
+    }
+    if (H.S().healFamilies) H.S().healFamilies(song);
+    const focusId = data.cellId && song.cells[data.cellId] ? data.cellId : ids[0];
+    song.focus = {
+      cellId: focusId,
+      sectionId: song.focus && song.focus.sectionId ? song.focus.sectionId : null,
+      chordIndex: data.selected != null ? data.selected : 0,
+    };
+    H.S().saveSong(song, 'landscape-load');
+    return song;
   };
 
   /** Download current work as a .json project file + refresh browser session. */
@@ -309,6 +882,11 @@ H.setSyncStatus = function (msg) {
     if (!H.state.chords || !H.state.chords.length) {
       H.setSyncStatus('Nothing to save — add chords first');
       return;
+    }
+    try {
+      if (H.pushToSharedSession) H.pushToSharedSession('landscape-file');
+    } catch (_) {
+      /* still write the file from editor state */
     }
     const payload = H.buildProjectPayload();
     const text = JSON.stringify(payload, null, 2);
@@ -320,13 +898,15 @@ H.setSyncStatus = function (msg) {
         (H.slug ? H.slug(payload.title) : 'harmonic-landscape') + '.hl.json'
       );
     }
-    // Keep browser session in sync when available
-    try {
-      if (H.pushToSharedSession) H.pushToSharedSession('landscape-file');
-    } catch (_) {
-      /* ignore */
-    }
-    H.setSyncStatus('Project saved · ' + payload.title + ' · ' + payload.chords.length + ' steps');
+    const nVer = payload.cells ? Object.keys(payload.cells).length : 1;
+    H.setSyncStatus(
+      'Project saved · ' +
+        payload.title +
+        ' · ' +
+        payload.chords.length +
+        ' steps' +
+        (nVer > 1 ? ' · ' + nVer + ' versions' : '')
+    );
   };
 
   /**
@@ -341,6 +921,15 @@ H.setSyncStatus = function (msg) {
     // Accept our project format, or a bare handoff / cell-like object with chords
     let chordsRaw = data.chords;
     if (!chordsRaw && data.cell && data.cell.chords) chordsRaw = data.cell.chords;
+    if (
+      !chordsRaw &&
+      data.cells &&
+      data.cellId &&
+      data.cells[data.cellId] &&
+      data.cells[data.cellId].chords
+    ) {
+      chordsRaw = data.cells[data.cellId].chords;
+    }
     if (!Array.isArray(chordsRaw) || !chordsRaw.length) {
       H.setSyncStatus('Load failed · no chords in file');
       return false;
@@ -387,8 +976,20 @@ H.setSyncStatus = function (msg) {
     }
     H.state.title = data.title || data.cellName || 'Loaded project';
     H.state.nameLocked = data.nameLocked !== false;
-    H.state.cellId = data.cellId || null;
     H.state.fromPackId = data.fromPackId || data.packId || null;
+
+    // Restore sibling versions before focusing this take (old files have no cells)
+    const restored =
+      data.cells && H.restoreProjectFamily ? H.restoreProjectFamily(data) : null;
+    H.state.cellId =
+      (restored && restored.focus && restored.focus.cellId) || data.cellId || null;
+    if (restored && H.state.cellId && restored.cells[H.state.cellId]) {
+      const focusCell = restored.cells[H.state.cellId];
+      if (focusCell.name) {
+        H.state.title = focusCell.name;
+        H.state.nameLocked = true;
+      }
+    }
 
     // Hydrate chords
     H.state.chords = chordsRaw.map((sc) => {
@@ -451,13 +1052,18 @@ H.setSyncStatus = function (msg) {
       /* ignore */
     }
     if (!opts.silent) {
+      const nVer =
+        data.cells && typeof data.cells === 'object'
+          ? Object.keys(data.cells).length
+          : 0;
       H.setSyncStatus(
         'Project loaded · ' +
           H.state.title +
           ' · ' +
           H.state.chords.length +
           ' steps · ' +
-          (H.keyLabel ? H.keyLabel() : '')
+          (H.keyLabel ? H.keyLabel() : '') +
+          (nVer > 1 ? ' · ' + nVer + ' versions' : '')
       );
     }
     return true;
@@ -495,15 +1101,8 @@ H.setSyncStatus = function (msg) {
       return;
     }
     H.pushToSharedSession('landscape');
-    const all = H.state.chords.map((c) => H.S().fromLandscapeChord(c));
-    // Fretboard hard cap = 8 (addSlot). Prefer a window around the selected step.
-    const clip = H.S().clipForFretboard
-      ? H.S().clipForFretboard(all, { focus: H.state.selected })
-      : { chords: all.slice(0, 8), truncated: all.length > 8, total: all.length, max: 8, start: 0 };
-    const focusInClip = Math.max(
-      0,
-      Math.min(clip.chords.length - 1, (H.state.selected | 0) - (clip.start || 0))
-    );
+    const all = H.state.chords.map((c) => H.S().fromLandscapeChord(c)).filter(Boolean);
+    const focus = Math.max(0, Math.min(all.length - 1, H.state.selected | 0));
     const payload = H.S().buildHandoffPayload({
       by: 'landscape',
       to: 'fretboard',
@@ -512,36 +1111,18 @@ H.setSyncStatus = function (msg) {
       key: { tonic: H.state.tonic, mode: H.state.mode },
       cellId: H.state.cellId,
       cellName: H.state.title,
-      focus: focusInClip,
-      chords: clip.chords,
+      focus: focus,
+      chords: all,
       ephemeral: true,
-      clipStart: clip.start || 0,
-      clipMax: clip.max || clip.chords.length,
     });
     const ok = H.S().openWithHandoff(H.S().PATHS.fretboardFromLandscape, payload);
-    const clipMsg = H.S().fretboardClipMessage
-      ? H.S().fretboardClipMessage(clip)
-      : clip.truncated
-        ? 'Fretboard max 8 · truncated from ' + clip.total
-        : '';
     if (ok) {
-      H.setSyncStatus(
-        clip.truncated
-          ? 'Opened Fretboard · ' + clipMsg
-          : 'Opened Fretboard with ' + clip.chords.length + ' chords'
-      );
+      H.setSyncStatus('Opened Fretboard with ' + all.length + ' chords');
     } else {
       H.setSyncStatus('Could not open Fretboard — check Desktop paths');
     }
-    if (clip.truncated) {
-      try {
-        console.info('[HL] Fretboard clip:', clipMsg);
-      } catch (_) {
-        /* ignore */
-      }
-    }
     H.$('#export-out').value = JSON.stringify(
-      Object.assign({}, payload, { _fretboardClip: clipMsg || null, _sourceTotal: all.length }),
+      Object.assign({}, payload, { _sourceTotal: all.length }),
       null,
       2
     );

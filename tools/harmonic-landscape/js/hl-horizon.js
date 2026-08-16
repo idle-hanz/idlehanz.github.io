@@ -1047,13 +1047,16 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       if (H.stampKey) H.stampKey(c, key);
       const k = sig(c);
       if (!k || k === curSig || seen[k]) return;
+      // Same-root colour is inspector-only; this list is other joins through the gap
+      if (cur && c.root === cur.root) return;
+      if (prev && c.root === prev.root && c.quality === prev.quality) return;
+      if (next && c.root === next.root && c.quality === next.quality) return;
       seen[k] = 1;
       const score = H.scoreAimContext
         ? H.scoreAimContext(prev, c, next, {
             mode: 'middle',
             tonic: key.tonic,
             modeKey: key.mode,
-            origin: cur,
           })
         : 0;
       out.push({
@@ -1081,11 +1084,7 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
         push(ch, (ch.roman ? ch.roman + ' · ' : '') + ch.name, ch.tag || 'colour', 'flavour');
       });
     }
-    if (H.coloursForRoot) {
-      H.coloursForRoot(cur.root, { key: key, limit: 6 }).forEach(function (item) {
-        push(item.chord, item.label, 'same root · ' + (item.tag || 'colour'), 'flavour');
-      });
-    }
+    // Same-root colours (A7 / Asus…) stay in the inspector, not this gap list.
     const C = H.C();
     if (C && C.secondaryDominantOf) {
       const v7 = C.secondaryDominantOf(next, cur.duration);

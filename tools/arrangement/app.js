@@ -155,15 +155,6 @@
     if (mEl) mEl.value = mode;
   }
 
-  function fretMax() {
-    return (S() && S().FRETBOARD_MAX_CHORDS) || 8;
-  }
-
-  function cellFrettable(cell) {
-    const n = (cell && cell.chords && cell.chords.length) || 0;
-    return n > 0 && n <= fretMax();
-  }
-
   function chordDisplayName(c) {
     if (!c) return '?';
     if (c.name) return c.name;
@@ -418,8 +409,7 @@
             name +
             '” · ' +
             n +
-            ' chords' +
-            (n > fretMax() ? ' · Fretboard will clip to ' + fretMax() : '')
+            ' chords'
         );
       } catch (err) {
         console.error(err);
@@ -646,6 +636,10 @@
   }
 
   function openFretboardForCell(cellId) {
+    if (!S() || !S().openWithHandoff) {
+      alert('ih-session.js is not loaded. Hard-refresh Arrangement.');
+      return;
+    }
     const cell = song.cells[cellId];
     if (!cell || !cell.chords || !cell.chords.length) {
       alert('This cell has no chords yet. Edit it in Landscape first.');
@@ -655,21 +649,7 @@
     save();
     const focusAt =
       song.focus && song.focus.cellId === cellId ? song.focus.chordIndex || 0 : 0;
-    const clip = S().clipForFretboard
-      ? S().clipForFretboard(cell.chords, { focus: focusAt })
-      : {
-          chords: cell.chords.slice(0, 8),
-          truncated: cell.chords.length > 8,
-          total: cell.chords.length,
-          max: 8,
-          start: 0,
-        };
-    if (clip.truncated) {
-      const msg = S().fretboardClipMessage
-        ? S().fretboardClipMessage(clip)
-        : 'Fretboard max 8 · sending first 8 of ' + clip.total;
-      setStatus(msg);
-    }
+    const chords = cell.chords;
     const payload = S().buildHandoffPayload({
       by: 'arrangement',
       to: 'fretboard',
@@ -678,12 +658,10 @@
       key: song.key,
       cellId,
       cellName: cell.name,
-      focus: Math.max(0, focusAt - (clip.start || 0)),
+      focus: Math.max(0, Math.min(chords.length - 1, focusAt)),
       sectionId: selectedSecId,
       ephemeral: true,
-      clipStart: clip.start || 0,
-      clipMax: clip.max || clip.chords.length,
-      chords: clip.chords,
+      chords: chords,
     });
     S().openWithHandoff(S().PATHS.fretboardFromArrangement, payload);
   }
@@ -862,7 +840,8 @@
         ' cells · ' +
         nFlat +
         ' flat chords' +
-        (saved ? '' : ' · (session not saved)');
+        (saved ? '' : ' · (session not saved)') +
+        ' · click 🎸 on a cell (same tab) to open Fretboard';
       setStatus(label);
       // Also flash title so it's obvious load worked under file://
       try {
@@ -1293,19 +1272,15 @@
       return;
     }
     const focusId = song.focus && song.focus.cellId;
-    const maxFb = fretMax();
     ids.forEach((id) => {
       const cell = song.cells[id];
       const wrap = document.createElement('div');
       wrap.className = 'cell-wrap' + (id === focusId ? ' active' : '');
       const nCh = (cell.chords || []).length;
       const bars = (cellBeats(cell) / 4).toFixed(cellBeats(cell) % 4 === 0 ? 0 : 1);
-      const frettable = cellFrettable(cell);
-      const badge = frettable
-        ? '<span class="badge ok" title="Fits Fretboard">≤' + maxFb + '</span>'
-        : nCh
-          ? '<span class="badge warn" title="Fretboard clips to ' + maxFb + '">long ' + nCh + '</span>'
-          : '<span class="badge">empty</span>';
+      const badge = nCh
+        ? '<span class="badge ok" title="Opens whole cell on Fretboard">' + nCh + '</span>'
+        : '<span class="badge">empty</span>';
       const fam =
         cell.familyId && song.families && song.families[cell.familyId]
           ? ' · ' + (song.families[cell.familyId].name || 'family') + ' v' + (cell.versionIndex || 1)
@@ -1335,7 +1310,7 @@
         </button>
         <div class="cell-actions">
           <button type="button" class="btn ghost btn-edit-cell" title="Edit in Landscape">Edit</button>
-          <button type="button" class="btn ghost btn-fret-cell" title="Fretboard (max ${maxFb})">🎸</button>
+          <button type="button" class="btn ghost btn-fret-cell" title="Open this cell on the Fretboard">🎸</button>
           <button type="button" class="btn ghost btn-vary-cell" title="Create family variation">Vary</button>
           <button type="button" class="btn ghost btn-dup-cell" title="Duplicate cell">Dup</button>
           <button type="button" class="btn ghost btn-del-cell" title="Delete cell">×</button>
@@ -1462,7 +1437,7 @@
         <td>${bars % 1 === 0 ? bars : bars.toFixed(1)}</td>
         <td class="row-actions">
           <button type="button" class="btn ghost btn-land" title="Landscape">✎</button>
-          <button type="button" class="btn ghost btn-fret" title="Fretboard (max 8 chords)">🎸</button>
+          <button type="button" class="btn ghost btn-fret" title="Open this cell on the Fretboard">🎸</button>
           <button type="button" class="btn ghost btn-del" title="Remove">×</button>
         </td>
       `;
@@ -1683,11 +1658,9 @@
       }
     });
     const tb = S().totalBars(song);
-    const maxFb = fretMax();
     const flatN = S().flattenArrangement(song).length;
     meta.textContent =
-      `${tb % 1 === 0 ? tb : tb.toFixed(1)} bars · ${flatN} chords flat · ${song.arrangement.length} sections · ${Object.keys(song.cells || {}).length} cells` +
-      ` · Fretboard max ${maxFb}`;
+      `${tb % 1 === 0 ? tb : tb.toFixed(1)} bars · ${flatN} chords flat · ${song.arrangement.length} sections · ${Object.keys(song.cells || {}).length} cells`;
   }
 
   function renderFormStrip() {

@@ -21,6 +21,11 @@
       title: H.state.title,
       fromPackId: H.state.fromPackId,
       cellId: H.state.cellId,
+      familyId: H.state.familyId || null,
+      versionIndex: H.state.versionIndex != null ? H.state.versionIndex : 1,
+      fromVersionIndex: H.state.fromVersionIndex != null ? H.state.fromVersionIndex : null,
+      fromKind: H.state.fromKind || null,
+      fromCellId: H.state.fromCellId || null,
       nameLocked: !!H.state.nameLocked,
       tonic: H.state.tonic,
       mode: H.state.mode,
@@ -47,6 +52,21 @@
     H.state.title = snap.title;
     H.state.fromPackId = snap.fromPackId;
     H.state.cellId = snap.cellId;
+    if (H.rememberCellLineage) {
+      H.rememberCellLineage({
+        familyId: snap.familyId,
+        versionIndex: snap.versionIndex,
+        fromVersionIndex: snap.fromVersionIndex,
+        fromKind: snap.fromKind,
+        fromCellId: snap.fromCellId,
+      });
+    } else {
+      H.state.familyId = snap.familyId || null;
+      H.state.versionIndex = snap.versionIndex != null ? snap.versionIndex : 1;
+      H.state.fromVersionIndex = snap.fromVersionIndex != null ? snap.fromVersionIndex : null;
+      H.state.fromKind = snap.fromKind || null;
+      H.state.fromCellId = snap.fromCellId || null;
+    }
 
     H.state.chords = (snap.chords || []).map((c) => H.sessionChordToLandscape(c));
     H.state.selected =
@@ -125,6 +145,7 @@
    * Preserves free pitch sets (custom) instead of forcing a named triad.
    */
   H.sessionChordToLandscape = function (sc) {
+    if (!sc || typeof sc !== 'object') return null;
     const notes = Array.isArray(sc.notes) ? sc.notes.map((n) => ((n % 12) + 12) % 12) : [];
     const bassPc = sc.bass != null ? sc.bass : sc.bassPc;
     let isCustom = !!sc.custom || sc.quality === 'custom';

@@ -41,7 +41,11 @@ H.refreshAll = function () {
       if (H.map.setOrigin) {
         H.map.setOrigin(H.state.tonic, H.state.mode, { layoutPath: false });
       }
-      H.map.setPath(H.state.chords, H.state.selected);
+      if (H._abListening && H._abMapChords && H._abMapChords.length) {
+        H.map.setPath(H._abMapChords, H.map.playing >= 0 ? H.map.playing : 0);
+      } else {
+        H.map.setPath(H.state.chords, H.state.selected);
+      }
       // Journey: seats + path + ghosts. In this key: neighbourhood chart.
       if (H.map.mapView === 'function' && H.buildFunctionChart) {
         H.map.setFunctionChart(H.buildFunctionChart());
@@ -225,16 +229,25 @@ H.refreshAll = function () {
         '<span class="ts-empty">Time strip empty — use <strong>+ Start on I</strong> or click a seat</span>';
       return;
     }
-    const totalBeats = H.state.chords.reduce((s, c) => s + (c.duration || 4), 0) || 1;
-    const islands =
-      H.C() && H.C().segmentKeyIslands
-        ? H.C().segmentKeyIslands(H.state.chords, H.state.tonic, H.state.mode)
-        : [];
+    const totalBeats =
+      H.state.chords.reduce(function (s, c) {
+        return s + (c && c.duration != null ? Number(c.duration) : 4);
+      }, 0) || 1;
+    let islands = [];
+    try {
+      islands =
+        H.C() && H.C().segmentKeyIslands
+          ? H.C().segmentKeyIslands(H.state.chords, H.state.tonic, H.state.mode) || []
+          : [];
+    } catch (err) {
+      console.error('time-strip key islands failed', err);
+    }
     const keyAt = {};
     islands.forEach(function (isl) {
       keyAt[isl.start] = isl;
     });
     H.state.chords.forEach((ch, i) => {
+      if (!ch) return;
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.dataset.i = String(i);
@@ -924,16 +937,22 @@ H.refreshAll = function () {
 
   /** Empty-path quick actions visibility */
   H.updateEmptyStart = function () {
+    const empty = !(H.state.chords && H.state.chords.length);
     const el = H.$('#empty-start');
-    if (el) el.hidden = !!H.state.chords.length;
-    const canResume =
-      !(H.state.chords && H.state.chords.length) &&
-      H.hasResumableSession &&
-      H.hasResumableSession();
+    if (el) el.hidden = !empty;
+    // Resume stays findable on an empty path. Click says if nothing is stored.
     const resume = H.$('#btn-resume-session');
-    if (resume) resume.hidden = !canResume;
+    if (resume) resume.hidden = !empty;
     const resumeHdr = H.$('#btn-resume-header');
-    if (resumeHdr) resumeHdr.hidden = !canResume;
+    if (resumeHdr) resumeHdr.hidden = false;
+    const coachResume = H.$('#coach-resume');
+    if (coachResume) coachResume.hidden = !empty;
+    const store = H.$('#resume-store');
+    if (store) {
+      store.textContent = H.describeResumeStore
+        ? H.describeResumeStore()
+        : '';
+    }
   };
 
   /** First-run coach strip */
