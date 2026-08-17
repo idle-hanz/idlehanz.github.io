@@ -1859,7 +1859,7 @@
             <div class="map-tools">
               <button type="button" class="btn ghost active" id="cam-home" title="Lock camera on home (no jolt)">Home</button>
               <button type="button" class="btn ghost" id="cam-fit" title="Frame whole path">Fit</button>
-              <button type="button" class="btn ghost" id="cam-follow" title="Focus: cinematic play · the sounding wheel fills the stage">Focus</button>
+              <button type="button" class="btn ghost" id="cam-follow" title="Focus: Journey cinema. From In this key this switches to Journey.">Focus</button>
               <button type="button" class="btn ghost" id="btn-home" title="Recentre">◎</button>
               <span class="map-sep" aria-hidden="true"></span>
               <div class="map-gesture-modes" id="map-gesture-modes" title="Select never writes. Write = click to add. Shift+drag aims.">
@@ -1879,7 +1879,13 @@
               <button type="button" class="btn ghost" id="btn-demo-sop" title="Load Em–C / Asus2 / G–F#–F–Em demo (goth)">Demo</button>
             </div>
             <div id="function-opts" class="function-opts" hidden>
-              <span class="function-opts-label">Layers</span>
+              <span class="function-opts-label">In this key</span>
+              <div class="fo-presets" id="atlas-mode" title="Wheel writes the cell. Lattice is voice leading. Houses are bins.">
+                <button type="button" class="btn ghost active" data-atlas="wheel" title="Same clock as Journey — click a seat to write">Wheel</button>
+                <button type="button" class="btn ghost" data-atlas="lattice" title="Tonnetz — P / L / R across a shared edge">Lattice</button>
+                <button type="button" class="btn ghost" data-atlas="houses" title="HOME · COLOUR · PULL — sort only">Houses</button>
+              </div>
+              <span class="map-sep" aria-hidden="true"></span>
               <div class="fo-presets" title="Density presets for the atlas">
                 <button type="button" class="btn ghost active" data-fo-preset="core" title="Diatonic + Dom + Borrow">Core</button>
                 <button type="button" class="btn ghost" data-fo-preset="jazz" title="Core + Tritone + Dim + V alts">Jazz</button>
@@ -1963,11 +1969,11 @@
   <script src="js/midi-out.js?v=20260816z"></script>
   <script src="js/packs.js?v=20260814n"></script>
   <script src="js/spatial.js?v=20260816z"></script>
-  <script src="js/spatial-layout.js?v=20260817c"></script>
-  <script src="js/spatial-input.js?v=20260816z"></script>
-  <script src="js/spatial-draw.js?v=20260817c"></script>
+  <script src="js/spatial-layout.js?v=20260817s"></script>
+  <script src="js/spatial-input.js?v=20260817r"></script>
+  <script src="js/spatial-draw.js?v=20260817s"></script>
   <!-- App modules (shared HLApp namespace) — order matters -->
-  <script src="js/hl-core.js?v=20260814n"></script>
+  <script src="js/hl-core.js?v=20260817s"></script>
   <script src="js/hl-styles.js?v=20260814n"></script>
   <script src="js/hl-context-menu.js?v=20260814n"></script>
   <script src="js/hl-undo.js?v=20260816q"></script>
@@ -1975,10 +1981,10 @@
   <script src="js/hl-map-bridge.js?v=20260816j"></script>
   <script src="js/hl-versions.js?v=20260816q"></script>
   <script src="js/hl-edit.js?v=20260816q"></script>
-  <script src="js/hl-horizon.js?v=20260816c"></script>
+  <script src="js/hl-horizon.js?v=20260817p"></script>
   <script src="js/hl-playback.js?v=20260817d"></script>
-  <script src="js/hl-ui.js?v=20260817d"></script>
-  <script src="js/hl-polish.js?v=20260814n"></script>
-  <script src="js/app.js?v=20260816t"></script>
+  <script src="js/hl-ui.js?v=20260817s"></script>
+  <script src="js/hl-polish.js?v=20260817s"></script>
+  <script src="js/app.js?v=20260817n"></script>
 </body>
 </html>

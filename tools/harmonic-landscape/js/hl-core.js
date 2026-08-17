@@ -48,6 +48,8 @@
       },
       /** In this key density: core | jazz | full */
       functionPreset: 'core',
+      /** In this key atlas: wheel (write clock) | lattice | houses */
+      functionAtlas: 'wheel',
       gestureLegendDismissed: false,
       /**
        * Map gesture mode:

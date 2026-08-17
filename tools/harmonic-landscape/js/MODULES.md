@@ -39,7 +39,7 @@ Editor lives on **`window.HLApp`** (`H` in each file).
 | | **Journey** (Chase) | **In this key** (Function) |
 |--|---------------------|----------------------------|
 | Job | Multi-key path | Same-key atlas |
-| Map | Two meshed cogs + path; purple ghosts on hover / aim | Diatonic / V7 / borrow chart |
+| Map | Two meshed cogs + path; purple ghosts on hover / aim | Wheel (write clock) · Lattice (Tonnetz) · Houses (bins). Focus stays Journey. |
 | Suggestions | From here list (+ ghosts) | Function toggles + From here |
 
 Map **next-move hollow dots** are retired (`setHorizon` is a no-op stub).

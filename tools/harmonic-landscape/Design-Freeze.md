@@ -140,9 +140,11 @@ Backups live under `harmonic-landscape/backups/js-*/`.
 - Native DAW project formats  
 - Send this A–B loop / section to Landscape (replaces the 8-window)  
 - Branching multi-path song graphs  
-- Arrangement realtime MIDI-out  
+- **Studio MIDI-out** — Arrangement Play first (form skeleton). Fretboard Chase never. Fretboard Play only if still wanted. After Arrangement form. Handover **block S**. Do not reopen Landscape MIDI-out.  
 - Three-tool rewrite (never as one job). Audit is done; A1 and A2 are done.  
 - Journey **third+** gear train (v1 is two meshed cogs)
+- Journey unused-seat rings / post-Focus ghost latch. In-place paint, not more cinema. Journey may later show In-this-key *details* on the wheel — later.
+- **In this key views landed** (2026-08-17): Wheel (default write clock) · Lattice (Tonnetz) · Houses (bins). Not Focus cinema. River later.
 
 ### Journey cogs (shipped 2026-08-16 — v1)
 - Default Journey = **write-home wheel + traveled other-key wheel + the path**. Ghost adjacent keys (Em / F#m halo) stay off until hover / aim / leave-home.
@@ -282,4 +284,27 @@ Arranger: **Load SoP full** · form strip · pipes · end/into · MIDI / flat JS
 - Journey cogs **v1 shipped** (`spatial*.js` / `hl-map-bridge.js` `?v=20260816j`). Two meshed cogs + path; visit numbers stack; ghosts off until hover/aim; one shared pivot node. See §8. Not In-this-key unless seat math is shared. Third+ gear train is later.
 - Do not reopen this sitting to tidy MIDI, chips, Save project, or Reset.
 
-*Last updated after Journey cogs v1.*
+## 21. Current pin (2026-08-16) — Journey / Focus owner-confirmed
+
+- Owner: Speed of Pain **looks beautiful**. Journey cogs + Focus cinema are **done**. Do not reopen for more cinema. Third+ gear train is still later.
+- Fog title is the **sounding** path step, screen-space, never the next-key preview (`spatial-layout.js` / `spatial-draw.js` `?v=20260817c`).
+- A/B second half rides the map then restores this take — does not write the cell (`hl-playback.js` / `hl-ui.js` `?v=20260817d`).
+- Site publish **done** 2026-08-16 (`idlehanz.github.io` `576f70e`). Ride + Fretboard guide left as site-only.
+- Next sitting (superseded 2026-08-17): see §23.
+
+## 22. Current pin (2026-08-17) — studio MIDI-out narrowed
+
+- Arrangement **Play / This section / From section** get the Landscape Synth panel later (handover **block S**) so form is a compose skeleton.
+- Fretboard **Chase** never sends notes or clock. The DAW already has the chords.
+- Fretboard **Play** (neck + teleprompter, DAW off) only if still wanted after Arrangement MIDI.
+- Landscape MIDI-out stays **done**. Do not reopen Speak / Walk / range / Focus.
+
+## 23. Current pin (2026-08-17) — In this key next
+
+- Owner is in the Landscape zone. **Next sitting is In this key** (handover **block K**), not Arrangement form.
+- Noted order (may change): In this key → Arrangement form → Arrangement MIDI-out → Fretboard Play MIDI only if missed → panel flow later.
+- In this key is the atlas of this write-home. It does **not** have to be the Journey wheel. Journey can later grow seat-detail; not this sitting. Not Focus cinema.
+- **In this key views:** **Wheel** (default — same clock as Journey, write the cell) · **Lattice** (Tonnetz voice leading) · **Houses** (bins only). Focus stays Journey.
+- Review page: `Desktop/in-this-key-shapes.html`.
+
+*Last updated after C+E pick.*

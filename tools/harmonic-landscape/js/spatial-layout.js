@@ -652,54 +652,110 @@
 
   /** Retired next-move map dots â€” API kept as no-op. */
 
+  SpatialMap.prototype._functionHouseRank = function (n) {
+    const r = String((n && n.roman) || '');
+    if (/^(I|i)$/.test(r)) return 0;
+    if (/^(IV|iv)$/.test(r)) return 0;
+    if (/^V7?$/.test(r) || (n && n.role === 'dominant')) return 0;
+    if (n && n.onPath) return 1;
+    if (n && n.role === 'diatonic') return 2;
+    if (n && (n.role === 'colour' || n.role === 'interchange')) return 3;
+    return 4;
+  };
+
+  SpatialMap.prototype._chordPcs = function (ch) {
+    const notes = (ch && ch.notes) || [];
+    const set = [];
+    notes.forEach((n) => {
+      const p = ((Number(n) % 12) + 12) % 12;
+      if (set.indexOf(p) < 0) set.push(p);
+    });
+    if (!set.length && ch && ch.root != null) {
+      set.push(((Number(ch.root) % 12) + 12) % 12);
+    }
+    return set;
+  };
+
+  SpatialMap.prototype._sharedPcs = function (a, b) {
+    const A = this._chordPcs(a);
+    const B = this._chordPcs(b);
+    return A.filter((p) => B.indexOf(p) >= 0);
+  };
+
+  SpatialMap.prototype._atlasMode = function () {
+    if (this.mapView !== 'function') return null;
+    if (this.functionAtlas === 'lattice') return 'lattice';
+    if (this.functionAtlas === 'houses') return 'houses';
+    return 'wheel';
+  };
+
+  SpatialMap.prototype._copyFunctionSrc = function (src, extra) {
+    extra = extra || {};
+    return {
+      id: src.id,
+      chord: src.chord,
+      role: src.role || 'diatonic',
+      label: src.label || (src.chord && src.chord.name) || '',
+      roman: src.roman || '',
+      gate: !!src.gate,
+      house: src.house === 'colour' || src.house === 'pull' ? src.house : 'home',
+      resolvesToId: src.resolvesToId || null,
+      routeTargetId: src.routeTargetId || null,
+      canOrbitPeers: !!src.canOrbitPeers,
+      onPath: !!src.onPath,
+      colourTag: src.colourTag || '',
+      dimTag: src.dimTag || '',
+      valtTag: src.valtTag || '',
+      lamp: !!extra.lamp,
+      shared: extra.shared != null ? extra.shared : 0,
+      x: extra.x,
+      y: extra.y,
+      r: extra.r,
+    };
+  };
+
+  /** In this key: wheel (default write clock), lattice, or houses. */
   SpatialMap.prototype._layoutFunctionChart = function () {
-    const M = global.HLMusic;
     const chart = this.functionChart;
     this.functionNodes = [];
     if (!chart || !chart.nodes || !chart.nodes.length) return;
+    const mode = this._atlasMode();
+    if (mode === 'lattice') {
+      this._layoutFunctionLattice();
+      return;
+    }
+    if (mode === 'houses') {
+      this._layoutFunctionHouses();
+      return;
+    }
+    this._layoutFunctionWheel();
+  };
+
+  /** Same clock as Journey — the everyday write atlas. */
+  SpatialMap.prototype._layoutFunctionWheel = function () {
+    const M = global.HLMusic;
+    const chart = this.functionChart;
     const disk = this._activeDisk();
     const t = chart.tonic != null ? chart.tonic : this.origin.tonic;
     const mode = chart.mode || this.origin.mode;
     const cx = disk.cx || 0;
     const cy = disk.cy || 0;
-    // Same R as Chase seats so the wheel is the same physical size in both views
     const R = disk.R || 120;
     const SEAT_R = R * SEAT.scale;
     const TONIC_R = R * SEAT.tonic;
     const BORROW_R = R * SEAT.shell;
     const V7_R = R * SEAT.v7;
-
-    // Chase harmonic-scale seats â†’ exact same angles/radii for diatonic Function nodes
     const scaleSeats =
       M && M.circularHarmonicScale ? M.circularHarmonicScale(t, mode) : [];
     const seatByRoot = {};
     scaleSeats.forEach((s) => {
       seatByRoot[s.root] = s;
     });
-
-    // Interchange on the outer shell ring (same radius as Chase colour shell)
-    const interList = chart.nodes.filter((n) => n.role === 'interchange');
-    const interPos = {};
-    interList.forEach((n, i) => {
-      const ch = n.chord;
-      // Prefer Chase angle for same root when it exists
-      const seat = ch && seatByRoot[ch.root];
-      const ang = seat
-        ? seat.angle
-        : -Math.PI / 2 + (i / Math.max(1, interList.length)) * Math.PI * 2;
-      interPos[n.id] = {
-        x: cx + Math.cos(ang) * BORROW_R,
-        y: cy + Math.sin(ang) * BORROW_R * SEAT.squash,
-      };
-    });
-
     const byId = {};
     chart.nodes.forEach((n) => {
       byId[n.id] = n;
     });
-
-    // Helper: angle of a resolve target (or root seat)
-    const targetAngle = function (resolvesToId, fallbackRoot) {
+    const targetAngle = (resolvesToId, fallbackRoot) => {
       const target = resolvesToId ? byId[resolvesToId] : null;
       const probe =
         target && target.chord
@@ -719,44 +775,38 @@
       }
       return -Math.PI / 2;
     };
-
+    const self = this;
     chart.nodes.forEach((n) => {
       const ch = n.chord;
       if (!ch) return;
       let x;
       let y;
-      if (n.role === 'interchange' && interPos[n.id]) {
-        x = interPos[n.id].x;
-        y = interPos[n.id].y;
+      if (n.role === 'interchange') {
+        const seat = seatByRoot[ch.root];
+        const ang = seat
+          ? seat.angle
+          : -Math.PI / 2 + ((ch.root || 0) / 12) * Math.PI * 2;
+        x = cx + Math.cos(ang) * BORROW_R;
+        y = cy + Math.sin(ang) * BORROW_R * SEAT.squash;
       } else if (
         (n.role === 'secondary' || n.role === 'dominant') &&
-        n.resolvesToId &&
-        M
+        n.resolvesToId
       ) {
-        // V7s on mid belt beside target — still inside/near Chase shell
-        const tAng = targetAngle(n.resolvesToId, ch.root);
-        const ang = tAng + 0.52;
+        const ang = targetAngle(n.resolvesToId, ch.root) + 0.52;
         x = cx + Math.cos(ang) * V7_R;
         y = cy + Math.sin(ang) * V7_R * SEAT.squash;
       } else if (n.role === 'secondaryii' && n.resolvesToId) {
-        // ii of a secondary sits opposite the V7, slightly inside the V belt
-        const tAng = targetAngle(n.routeTargetId || n.resolvesToId, ch.root);
-        const ang = tAng - 0.48;
-        const rr = V7_R * 0.86;
-        x = cx + Math.cos(ang) * rr;
-        y = cy + Math.sin(ang) * rr * SEAT.squash;
+        const ang = targetAngle(n.routeTargetId || n.resolvesToId, ch.root) - 0.48;
+        x = cx + Math.cos(ang) * V7_R * 0.86;
+        y = cy + Math.sin(ang) * V7_R * 0.86 * SEAT.squash;
       } else if (n.role === 'tritone') {
-        // Tritone sub outside the V belt, toward shell
-        const tAng = targetAngle(n.resolvesToId, ch.root);
-        const ang = tAng + 0.92;
-        const rr = BORROW_R * 0.92;
-        x = cx + Math.cos(ang) * rr;
-        y = cy + Math.sin(ang) * rr * SEAT.squash;
+        const ang = targetAngle(n.resolvesToId, ch.root) + 0.92;
+        x = cx + Math.cos(ang) * BORROW_R * 0.92;
+        y = cy + Math.sin(ang) * BORROW_R * 0.92 * SEAT.squash;
       } else if (n.role === 'diminished') {
-        const tAng = targetAngle(n.resolvesToId, ch.root);
         const tag = String(n.dimTag || n.roman || '');
         let angOff = -0.55;
-        let rr = R * 1.0;
+        let rr = R;
         if (/common-tone|I°|i°/i.test(tag)) {
           angOff = 0.2;
           rr = TONIC_R * 1.55;
@@ -764,52 +814,34 @@
           angOff = 0.75;
           rr = V7_R * 1.05;
         }
-        const ang = tAng + angOff;
+        const ang = targetAngle(n.resolvesToId, ch.root) + angOff;
         x = cx + Math.cos(ang) * rr;
         y = cy + Math.sin(ang) * rr * SEAT.squash;
       } else if (n.role === 'valt') {
-        // Fan V-alts around the dominant seat
-        const vSeat = scaleSeats.find(function (s) {
-          return s.role === 'dom';
-        });
+        const vSeat = scaleSeats.find((s) => s.role === 'dom');
         const baseAng = vSeat ? vSeat.angle : targetAngle(n.resolvesToId, ch.root);
         const tag = String(n.valtTag || n.roman || n.label || '');
         let angOff = 0.35;
         let rr = V7_R * 1.08;
-        if (/alt/i.test(tag)) angOff = 0.55;
-        else if (/♭9|b9/i.test(tag)) angOff = 0.2;
-        else if (/♯9|s9|#9/i.test(tag)) angOff = 0.7;
-        else if (/♯11|s11|#11/i.test(tag)) angOff = -0.25;
-        else if (/b13|♭13/i.test(tag)) angOff = -0.5;
-        else if (/sus/i.test(tag)) angOff = -0.7;
-        else if (/backdoor|♭VII/i.test(tag)) {
+        if (/backdoor|♭VII/i.test(tag)) {
           angOff = 1.1;
           rr = BORROW_R * 0.88;
-        } else if (/ii\/V|V7\/V|delayed/i.test(tag)) {
-          angOff = -0.95;
-          rr = V7_R * 0.95;
         }
         const ang = baseAng + angOff;
         x = cx + Math.cos(ang) * rr;
         y = cy + Math.sin(ang) * rr * SEAT.squash;
       } else if (n.role === 'colour') {
-        // Colours hug their degree seat, slightly outward + rotated so sus/II stay readable
-        const hostRoot =
-          n.colourHostRoot != null
-            ? n.colourHostRoot
-            : ch.root;
+        const hostRoot = n.colourHostRoot != null ? n.colourHostRoot : ch.root;
         const seat = seatByRoot[hostRoot] || seatByRoot[ch.root];
-        const COLOUR_R = R * 0.88;
+        const tag = String(n.colourTag || n.roman || '');
+        let angOff = 0.38;
+        if (/II|bright/i.test(tag)) angOff = 0.55;
+        else if (/sus/i.test(tag)) angOff = -0.42;
+        else if (/7|dorian/i.test(tag)) angOff = 0.28;
         if (seat) {
-          // Offset by tag so several colours on one degree fan out
-          const tag = String(n.colourTag || n.roman || '');
-          let angOff = 0.38;
-          if (/II|bright/i.test(tag)) angOff = 0.55;
-          else if (/sus/i.test(tag)) angOff = -0.42;
-          else if (/7|dorian/i.test(tag)) angOff = 0.28;
           const ang = seat.angle + angOff;
-          x = cx + Math.cos(ang) * COLOUR_R;
-          y = cy + Math.sin(ang) * COLOUR_R * SEAT.squash;
+          x = cx + Math.cos(ang) * R * 0.88;
+          y = cy + Math.sin(ang) * R * 0.88 * SEAT.squash;
         } else if (M && M.chaseChordPos) {
           const base = M.chaseChordPos(ch, t, mode, { cx: cx, cy: cy, R: R });
           x = base.x * 1.08;
@@ -819,7 +851,6 @@
           y = cy;
         }
       } else {
-        // Diatonic / gates: same ring as Chase roman seats (same wheel)
         const seat = seatByRoot[ch.root];
         if (seat) {
           const rad = seat.role === 'tonic' ? TONIC_R : SEAT_R;
@@ -844,28 +875,331 @@
         interchange: 12,
         colour: 11,
       };
-      this.functionNodes.push({
-        id: n.id,
-        chord: ch,
-        role: n.role || 'diatonic',
-        label: n.label || ch.name,
-        roman: n.roman || '',
-        gate: !!n.gate,
-        resolvesToId: n.resolvesToId || null,
-        routeTargetId: n.routeTargetId || null,
-        canOrbitPeers: !!n.canOrbitPeers,
-        onPath: !!n.onPath,
-        colourTag: n.colourTag || '',
-        dimTag: n.dimTag || '',
-        valtTag: n.valtTag || '',
-        x: x,
-        y: y,
-        r: rByRole[n.role] != null ? rByRole[n.role] : 14,
+      self.functionNodes.push(
+        self._copyFunctionSrc(n, {
+          x: x,
+          y: y,
+          r: rByRole[n.role] != null ? rByRole[n.role] : 14,
+        })
+      );
+    });
+  };
+
+  SpatialMap.prototype._layoutFunctionHouses = function () {
+    const chart = this.functionChart;
+    const disk = this._activeDisk();
+    const R = disk.R || 120;
+    const colX = { home: -R * 1.58, colour: 0, pull: R * 1.58 };
+    const bandH = R * 2.4;
+    const buckets = { home: [], colour: [], pull: [] };
+    chart.nodes.forEach((n) => {
+      if (!n || !n.chord) return;
+      const house = n.house === 'colour' || n.house === 'pull' ? n.house : 'home';
+      buckets[house].push(n);
+    });
+    const self = this;
+    ['home', 'colour', 'pull'].forEach((hid) => {
+      const list = buckets[hid]
+        .slice()
+        .sort((a, b) => self._functionHouseRank(a) - self._functionHouseRank(b));
+      const n = list.length;
+      const gap = n <= 1 ? 0 : Math.min(44, (bandH - 36) / Math.max(1, n - 1));
+      const startY = -((n - 1) * gap) / 2;
+      list.forEach((src, i) => {
+        const rank = self._functionHouseRank(src);
+        const wobble = n > 3 ? (i % 2 === 0 ? -1 : 1) * Math.min(16, R * 0.09) : 0;
+        self.functionNodes.push(
+          self._copyFunctionSrc(src, {
+            x: colX[hid] + wobble,
+            y: startY + i * gap,
+            r: rank === 0 ? 16 : src.role === 'diatonic' ? 14 : 12,
+          })
+        );
+        self.functionNodes[self.functionNodes.length - 1].house = hid;
       });
     });
   };
 
-  /** Draw Function neighbourhood: resolution edges + role-coloured nodes */
+  /** Major / minor only — Tonnetz triangles. 7ths sit on the parent triad. */
+  SpatialMap.prototype._tonnetzMode = function (ch) {
+    const q = String((ch && ch.quality) || '');
+    if (/halfdim|ø|dim7|^dim/.test(q)) return null;
+    if (/^min|min7|min9|minmaj|^m7|^m9/.test(q) || q === 'min') return 'min';
+    if (/aug/.test(q)) return null;
+    if (/sus|dom7|maj|add9|^7$/.test(q) || q === 'maj' || !q) return 'maj';
+    if (/min/.test(q)) return 'min';
+    return 'maj';
+  };
+
+  /**
+   * Lattice coords: i = fifths, j = major thirds.
+   * pc(i,j) = originPc + 7i + 4j.
+   * Major triangle at root (i,j): (i,j) (i,j+1) (i+1,j).
+   * Minor triangle at root (i,j): (i,j) (i+1,j) (i+1,j-1).
+   */
+  SpatialMap.prototype._tonnetzPc = function (i, j, originPc) {
+    return (((7 * i + 4 * j + originPc) % 12) + 12) % 12;
+  };
+
+  SpatialMap.prototype._tonnetzXY = function (i, j, cell) {
+    const w = cell || 56;
+    return { x: (i + j * 0.5) * w, y: -j * w * 0.86 };
+  };
+
+  SpatialMap.prototype._tonnetzTriCells = function (i, j, mode) {
+    if (mode === 'min') {
+      return [
+        { i: i, j: j },
+        { i: i + 1, j: j },
+        { i: i + 1, j: j - 1 },
+      ];
+    }
+    return [
+      { i: i, j: j },
+      { i: i, j: j + 1 },
+      { i: i + 1, j: j },
+    ];
+  };
+
+  SpatialMap.prototype._plrOf = function (root, mode) {
+    const r = ((Number(root) % 12) + 12) % 12;
+    if (mode === 'min') {
+      return {
+        P: { root: r, mode: 'maj' },
+        R: { root: (r + 3) % 12, mode: 'maj' },
+        L: { root: (r + 8) % 12, mode: 'maj' },
+      };
+    }
+    return {
+      P: { root: r, mode: 'min' },
+      R: { root: (r + 9) % 12, mode: 'min' },
+      L: { root: (r + 4) % 12, mode: 'min' },
+    };
+  };
+
+  /** Tonnetz fragment: pitch vertices + triad triangles + P/L/R around the lamp. */
+  SpatialMap.prototype._layoutFunctionLattice = function () {
+    const chart = this.functionChart;
+    const disk = this._activeDisk();
+    const cell = Math.max(48, (disk.R || 120) * 0.48);
+    const srcs = (chart.nodes || []).filter((n) => n && n.chord);
+    this.tonnetz = { verts: [], originPc: 0, cell: cell };
+    if (!srcs.length) return;
+    const pathCh =
+      this.path && this.path.length
+        ? this.path[
+            this.current >= 0 && this.current < this.path.length
+              ? this.current
+              : this.path.length - 1
+          ]
+        : null;
+    // Stay pinned to write-home so writing does not lurch the grid.
+    const homeMode =
+      this.origin &&
+      (this.origin.mode === 'minor' ||
+        (String(this.origin.mode || '').indexOf('min') === 0))
+        ? 'min'
+        : 'maj';
+    const originPc =
+      this.origin && this.origin.tonic != null
+        ? ((Number(this.origin.tonic) % 12) + 12) % 12
+        : 0;
+    let pivot =
+      srcs.find((n) => /^(I|i)$/.test(String(n.roman || ''))) ||
+      srcs.find(
+        (n) =>
+          n.chord &&
+          ((n.chord.root % 12) + 12) % 12 === originPc &&
+          this._tonnetzMode(n.chord) === homeMode
+      ) ||
+      srcs[0];
+    const pMode = this._tonnetzMode(pivot.chord) || homeMode;
+    this.tonnetz.originPc = originPc;
+    this.tonnetz.cell = cell;
+
+    const keyOf = (i, j) => i + ',' + j;
+    const vertMap = {};
+    const ensureVert = (i, j) => {
+      const k = keyOf(i, j);
+      if (vertMap[k]) return vertMap[k];
+      const p = this._tonnetzXY(i, j, cell);
+      const v = {
+        i: i,
+        j: j,
+        pc: this._tonnetzPc(i, j, originPc),
+        x: p.x,
+        y: p.y,
+      };
+      vertMap[k] = v;
+      return v;
+    };
+
+    const placed = {};
+    const placedSeat = {};
+    const placeTri = (src, i, j, mode, plr, lamp) => {
+      const id = src.id;
+      if (placed[id]) return placed[id];
+      const seat = mode + ':' + ((Number(src.chord.root) % 12) + 12) % 12;
+      if (placedSeat[seat] && !lamp) return placedSeat[seat];
+      const cells = this._tonnetzTriCells(i, j, mode);
+      const verts = cells.map((c) => ensureVert(c.i, c.j));
+      const x = (verts[0].x + verts[1].x + verts[2].x) / 3;
+      const y = (verts[0].y + verts[1].y + verts[2].y) / 3;
+      const node = this._copyFunctionSrc(src, {
+        lamp: !!lamp,
+        x: x,
+        y: y,
+        r: 22,
+        shared: lamp ? 3 : 2,
+      });
+      node.plr = plr || '';
+      node.tonnetz = true;
+      node.tri = verts;
+      this.functionNodes.push(node);
+      placed[id] = node;
+      placedSeat[seat] = node;
+      return node;
+    };
+
+    // Write-home triangle stays at the origin cell (not the selected step)
+    placeTri(pivot, 0, 0, pMode, '', false);
+
+    const plr = this._plrOf(originPc, pMode);
+    const plrCell = {
+      P: pMode === 'min' ? { i: 0, j: 0, mode: 'maj' } : { i: 0, j: 0, mode: 'min' },
+      // minor at (0,0): P is major on same root → major tri (0,0)
+      // major at (0,0): P is minor on same root → minor tri (0,0) — same cells? 
+      // major (0,0): (0,0)(0,1)(1,0). minor same root: (0,0)(1,0)(1,-1). Adjacent.
+      R:
+        pMode === 'min'
+          ? { i: 1, j: -1, mode: 'maj' }
+          : { i: 0, j: 1, mode: 'min' },
+      L:
+        pMode === 'min'
+          ? { i: 0, j: -1, mode: 'maj' }
+          : { i: 0, j: 0, mode: 'min' },
+    };
+    if (pMode === 'maj') {
+      plrCell.P = { i: 0, j: 0, mode: 'min' };
+      plrCell.R = { i: 0, j: 1, mode: 'min' };
+      plrCell.L = { i: 1, j: 0, mode: 'min' };
+    } else {
+      plrCell.P = { i: 0, j: 0, mode: 'maj' };
+      plrCell.R = { i: 1, j: -1, mode: 'maj' };
+      plrCell.L = { i: 0, j: -1, mode: 'maj' };
+    }
+
+    const findSrc = (root, mode) => {
+      const want = mode === 'min' ? /min/ : /maj|dom7|add9|sus|^$/;
+      return (
+        srcs.find(
+          (n) =>
+            n.id !== pivot.id &&
+            ((n.chord.root % 12) + 12) % 12 === root &&
+            this._tonnetzMode(n.chord) === mode
+        ) ||
+        srcs.find(
+          (n) =>
+            n.id !== pivot.id &&
+            ((n.chord.root % 12) + 12) % 12 === root &&
+            want.test(String(n.chord.quality || ''))
+        )
+      );
+    };
+
+    const M = global.HLMusic;
+    const fakeSrc = (root, mode, plrName) => {
+      const q = mode === 'min' ? 'min' : 'maj';
+      const nm =
+        M && M.noteName ? M.noteName(root) + (mode === 'min' ? 'm' : '') : plrName;
+      const ch = M && M.makeChord
+        ? M.makeChord(root, q, { region: 'diatonic' })
+        : { root: root, quality: q, name: nm, notes: [] };
+      return {
+        id: 'plr:' + plrName + ':' + root + ':' + q,
+        chord: ch,
+        role: 'diatonic',
+        label: ch.name || nm,
+        roman: ch.roman || nm,
+        house: 'home',
+        onPath: false,
+      };
+    };
+
+    ['P', 'L', 'R'].forEach((name) => {
+      const spec = plr[name];
+      const cellSpec = plrCell[name];
+      const src =
+        findSrc(spec.root, spec.mode) || fakeSrc(spec.root, spec.mode, name);
+      placeTri(src, cellSpec.i, cellSpec.j, cellSpec.mode, name, false);
+    });
+
+    // Other in-key triads that land on a nearby cell
+    srcs.forEach((src) => {
+      if (placed[src.id]) return;
+      const mode = this._tonnetzMode(src.chord);
+      if (!mode) return;
+      const root = ((Number(src.chord.root) % 12) + 12) % 12;
+      let found = null;
+      for (let i = -3; i <= 3 && !found; i++) {
+        for (let j = -3; j <= 3 && !found; j++) {
+          if (this._tonnetzPc(i, j, originPc) !== root) continue;
+          if (Math.abs(i) + Math.abs(j) > 4) continue;
+          found = { i: i, j: j };
+        }
+      }
+      if (found) placeTri(src, found.i, found.j, mode, '', false);
+    });
+
+    const lampCh = pathCh || (pivot && pivot.chord);
+    if (lampCh) {
+      const lampNode =
+        this.functionNodes.find(
+          (n) =>
+            n.chord &&
+            n.chord.root === lampCh.root &&
+            n.chord.quality === lampCh.quality
+        ) ||
+        this.functionNodes.find((n) => n.chord && n.chord.root === lampCh.root);
+      this.functionNodes.forEach((n) => {
+        n.lamp = !!(lampNode && n === lampNode);
+      });
+      if (lampNode) {
+        const plrHere = this._plrOf(lampCh.root, this._tonnetzMode(lampCh) || pMode);
+        this.functionNodes.forEach((n) => {
+          if (n === lampNode) return;
+          n.plr = '';
+          if (!n.chord) return;
+          const root = ((n.chord.root % 12) + 12) % 12;
+          const mode = this._tonnetzMode(n.chord);
+          if (plrHere.P.root === root && mode === plrHere.P.mode) n.plr = 'P';
+          if (plrHere.R.root === root && mode === plrHere.R.mode) n.plr = 'R';
+          if (plrHere.L.root === root && mode === plrHere.L.mode) n.plr = 'L';
+        });
+      }
+    }
+
+    const verts = [];
+    Object.keys(vertMap).forEach((k) => verts.push(vertMap[k]));
+    const homeN =
+      this.functionNodes.find((n) => n.chord && n.chord.root === originPc) ||
+      this.functionNodes[0];
+    if (homeN) {
+      const dx = homeN.x;
+      const dy = homeN.y;
+      verts.forEach((v) => {
+        v.x -= dx;
+        v.y -= dy;
+      });
+      this.functionNodes.forEach((n) => {
+        n.x -= dx;
+        n.y -= dy;
+      });
+    }
+    this.tonnetz.verts = verts;
+  };
+
+  /** Path sits on the house seat; revisits stack down, not around a wheel. */
 
   SpatialMap.prototype._chordPos = function (ch, index, lane, stackPath) {
     const M = global.HLMusic;
@@ -1085,13 +1419,9 @@
       const prev = peers[j];
       if (prev && prev.root === ch.root && prev.quality === ch.quality) stack++;
     }
-    const disk = this._activeDisk();
-    const cx = (disk && disk.cx) || 0;
-    const cy = (disk && disk.cy) || 0;
-    const ang = Math.atan2(fn.y - cy, fn.x - cx) + Math.PI / 2;
     return {
-      x: fn.x + Math.cos(ang) * stack * 6,
-      y: fn.y + Math.sin(ang) * stack * 5,
+      x: fn.x + (stack ? 7 : 0),
+      y: fn.y + stack * 9,
       onScale: true,
       shell: false,
       seat: null,

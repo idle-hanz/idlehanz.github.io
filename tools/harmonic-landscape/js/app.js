@@ -851,6 +851,13 @@
     }
     if (H.$('#cam-follow')) {
       H.$('#cam-follow').addEventListener('click', () => {
+        if (H.map && H.map.mapView === 'function') {
+          if (H.setMapView) H.setMapView('chase', { silent: true });
+          H.map.setCameraMode('follow');
+          H.syncCamButtons();
+          H.setSyncStatus('Focus is Journey cinema');
+          return;
+        }
         H.map.setCameraMode('follow');
         H.syncCamButtons();
       });

@@ -219,6 +219,199 @@
     paint(name, this._fogNameSlot || 0, u < 1 ? 0.15 + u * 0.85 : 1);
   };
 
+  SpatialMap.prototype._chordPcs = function (ch) {
+    const notes = (ch && ch.notes) || [];
+    const set = [];
+    notes.forEach((n) => {
+      const p = ((Number(n) % 12) + 12) % 12;
+      if (set.indexOf(p) < 0) set.push(p);
+    });
+    if (!set.length && ch && ch.root != null) {
+      set.push(((Number(ch.root) % 12) + 12) % 12);
+    }
+    return set;
+  };
+
+  SpatialMap.prototype._sharedPcs = function (a, b) {
+    const A = this._chordPcs(a);
+    const B = this._chordPcs(b);
+    return A.filter((p) => B.indexOf(p) >= 0);
+  };
+
+  SpatialMap.prototype._drawFunctionHouses = function (ctx, z) {
+    const disk = this._activeDisk();
+    const R = disk.R || 120;
+    const bandW = R * 1.22;
+    const bandH = R * 2.55;
+    const cols = [
+      { id: 'home', x: -R * 1.58, label: 'HOME', fill: 'rgba(232,201,138,0.07)', stroke: 'rgba(232,201,138,0.32)' },
+      { id: 'colour', x: 0, label: 'COLOUR', fill: 'rgba(167,139,250,0.07)', stroke: 'rgba(167,139,250,0.32)' },
+      { id: 'pull', x: R * 1.58, label: 'PULL', fill: 'rgba(212,120,106,0.07)', stroke: 'rgba(212,120,106,0.32)' },
+    ];
+    cols.forEach((c) => {
+      const x = c.x - bandW / 2;
+      const y = -bandH / 2;
+      ctx.beginPath();
+      const r = 18;
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + bandW - r, y);
+      ctx.quadraticCurveTo(x + bandW, y, x + bandW, y + r);
+      ctx.lineTo(x + bandW, y + bandH - r);
+      ctx.quadraticCurveTo(x + bandW, y + bandH, x + bandW - r, y + bandH);
+      ctx.lineTo(x + r, y + bandH);
+      ctx.quadraticCurveTo(x, y + bandH, x, y + bandH - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      ctx.fillStyle = c.fill;
+      ctx.fill();
+      ctx.strokeStyle = c.stroke;
+      ctx.lineWidth = 1.3 / z;
+      ctx.stroke();
+      ctx.fillStyle = c.stroke;
+      ctx.font = `bold ${10 / z}px DM Sans, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(c.label, c.x, y - 8 / z);
+    });
+  };
+
+  SpatialMap.prototype._drawFunctionLattice = function (ctx, hoverId, z) {
+    const M = global.HLMusic;
+    const tn = this.tonnetz || {};
+    const verts = tn.verts || [];
+    const hover = this.functionNodes.find((n) => n.id === hoverId);
+
+    // Pitch-class vertices + fifth / third edges (the Tonnetz, not a star)
+    const seen = {};
+    verts.forEach((v) => {
+      (this.functionNodes || []).forEach((n) => {
+        if (!n.tri) return;
+        n.tri.forEach((u) => {
+          if (u === v) return;
+          const di = Math.abs(u.i - v.i) + Math.abs(u.j - v.j);
+          const adj =
+            (u.i === v.i && Math.abs(u.j - v.j) === 1) ||
+            (u.j === v.j && Math.abs(u.i - v.i) === 1) ||
+            (u.i - v.i === 1 && u.j - v.j === -1) ||
+            (v.i - u.i === 1 && v.j - u.j === -1);
+          if (!adj && di > 2) return;
+          if (!adj) return;
+          const k = v.i + ',' + v.j + '>' + u.i + ',' + u.j;
+          const k2 = u.i + ',' + u.j + '>' + v.i + ',' + v.j;
+          if (seen[k] || seen[k2]) return;
+          seen[k] = true;
+          ctx.beginPath();
+          ctx.moveTo(v.x, v.y);
+          ctx.lineTo(u.x, u.y);
+          ctx.strokeStyle = 'rgba(196,165,116,0.45)';
+          ctx.lineWidth = 1.4 / z;
+          ctx.stroke();
+        });
+      });
+    });
+
+    const visitsOf = (n) => {
+      const vis = [];
+      (this.path || []).forEach((ch, i) => {
+        if (!ch || !n.chord) return;
+        if (ch.root !== n.chord.root) return;
+        const sameQ = ch.quality === n.chord.quality;
+        const bothTri =
+          this._tonnetzMode &&
+          this._tonnetzMode(ch) &&
+          this._tonnetzMode(ch) === this._tonnetzMode(n.chord);
+        if (sameQ || bothTri) vis.push(i + 1);
+      });
+      return vis;
+    };
+
+    // Path thread through triangles you already wrote (same job as Journey gold)
+    const pathPts = [];
+    (this.path || []).forEach((ch) => {
+      if (!ch) return;
+      const hit = this.functionNodes.find(
+        (n) =>
+          n.chord &&
+          n.chord.root === ch.root &&
+          (n.chord.quality === ch.quality ||
+            (this._tonnetzMode &&
+              this._tonnetzMode(ch) &&
+              this._tonnetzMode(ch) === this._tonnetzMode(n.chord)))
+      );
+      if (hit) pathPts.push(hit);
+    });
+    if (pathPts.length > 1) {
+      ctx.beginPath();
+      pathPts.forEach((n, i) => {
+        if (i === 0) ctx.moveTo(n.x, n.y);
+        else ctx.lineTo(n.x, n.y);
+      });
+      ctx.strokeStyle = 'rgba(232,201,138,0.85)';
+      ctx.lineWidth = 3 / z;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+
+    this.functionNodes.forEach((n) => {
+      if (!n.tri || n.tri.length < 3) return;
+      const a = n.tri[0];
+      const b = n.tri[1];
+      const c = n.tri[2];
+      const isLamp = !!n.lamp;
+      const isH = hover && n.id === hover.id;
+      const vis = visitsOf(n);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(c.x, c.y);
+      ctx.closePath();
+      ctx.fillStyle = isLamp
+        ? 'rgba(232,201,138,0.38)'
+        : isH
+          ? 'rgba(232,201,138,0.22)'
+          : n.onPath
+            ? 'rgba(196,165,116,0.16)'
+            : n.plr
+              ? 'rgba(126,184,218,0.10)'
+              : 'rgba(20,16,12,0.45)';
+      ctx.fill();
+      ctx.strokeStyle = isLamp || isH ? '#e8c98a' : n.onPath ? 'rgba(232,201,138,0.7)' : 'rgba(180,168,150,0.35)';
+      ctx.lineWidth = (isLamp ? 2.4 : 1.3) / z;
+      ctx.stroke();
+      ctx.fillStyle = isLamp ? '#1a1410' : 'rgba(230,220,200,0.92)';
+      ctx.font = `bold ${11 / z}px DM Sans, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(n.roman || n.label || '?', n.x, n.y - (n.plr || vis.length ? 7 / z : 0));
+      if (vis.length) {
+        ctx.fillStyle = isLamp ? '#1a1410' : '#e8c98a';
+        ctx.font = `bold ${9 / z}px DM Sans, sans-serif`;
+        ctx.fillText(vis.join(' · '), n.x, n.y + 8 / z);
+      } else if (n.plr) {
+        ctx.fillStyle = '#7eb8da';
+        ctx.font = `bold ${9 / z}px DM Sans, sans-serif`;
+        ctx.fillText(n.plr, n.x, n.y + 10 / z);
+      }
+    });
+
+    verts.forEach((v) => {
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, 11 / z, 0, Math.PI * 2);
+      ctx.fillStyle = '#2a2218';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(232,201,138,0.75)';
+      ctx.lineWidth = 1.4 / z;
+      ctx.stroke();
+      ctx.fillStyle = '#e8c98a';
+      ctx.font = `bold ${9 / z}px DM Sans, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(M && M.noteName ? M.noteName(v.pc) : String(v.pc), v.x, v.y);
+    });
+  };
+
   SpatialMap.prototype._drawFunctionChart = function (ctx) {
     if (!this.functionChart || !this.functionNodes.length) return;
     const byId = {};
@@ -226,6 +419,8 @@
       byId[n.id] = n;
     });
     const z = this.camera.zoom || 1;
+    const atlas = this._atlasMode ? this._atlasMode() : 'wheel';
+    if (atlas === 'houses') this._drawFunctionHouses(ctx, z);
     const hoverItem =
       this.hover && this.hover.type === 'functionNode' ? this.hover.item : null;
     // Resolve hover to function node id (prefer explicit id from hit test)
@@ -247,158 +442,17 @@
     }
 
     const fo = (this.functionChart && this.functionChart.opts) || {};
-    const bothWays = fo.hoverBothWays !== false;
 
-    const edgeTouchesHover = (e) => {
-      if (!hoverId) return false;
-      if (bothWays) return e.fromId === hoverId || e.toId === hoverId;
-      return e.fromId === hoverId; // outbound only
-    };
-
-    // Soft orbit ring always (when borrow on): connects interchange nodes in angle order
-    const inter = this.functionNodes.filter((n) => n.role === 'interchange');
-    if (fo.showOrbit !== false && inter.length >= 2) {
-      const ordered = inter.slice().sort((a, b) => Math.atan2(a.y, a.x) - Math.atan2(b.y, b.x));
-      ctx.beginPath();
-      ordered.forEach((n, i) => {
-        if (i === 0) ctx.moveTo(n.x, n.y);
-        else ctx.lineTo(n.x, n.y);
-      });
-      ctx.closePath();
-      ctx.strokeStyle = hoverId && ordered.some((n) => n.id === hoverId)
-        ? 'rgba(196,160,224,0.55)'
-        : 'rgba(196,160,224,0.22)';
-      ctx.lineWidth = 1.4 / z;
-      ctx.setLineDash([4 / z, 5 / z]);
-      ctx.stroke();
-      ctx.setLineDash([]);
+    if (atlas === 'lattice') {
+      const lamp = this.functionNodes.find((n) => n.lamp);
+      this._drawFunctionLattice(ctx, (lamp && lamp.id) || hoverId, z);
     }
 
-    // Edges under nodes â€” dim all, brighten paths from/to hovered chord
-    (this.functionChart.edges || []).forEach((e) => {
-      const a = byId[e.fromId];
-      const b = byId[e.toId];
-      if (!a || !b) return;
-      // Orbit spokes: draw all from hovered borrow chord (complete star)
-      if (e.kind === 'orbit') {
-        if (!hoverId || !edgeTouchesHover(e)) return;
-        // only need one direction drawn when bothWays creates pairs
-        if (e.fromId !== hoverId) return;
-      }
-
-      const lit = !hoverId || edgeTouchesHover(e);
-      const dim = hoverId && !edgeTouchesHover(e);
-      // Gate lines curve outward so they don't look collinear with mid-belt V7s
-      const isGate = e.kind === 'gate';
-      ctx.beginPath();
-      if (isGate) {
-        const mx = (a.x + b.x) / 2;
-        const my = (a.y + b.y) / 2;
-        // Perpendicular bulge away from origin so path skirts the dominant belt
-        const ox = mx - (this._activeDisk().cx || 0);
-        const oy = my - (this._activeDisk().cy || 0);
-        const olen = Math.hypot(ox, oy) || 1;
-        const bulge = 28;
-        const cpx = mx + (ox / olen) * bulge;
-        const cpy = my + (oy / olen) * bulge;
-        ctx.moveTo(a.x, a.y);
-        ctx.quadraticCurveTo(cpx, cpy, b.x, b.y);
-      } else {
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-      }
-      if (e.kind === 'resolve' || e.kind === 'chain' || e.kind === 'iiv') {
-        ctx.strokeStyle = lit
-          ? 'rgba(126,184,218,' +
-            (dim
-              ? '0.08'
-              : hoverId
-                ? '0.95'
-                : e.kind === 'chain'
-                  ? '0.45'
-                  : e.kind === 'iiv'
-                    ? '0.5'
-                    : '0.55') +
-            ')'
-          : 'rgba(126,184,218,0.55)';
-        ctx.lineWidth = (lit && hoverId ? 2.8 : e.kind === 'chain' ? 1.5 : 1.8) / z;
-        ctx.setLineDash(
-          e.kind === 'chain' ? [8 / z, 3 / z] : e.kind === 'iiv' ? [4 / z, 3 / z] : [5 / z, 4 / z]
-        );
-      } else if (e.kind === 'tritone') {
-        ctx.strokeStyle = lit
-          ? 'rgba(232,93,76,' + (dim ? '0.08' : hoverId ? '0.95' : '0.55') + ')'
-          : 'rgba(232,93,76,0.5)';
-        ctx.lineWidth = (lit && hoverId ? 2.6 : 1.6) / z;
-        ctx.setLineDash([4 / z, 3 / z]);
-      } else if (e.kind === 'dim') {
-        ctx.strokeStyle = lit
-          ? 'rgba(176,122,212,' + (dim ? '0.08' : hoverId ? '0.9' : '0.45') + ')'
-          : 'rgba(176,122,212,0.4)';
-        ctx.lineWidth = (lit && hoverId ? 2.4 : 1.4) / z;
-        ctx.setLineDash([2 / z, 3 / z]);
-      } else if (e.kind === 'valt') {
-        ctx.strokeStyle = lit
-          ? 'rgba(224,160,96,' + (dim ? '0.08' : hoverId ? '0.9' : '0.45') + ')'
-          : 'rgba(224,160,96,0.4)';
-        ctx.lineWidth = (lit && hoverId ? 2.4 : 1.4) / z;
-        ctx.setLineDash([3 / z, 3 / z]);
-      } else if (e.kind === 'orbit') {
-        ctx.strokeStyle = 'rgba(196,160,224,' + (hoverId ? '0.75' : '0.35') + ')';
-        ctx.lineWidth = (hoverId ? 2 : 1.2) / z;
-        ctx.setLineDash([2 / z, 4 / z]);
-      } else if (e.kind === 'skeleton') {
-        ctx.strokeStyle = lit
-          ? 'rgba(232,201,138,' + (dim ? '0.06' : hoverId ? '0.75' : '0.22') + ')'
-          : 'rgba(232,201,138,0.22)';
-        ctx.lineWidth = (lit && hoverId ? 2 : 1.1) / z;
-        ctx.setLineDash([]);
-      } else if (e.kind === 'colour') {
-        // Gold dashed: diatonic seat → colour variant (sus, II, 7ths)
-        ctx.strokeStyle = lit
-          ? 'rgba(240,160,112,' + (dim ? '0.08' : hoverId ? '0.9' : '0.4') + ')'
-          : 'rgba(240,160,112,0.4)';
-        ctx.lineWidth = (lit && hoverId ? 2 : 1.15) / z;
-        ctx.setLineDash([2 / z, 3 / z]);
-      } else {
-        // gate
-        ctx.strokeStyle = lit
-          ? 'rgba(196,160,224,' + (dim ? '0.06' : hoverId ? '0.85' : '0.28') + ')'
-          : 'rgba(196,160,224,0.28)';
-        ctx.lineWidth = (lit && hoverId ? 2.2 : 1.1) / z;
-        ctx.setLineDash([3 / z, 5 / z]);
-      }
-      if (dim) ctx.globalAlpha = 0.22;
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-      ctx.setLineDash([]);
-      if (dim || e.kind === 'skeleton' || e.kind === 'colour') return;
-      // arrow head toward target
-      const ang = Math.atan2(b.y - a.y, b.x - a.x);
-      const ax = b.x - Math.cos(ang) * (b.r + 4);
-      const ay = b.y - Math.sin(ang) * (b.r + 4);
-      ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      ctx.lineTo(ax - Math.cos(ang - 0.4) * 7 / z, ay - Math.sin(ang - 0.4) * 7 / z);
-      ctx.lineTo(ax - Math.cos(ang + 0.4) * 7 / z, ay - Math.sin(ang + 0.4) * 7 / z);
-      ctx.closePath();
-      ctx.fillStyle =
-        e.kind === 'resolve' || e.kind === 'chain' || e.kind === 'iiv'
-          ? 'rgba(126,184,218,' + (hoverId ? '0.95' : '0.7') + ')'
-          : e.kind === 'tritone'
-            ? 'rgba(232,93,76,' + (hoverId ? '0.95' : '0.7') + ')'
-            : e.kind === 'dim'
-              ? 'rgba(176,122,212,' + (hoverId ? '0.9' : '0.65') + ')'
-              : e.kind === 'valt'
-                ? 'rgba(224,160,96,' + (hoverId ? '0.9' : '0.65') + ')'
-                : 'rgba(196,160,224,' + (hoverId ? '0.9' : '0.4') + ')';
-      ctx.fill();
-    });
-
-    // While dragging a path chord, aim pads sit on these seats â€” skip node
+    // While dragging a path chord, aim pads sit on these seats — skip node
     // discs so we don't paint double chords at the same coordinates.
     const dragging = this._mode === 'node';
     if (dragging) return;
+    if (atlas === 'lattice') return;
 
     this.functionNodes.forEach((n) => {
       const col =
@@ -419,18 +473,14 @@
                       : n.gate
                         ? REGION.gate
                         : REGION.diatonic;
-      const isH = hoverId && n.id === hoverId;
+      const isH = !!(hoverId && n.id === hoverId) || !!n.lamp;
+      const hoverN = hoverId && this.functionNodes.find((x) => x.id === hoverId);
       const isNeighbor =
-        hoverId &&
-        (this.functionChart.edges || []).some((e) => {
-          if (bothWays) {
-            return (
-              (e.fromId === hoverId && e.toId === n.id) ||
-              (e.toId === hoverId && e.fromId === n.id)
-            );
-          }
-          return e.fromId === hoverId && e.toId === n.id;
-        });
+        !!(hoverN &&
+          hoverN.chord &&
+          n.chord &&
+          n.id !== hoverN.id &&
+          this._sharedPcs(hoverN.chord, n.chord).length >= 2);
       const onPath = fo.showPath !== false && n.onPath;
       ctx.beginPath();
       ctx.arc(n.x, n.y, n.r + (isH ? 3 : isNeighbor ? 1.5 : onPath ? 1 : 0), 0, Math.PI * 2);
@@ -449,14 +499,15 @@
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = isH ? '#0a0806' : 'rgba(230,220,200,0.92)';
-      ctx.font = `bold ${9 / z}px DM Sans, sans-serif`;
+      ctx.font = `bold ${10 / z}px DM Sans, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(n.label || n.chord.name, n.x, n.y - (n.roman ? 3 / z : 0));
-      if (n.roman) {
-        ctx.fillStyle = isH ? 'rgba(10,8,6,0.75)' : 'rgba(180,168,150,0.85)';
+      const roman = n.roman || '';
+      ctx.fillText(roman || n.label || (n.chord && n.chord.name) || '?', n.x, n.y - (isH ? 3 / z : 0));
+      if (isH && n.label && roman) {
+        ctx.fillStyle = 'rgba(10,8,6,0.75)';
         ctx.font = `${7.5 / z}px DM Sans, sans-serif`;
-        ctx.fillText(n.roman, n.x, n.y + 9 / z);
+        ctx.fillText(n.label, n.x, n.y + 9 / z);
       }
     });
   };
@@ -517,10 +568,14 @@
     // Function view = same-key chart only â€” hide other-key disks (they looked
     // like a second graph lighting up next to the centred Function chart).
     // Draw inactive keys first, then active write-home disk
-    const disksDraw = (this.disks || [])
-      .filter((d) => this.mapView !== 'function' || d.active)
-      .slice()
-      .sort((a, b) => (a.active ? 1 : 0) - (b.active ? 1 : 0));
+    const atlasNow = this._atlasMode ? this._atlasMode() : null;
+    const disksDraw =
+      this.mapView === 'function' && atlasNow !== 'wheel'
+        ? []
+        : (this.disks || [])
+            .filter((d) => this.mapView !== 'function' || d.active)
+            .slice()
+            .sort((a, b) => (a.active ? 1 : 0) - (b.active ? 1 : 0));
     const focusDisk = followLook
       ? this._followFocusDisk && this._followFocusDisk()
       : null;
@@ -765,7 +820,7 @@
     const homeHover = this.hover && this.hover.type === 'home';
     const empty = !this.nodes || !this.nodes.length;
     const act = this._activeDisk();
-    if (homeHover || empty) {
+    if (this.mapView !== 'function' && (homeHover || empty)) {
       const pulse = empty ? 1 + 0.1 * Math.sin((this.pulseT || 0) * 2.2) : 1;
       ctx.beginPath();
       ctx.arc(act.cx || 0, act.cy || 0, 22 * pulse, 0, Math.PI * 2);
@@ -773,14 +828,12 @@
       ctx.lineWidth = 2 / this.camera.zoom;
       ctx.stroke();
     }
-    if (empty && this._mode !== 'node' && !followLook) {
+    if (this.mapView !== 'function' && empty && this._mode !== 'node' && !followLook) {
       ctx.fillStyle = 'rgba(200,184,160,0.8)';
       ctx.font = `${10 / this.camera.zoom}px Crimson Text, Georgia, serif`;
       ctx.textAlign = 'center';
       ctx.fillText(
-        this.mapView === 'function'
-          ? 'Function Â· same-key atlas Â· click chords Â· leave home â†’ Journey'
-          : 'Chase Â· click HOME or a roman seat Â· purple rings = leave home Â· From here list = moves',
+        'Chase · click HOME or a roman seat · purple rings = leave home · From here list = moves',
         act.cx || 0,
         (act.cy || 0) + (act.R || 100) * 0.95
       );
@@ -990,8 +1043,11 @@
       ctx.fillText('+', this.hover.x, this.hover.y + 1);
     }
 
-    // Primary path edges â€” journey trail (dim past, bright current during play)
-    // Curve geometry shared with _hitEdge via _edgeControl
+    // Path edges: Journey + In-this-key wheel. Not houses (volley) or lattice (triangles).
+    if (
+      this.mapView !== 'function' ||
+      (this._atlasMode && this._atlasMode() === 'wheel')
+    )
     for (let i = 0; i < this.nodes.length - 1; i++) {
       const a = this.nodes[i];
       const b = this.nodes[i + 1];
@@ -1300,8 +1356,10 @@
       }
     }
 
-    // Primary path nodes â€” solid, numbered, heavier than hollow options
+    // Primary path nodes — solid, numbered, heavier than hollow options
+    // Lattice: triangles carry the path; discs would cover the Tonnetz.
     this.nodes.forEach((n) => {
+      if (this._atlasMode && this._atlasMode() === 'lattice') return;
       const vis = n.visitIndices || [n.i];
       const groupCur = vis.indexOf(this.current) >= 0;
       const groupPlay = vis.indexOf(this.playing) >= 0;
@@ -1646,7 +1704,9 @@
             ? 'Previous key disk — click centre to make it write home again (path keeps ownership)'
             : this.hover && this.hover.type === 'functionNode'
               ? 'In this key · ' +
-                ((this.hover.item && this.hover.item.label) || '') +
+                ((this.hover.item && this.hover.item.job) ||
+                  (this.hover.item && this.hover.item.label) ||
+                  '') +
                 writeHint
               : this.hover && this.hover.type === 'horizon'
                 ? 'Option on/near the scale' + writeHint
@@ -1667,7 +1727,11 @@
                               ((this.hover.item && this.hover.item.label) || '') +
                               writeHint
                           : this.mapView === 'function'
-                            ? 'In this key · gold diatonic · Select previews · Write adds'
+                            ? (this.functionAtlas === 'houses'
+                                ? 'Houses · bins only'
+                                : this.functionAtlas === 'lattice'
+                                  ? 'Lattice · Write click a triangle · P/L/R = one-note moves'
+                                  : 'Wheel · Write click a seat · same clock as Journey')
                             : this.nodes && this.nodes.length
                               ? 'Select = preview / drag reorder · × deletes · Write or double-click adds'
                               : 'Write or double-click HOME / a roman seat to start';
@@ -1678,7 +1742,11 @@
     ctx.fillStyle = 'rgba(180,168,150,0.5)';
     ctx.fillText(
       this.mapView === 'function'
-        ? 'In this key Â· gold diatonic Â· orange colours (sus/II) Â· blue V7 Â· purple borrow'
+        ? (this.functionAtlas === 'houses'
+            ? 'Houses · bins only'
+            : this.functionAtlas === 'lattice'
+              ? 'Lattice · Tonnetz · vertices are notes'
+              : 'Wheel · In this key · click a roman seat')
         : 'Journey · two cogs + path · hover / aim shows nearby keys · I / V7→I plant home',
       10,
       14

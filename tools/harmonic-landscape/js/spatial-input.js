@@ -333,7 +333,11 @@
         }
       }
     }
-    if (bestPath) add({ type: 'path', item: bestPath }, bestPathD, -30);
+    // Lattice: triangles write / preview. Path discs are hidden and would
+    // steal clicks (stacked visits on Em jumped the timeline).
+    if (bestPath && !(this._atlasMode && this._atlasMode() === 'lattice')) {
+      add({ type: 'path', item: bestPath }, bestPathD, -30);
+    }
 
     // × on the selected step — highest priority so delete is always reachable
     if (
@@ -398,8 +402,14 @@
                         ? (fn.roman || 'V alt') + ' · V alternative'
                         : fn.roman || fn.role,
             role: fn.role,
+            house: fn.house,
             functionNodeId: fn.id,
           };
+          if (fn.house) {
+            const houseLab =
+              fn.house === 'pull' ? 'Pull' : fn.house === 'colour' ? 'Colour' : 'Home';
+            item.job = houseLab + ' · ' + (item.job || fn.roman || '');
+          }
           // Build multi-step packages where resolve chain is known
           if (
             (fn.role === 'secondary' || fn.role === 'dominant') &&

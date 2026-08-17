@@ -363,9 +363,10 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       showSkeleton: true,
       showPath: true,
       showPrimaryV7: dominants,
-      showSecondaries: dominants,
-      showSecondaryIiVs: dominants,
-      showChains: dominants,
+      // Secondaries stuff Pull. Core = primary V7 only; Jazz/Full add the rest.
+      showSecondaries: !!(tritone || dim || valts),
+      showSecondaryIiVs: !!(tritone || dim || valts),
+      showChains: !!(tritone || dim || valts),
       showInterchange: borrow,
       // Full borrow set when Colours on — sparse only if colours hidden
       sparseBorrow: !colours,
@@ -377,6 +378,49 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
       showColours: colours,
       hoverBothWays: true,
     };
+  };
+
+  /**
+   * Bins only. HOME stays full (tonic family + modal v / ♭VII).
+   * COLOUR is the other full bin (subdominant / paint).
+   * PULL is sparse — primary V / V7 / leading ° only.
+   */
+  H.functionHouse = function (node, styleId) {
+    styleId = styleId || (H.getStyleId && H.getStyleId()) || 'neutral';
+    const role = (node && node.role) || '';
+    const roman = String((node && node.roman) || (node && node.chord && node.chord.roman) || '');
+    const tag = String(
+      (node && (node.colourTag || node.dimTag || node.valtTag)) ||
+        (node && node.chord && node.chord.tag) ||
+        ''
+    );
+    if (role === 'secondary' || role === 'valt' || role === 'tritone') return 'pull';
+    if (role === 'secondaryii') return 'colour';
+    if (role === 'colour') return 'colour';
+    if (role === 'diminished') {
+      if (/common-tone|I°|i°/i.test(tag + ' ' + roman)) return 'home';
+      return 'pull';
+    }
+    const r = roman
+      .replace(/⁷|7|sus[24]?|add9|maj|min|°|ø|\(.+\)/gi, '')
+      .replace(/\s+/g, '');
+    // Pull: only the real dominant (V / V7) and leading vii°. Minor v lives at Home.
+    if (role === 'dominant' || /^V\//.test(r) || /^V7/i.test(roman)) return 'pull';
+    if (/^V$/i.test(r) && !/^v$/.test(r)) return 'pull';
+    if (/^vii$/i.test(r)) return 'pull';
+    if (/^(IV|iv|ii|II|♭II|bII|N)$/i.test(r) || /neap|♭II|bII/i.test(tag)) {
+      return 'colour';
+    }
+    if (/^(I|i|vi|VI|iii|III|♭III|bIII|♭VI|bVI|v)$/i.test(r)) return 'home';
+    if (/^(♭VII|bVII|VII)$/i.test(r)) {
+      if (/classical/.test(styleId)) return 'colour';
+      return 'home';
+    }
+    if (role === 'interchange') {
+      if (/^(iv|IV|ii|♭II|bII)$/i.test(r)) return 'colour';
+      return 'home';
+    }
+    return 'home';
   };
 
   H.buildFunctionChart = function () {
@@ -865,8 +909,10 @@ H.fitHorizonIntoSequence = function (sel, rawPieces, mode) {
     const pathIds = new Set(
       (H.state.chords || []).map((c) => c.root + ':' + c.quality)
     );
+    const styleId = H.getStyleId ? H.getStyleId() : 'neutral';
     nodes.forEach((n) => {
       n.onPath = pathIds.has(n.id);
+      n.house = H.functionHouse(n, styleId);
     });
 
     return {

@@ -94,6 +94,39 @@
     }
   };
 
+  H.setFunctionAtlas = function (mode, opts) {
+    opts = opts || {};
+    H.state.functionAtlas =
+      mode === 'lattice' ? 'lattice' : mode === 'houses' ? 'houses' : 'wheel';
+    if (H.map) H.map.functionAtlas = H.state.functionAtlas;
+    if (H.syncFunctionAtlasUI) H.syncFunctionAtlasUI();
+    if (H.map && H.map.mapView === 'function' && H.refreshMap) H.refreshMap();
+    if (!opts.silent) {
+      const msg =
+        H.state.functionAtlas === 'lattice'
+          ? 'Lattice · Tonnetz · P / L / R share an edge'
+          : H.state.functionAtlas === 'houses'
+            ? 'Houses · bins only · HOME full · COLOUR full · PULL sparse'
+            : 'Wheel · same clock as Journey · click a seat to write';
+      H.setSyncStatus(msg);
+    }
+  };
+
+  H.syncFunctionAtlasUI = function () {
+    const mode =
+      H.state.functionAtlas === 'lattice'
+        ? 'lattice'
+        : H.state.functionAtlas === 'houses'
+          ? 'houses'
+          : 'wheel';
+    document.querySelectorAll('[data-atlas]').forEach(function (btn) {
+      const on = btn.getAttribute('data-atlas') === mode;
+      btn.classList.toggle('active', on);
+      btn.classList.toggle('primary', on);
+      btn.classList.toggle('ghost', !on);
+    });
+  };
+
   H.syncFunctionPresetUI = function () {
     var id = H.state.functionPreset || 'core';
     // Infer if checkboxes were toggled manually
@@ -206,6 +239,12 @@
       });
     });
     H.syncFunctionPresetUI();
+    document.querySelectorAll('[data-atlas]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        H.setFunctionAtlas(btn.getAttribute('data-atlas'));
+      });
+    });
+    if (H.syncFunctionAtlasUI) H.syncFunctionAtlasUI();
     document.querySelectorAll('[data-map-mode]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         H.setMapGestureMode(btn.getAttribute('data-map-mode'));

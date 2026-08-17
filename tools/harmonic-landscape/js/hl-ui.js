@@ -46,7 +46,8 @@ H.refreshAll = function () {
       } else {
         H.map.setPath(H.state.chords, H.state.selected);
       }
-      // Journey: seats + path + ghosts. In this key: neighbourhood chart.
+      if (H.map && H.state) H.map.functionAtlas = H.state.functionAtlas || 'wheel';
+      // Journey: seats + path + ghosts. In this key: houses or lattice.
       if (H.map.mapView === 'function' && H.buildFunctionChart) {
         H.map.setFunctionChart(H.buildFunctionChart());
       } else if (H.map.setFunctionChart) {
@@ -120,6 +121,8 @@ H.refreshAll = function () {
   H.setMapView = function (view, opts) {
     opts = opts || {};
     view = view === 'function' ? 'function' : 'chase';
+    if (view === 'function' && H.leaveFocusCinema) H.leaveFocusCinema();
+    if (H.map && H.state) H.map.functionAtlas = H.state.functionAtlas || 'wheel';
     // Freeze scale before anything runs — Home lock used to force zoom=1
     const camSnap = H.map && H.map.snapshotCamera ? H.map.snapshotCamera() : null;
     if (H.map) H.map._keepCameraOnce = true;
@@ -134,6 +137,7 @@ H.refreshAll = function () {
     if (bar) bar.hidden = view !== 'function';
     H.syncFunctionOptsUI();
     if (H.syncFunctionPresetUI) H.syncFunctionPresetUI();
+    if (H.syncFunctionAtlasUI) H.syncFunctionAtlasUI();
     H.refreshMap({ keepCamera: true });
     if (H.renderDiskLegend) H.renderDiskLegend();
     if (camSnap && H.map && H.map.restoreCamera) {
@@ -155,9 +159,14 @@ H.refreshAll = function () {
       const stLabel = H.getStyle ? H.getStyle().label : '';
       H.setSyncStatus(
         view === 'function'
-          ? 'In this key · Dom / Borrow / Tritone / Dim / V alts · right-click colours' +
+          ? 'In this key · ' +
+              (H.state.functionAtlas === 'lattice'
+                ? 'Lattice'
+                : H.state.functionAtlas === 'houses'
+                  ? 'Houses'
+                  : 'Wheel') +
               (stLabel ? ' · style ' + stLabel : '') +
-              ' · leave home → Journey'
+              ' · Focus stays on Journey'
           : 'Journey · seats + path · right-click colours/packs · style ' +
               (stLabel || 'Neutral')
       );
@@ -1233,7 +1242,13 @@ H.refreshAll = function () {
     }
     if (H.map) {
       H.map.current = H.state.selected;
-      // Don't rebuild ghost halo on every select — that made browse feel laggy
+      if (
+        H.map.mapView === 'function' &&
+        H.state.functionAtlas === 'lattice' &&
+        H.buildFunctionChart
+      ) {
+        H.map.setFunctionChart(H.buildFunctionChart());
+      }
     }
     H.syncSelectionChrome();
     H.renderInspector();
