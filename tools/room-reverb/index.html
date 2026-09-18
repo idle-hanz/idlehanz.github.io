@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>2011 Room Reverb - Idle Hanz</title>
-    <meta name="description" content="Rebuild of the 2011 Reaktor room reverb: image-source early field, unscaled Hadamard FDN, mic desk. Desktop FastAPI tweak app.">
+    <meta name="description" content="Rebuild of the 2011 Reaktor room reverb: image-source early field, unscaled Hadamard FDN, mic desk. Desktop FastAPI tweak app with full how-it-works docs.">
     <meta property="og:title" content="2011 Room Reverb by Idle Hanz">
     <meta property="og:description" content="Image sources · Hadamard FDN · mic desk — local Desktop tweak app.">
     <link rel="stylesheet" href="../../assets/styles.css">
@@ -41,6 +41,7 @@
         }
         .rr-section p, .rr-section li { color: #c8b8a0; line-height: 1.65; }
         .rr-section code { color: #e8d9b8; }
+        .rr-section a { color: #c9a36e; }
         .rr-grid {
             display: grid;
             gap: 1rem;
@@ -54,12 +55,21 @@
             border-radius: 8px;
             overflow: hidden;
         }
-        .rr-grid img { width: 100%; display: block; height: auto; }
+        .rr-grid img { width: 100%; display: block; height: auto; background: #0a0806; min-height: 120px; }
         .rr-grid figcaption {
             font-size: 0.9em;
             padding: 0.55rem 0.75rem 0.8rem;
             color: #a89f8f;
         }
+        .rr-doc-list { list-style: none; padding: 0; }
+        .rr-doc-list li {
+            margin: 0.65rem 0;
+            padding: 0.75rem 1rem;
+            background: rgba(0,0,0,0.28);
+            border: 1px solid #3a2f22;
+            border-radius: 8px;
+        }
+        .rr-doc-list strong { color: #e8d9b8; }
     </style>
 </head>
 <body class="art-bg">
@@ -83,8 +93,8 @@
             This is a <strong>local Python app</strong> (FastAPI), not an in-browser tool.
             Download or clone the pack, run it on your machine, then open
             <code>http://127.0.0.1:7860</code>.
-            It is a research rebuild: docs mark <strong>VERIFIED</strong> (from Structure)
-            vs <strong>ASSUMED</strong>. Not a finished commercial plugin.
+            Docs mark <strong>VERIFIED</strong> (from Structure) vs <strong>ASSUMED</strong>.
+            Not a finished commercial plugin.
         </div>
 
         <div class="rr-cta">
@@ -92,6 +102,22 @@
             <a href="https://github.com/idle-hanz/2011-room-reverb">View on GitHub</a>
             <a href="https://github.com/idle-hanz/2011-room-reverb/blob/main/docs/QUICKSTART.md">Quick start</a>
             <a href="https://github.com/idle-hanz/2011-room-reverb/blob/main/docs/HOW_IT_WORKS_ILLUSTRATED.md">How it works</a>
+        </div>
+
+        <div class="rr-section">
+            <h2>Documentation (new edition)</h2>
+            <p>
+                Updated for the FastAPI Mic desk, independent source/mic heights, Hadamard N (8–128),
+                Lattice / Paths / Colour / Surfaces / Polar views, and the linked track-FX room idea.
+                Twelve diagrams ship in the Desktop pack under <code>docs/diagrams/</code>
+                (regenerate with <code>docs/generate_diagrams.py</code>).
+            </p>
+            <ul class="rr-doc-list">
+                <li><strong><a href="https://github.com/idle-hanz/2011-room-reverb/blob/main/docs/HOW_IT_WORKS_ILLUSTRATED.md">How it works — illustrated</a></strong> — theory with diagram callouts (Mic desk, Lattice, Colour, Polar, track-FX).</li>
+                <li><strong><a href="https://github.com/idle-hanz/2011-room-reverb/blob/main/docs/HOW_IT_WORKS.md">How it works — text</a></strong> — full VERIFIED / ASSUMED write-up.</li>
+                <li><strong><a href="https://github.com/idle-hanz/2011-room-reverb/blob/main/docs/UI_GUIDE.md">UI guide</a></strong> — every tab and knob → engine meaning.</li>
+                <li><strong><a href="https://github.com/idle-hanz/2011-room-reverb/blob/main/docs/QUICKSTART.md">Quick start</a></strong> — launch, first render, tab map.</li>
+            </ul>
         </div>
 
         <div class="rr-section">
@@ -106,7 +132,7 @@
         </div>
 
         <div class="rr-section">
-            <h2>Diagrams</h2>
+            <h2>Diagrams (overview)</h2>
             <div class="rr-grid">
                 <figure>
                     <img src="diagrams/01_signal_flow.svg" alt="Signal flow">
@@ -125,13 +151,14 @@
                     <figcaption>Room geometry (top)</figcaption>
                 </figure>
             </div>
+            <p>Full set (12 PNGs) including Mic desk, Floor/Side heights, Lattice/Paths, Colour/Surfaces, Polar field, and track-FX sketch — in the pack’s <code>docs/diagrams/</code> folder.</p>
         </div>
 
         <div class="rr-section">
             <h2>What’s in the pack</h2>
             <ul>
                 <li><code>software/</code> — FastAPI tweak app, UI, engine</li>
-                <li><code>docs/</code> — quick start, how-it-works, diagrams</li>
+                <li><code>docs/</code> — quick start, how-it-works (illustrated + text), UI guide, diagrams</li>
                 <li><code>findings/</code> — Structure mining notes</li>
                 <li><code>ensemble/</code> — original Reaktor <code>.ens</code> (reference)</li>
             </ul>
