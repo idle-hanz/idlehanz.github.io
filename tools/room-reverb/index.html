@@ -1,1 +1,145 @@
-PLACEHOLDER
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2011 Room Reverb - Idle Hanz</title>
+    <meta name="description" content="Rebuild of the 2011 Reaktor room reverb: image-source early field, unscaled Hadamard FDN, mic desk. Desktop FastAPI tweak app.">
+    <meta property="og:title" content="2011 Room Reverb by Idle Hanz">
+    <meta property="og:description" content="Image sources · Hadamard FDN · mic desk — local Desktop tweak app.">
+    <link rel="stylesheet" href="../../assets/styles.css">
+    <style>
+        .rr-hero { margin-bottom: 1.5rem; }
+        .rr-hero h1 { font-family: 'Cinzel', serif; margin-bottom: 0.25em; }
+        .rr-tagline { font-style: italic; color: #c8b8a0; margin-bottom: 1rem; }
+        .rr-note {
+            border-left: 3px solid #664d2e;
+            padding: 0.9rem 1.1rem;
+            margin: 1.2rem 0 1.6rem;
+            background: rgba(0,0,0,0.35);
+            color: #ddd0bc;
+            line-height: 1.55;
+        }
+        .rr-cta { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1.25rem 0 2rem; }
+        .rr-cta a {
+            display: inline-block;
+            padding: 0.7em 1.35em;
+            border: 1px solid #664d2e;
+            border-radius: 30px;
+            text-decoration: none;
+            color: #c9a36e;
+            background: transparent;
+            transition: all 0.25s ease;
+        }
+        .rr-cta a.primary { background: #2a2118; color: #e8d9b8; border-color: #8a6640; }
+        .rr-cta a:hover { background: #2a2118; color: #e8d9b8; border-color: #8a6640; }
+        .rr-section h2 {
+            font-family: 'Cinzel', serif;
+            color: #e8d9b8;
+            font-size: 1.45em;
+            margin: 1.8rem 0 0.7rem;
+        }
+        .rr-section p, .rr-section li { color: #c8b8a0; line-height: 1.65; }
+        .rr-section code { color: #e8d9b8; }
+        .rr-grid {
+            display: grid;
+            gap: 1rem;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            margin: 1.2rem 0 2rem;
+        }
+        .rr-grid figure {
+            margin: 0;
+            background: rgba(0,0,0,0.4);
+            border: 1px solid #333;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .rr-grid img { width: 100%; display: block; height: auto; }
+        .rr-grid figcaption {
+            font-size: 0.9em;
+            padding: 0.55rem 0.75rem 0.8rem;
+            color: #a89f8f;
+        }
+    </style>
+</head>
+<body class="art-bg">
+
+    <nav class="site-nav" style="position: static; background: rgba(0,0,0,0.6); border-bottom: 1px solid #3a2f22;">
+        <a href="../index.html" style="font-family: 'Cinzel', serif; color: #ddd; text-decoration: none; font-size: 1.05em;">← Studio Tools</a>
+    </nav>
+
+    <div class="page-content">
+        <div class="rr-hero">
+            <h1>2011 Room Reverb</h1>
+            <p class="rr-tagline">Image sources · unscaled Hadamard FDN · mic desk</p>
+            <p>
+                A rebuild of the 2011 Reaktor room reverb: geometric early reflections,
+                an unscaled Hadamard feedback delay network for the tail, and a mic-array model
+                with desk presets — edited in a local Desktop app.
+            </p>
+        </div>
+
+        <div class="rr-note">
+            This is a <strong>local Python app</strong> (FastAPI), not an in-browser tool.
+            Download or clone the pack, run it on your machine, then open
+            <code>http://127.0.0.1:7860</code>.
+            It is a research rebuild: docs mark <strong>VERIFIED</strong> (from Structure)
+            vs <strong>ASSUMED</strong>. Not a finished commercial plugin.
+        </div>
+
+        <div class="rr-cta">
+            <a class="primary" href="https://github.com/idle-hanz/2011-room-reverb/archive/refs/heads/main.zip">Download ZIP</a>
+            <a href="https://github.com/idle-hanz/2011-room-reverb">View on GitHub</a>
+            <a href="https://github.com/idle-hanz/2011-room-reverb/blob/main/docs/QUICKSTART.md">Quick start</a>
+            <a href="https://github.com/idle-hanz/2011-room-reverb/blob/main/docs/HOW_IT_WORKS_ILLUSTRATED.md">How it works</a>
+        </div>
+
+        <div class="rr-section">
+            <h2>Quick start (Windows)</h2>
+            <ol>
+                <li>Install Python 3 (tick “Add to PATH”).</li>
+                <li>Unzip the pack → open <code>software</code> (or use the pack-root CLICK ME shortcut).</li>
+                <li>Double-click <code>Launch Tweak App.bat</code> (first run creates <code>.venv</code>).</li>
+                <li>Browser → <code>http://127.0.0.1:7860</code>.</li>
+                <li>Place source / mics, load a dry WAV, Render → <code>software/renders/out.wav</code>.</li>
+            </ol>
+        </div>
+
+        <div class="rr-section">
+            <h2>Diagrams</h2>
+            <div class="rr-grid">
+                <figure>
+                    <img src="diagrams/01_signal_flow.png" alt="Signal flow">
+                    <figcaption>Signal flow — early field into Hadamard FDN</figcaption>
+                </figure>
+                <figure>
+                    <img src="diagrams/03_image_mirrors.png" alt="Image-source mirrors">
+                    <figcaption>Image-source mirrors</figcaption>
+                </figure>
+                <figure>
+                    <img src="diagrams/05_fdn_schematic.png" alt="Hadamard FDN">
+                    <figcaption>Unscaled Hadamard FDN</figcaption>
+                </figure>
+                <figure>
+                    <img src="diagrams/02_room_geometry_xz.png" alt="Room geometry">
+                    <figcaption>Room geometry (top)</figcaption>
+                </figure>
+            </div>
+        </div>
+
+        <div class="rr-section">
+            <h2>What’s in the pack</h2>
+            <ul>
+                <li><code>software/</code> — FastAPI tweak app, UI, engine</li>
+                <li><code>docs/</code> — quick start, how-it-works, diagrams</li>
+                <li><code>findings/</code> — Structure mining notes</li>
+                <li><code>ensemble/</code> — original Reaktor <code>.ens</code> (reference)</li>
+            </ul>
+        </div>
+    </div>
+
+    <footer class="site-footer">
+        <p>© Idle Hanz • <a href="../index.html">Studio Tools</a> • <a href="../../index.html">Home</a></p>
+    </footer>
+</body>
+</html>
