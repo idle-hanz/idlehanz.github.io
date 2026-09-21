@@ -3,73 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>2011 Room Reverb - Idle Hanz</title>
-    <meta name="description" content="Rebuild of the 2011 Reaktor room reverb: image-source early field, unscaled Hadamard FDN, mic desk. Desktop FastAPI tweak app with full how-it-works docs.">
-    <meta property="og:title" content="2011 Room Reverb by Idle Hanz">
-    <meta property="og:description" content="Image sources · Hadamard FDN · mic desk — local Desktop tweak app.">
+    <title>2011 Room Reverb — listen - Idle Hanz</title>
+    <meta name="description" content="Play live vs Render from the 2011 Room Reverb rebuild.">
     <link rel="stylesheet" href="../../assets/styles.css">
     <style>
-        .rr-hero { margin-bottom: 1.5rem; }
         .rr-hero h1 { font-family: 'Cinzel', serif; margin-bottom: 0.25em; }
-        .rr-tagline { font-style: italic; color: #c8b8a0; margin-bottom: 1rem; }
-        .rr-note {
-            border-left: 3px solid #664d2e;
-            padding: 0.9rem 1.1rem;
-            margin: 1.2rem 0 1.6rem;
+        .rr-tagline { font-style: italic; color: #c8b8a0; margin-bottom: 1.6rem; }
+        .rr-listen {
+            display: grid;
+            gap: 1.25rem;
+            max-width: 40rem;
+        }
+        .rr-card {
             background: rgba(0,0,0,0.35);
-            color: #ddd0bc;
-            line-height: 1.55;
+            border: 1px solid #3a2f22;
+            border-radius: 10px;
+            padding: 1.1rem 1.2rem 1.25rem;
         }
-        .rr-cta { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1.25rem 0 2rem; }
-        .rr-cta a {
-            display: inline-block;
-            padding: 0.7em 1.35em;
-            border: 1px solid #664d2e;
-            border-radius: 30px;
-            text-decoration: none;
-            color: #c9a36e;
-            background: transparent;
-            transition: all 0.25s ease;
-        }
-        .rr-cta a.primary { background: #2a2118; color: #e8d9b8; border-color: #8a6640; }
-        .rr-cta a:hover { background: #2a2118; color: #e8d9b8; border-color: #8a6640; }
-        .rr-section h2 {
+        .rr-card h2 {
             font-family: 'Cinzel', serif;
             color: #e8d9b8;
-            font-size: 1.45em;
-            margin: 1.8rem 0 0.7rem;
+            font-size: 1.25em;
+            margin: 0 0 0.35rem;
         }
-        .rr-section p, .rr-section li { color: #c8b8a0; line-height: 1.65; }
-        .rr-section code { color: #e8d9b8; }
-        .rr-section a { color: #c9a36e; }
-        .rr-grid {
-            display: grid;
-            gap: 1rem;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            margin: 1.2rem 0 2rem;
-        }
-        .rr-grid figure {
-            margin: 0;
-            background: rgba(0,0,0,0.4);
-            border: 1px solid #333;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        .rr-grid img { width: 100%; display: block; height: auto; background: #0a0806; min-height: 120px; }
-        .rr-grid figcaption {
-            font-size: 0.9em;
-            padding: 0.55rem 0.75rem 0.8rem;
-            color: #a89f8f;
-        }
-        .rr-doc-list { list-style: none; padding: 0; }
-        .rr-doc-list li {
-            margin: 0.65rem 0;
-            padding: 0.75rem 1rem;
-            background: rgba(0,0,0,0.28);
-            border: 1px solid #3a2f22;
-            border-radius: 8px;
-        }
-        .rr-doc-list strong { color: #e8d9b8; }
+        .rr-card p { color: #a89f8f; margin: 0 0 0.85rem; font-size: 0.95em; }
+        .rr-card audio { width: 100%; display: block; }
+        .rr-card a { color: #c9a36e; font-size: 0.9em; }
     </style>
 </head>
 <body class="art-bg">
@@ -81,87 +40,22 @@
     <div class="page-content">
         <div class="rr-hero">
             <h1>2011 Room Reverb</h1>
-            <p class="rr-tagline">Image sources · unscaled Hadamard FDN · mic desk</p>
-            <p>
-                A rebuild of the 2011 Reaktor room reverb: geometric early reflections,
-                an unscaled Hadamard feedback delay network for the tail, and a mic-array model
-                with desk presets — edited in a local Desktop app.
-            </p>
+            <p class="rr-tagline">Same mix · Play live vs Render</p>
         </div>
 
-        <div class="rr-note">
-            This is a <strong>local Python app</strong> (FastAPI), not an in-browser tool.
-            Download or clone the pack, run it on your machine, then open
-            <code>http://127.0.0.1:7860</code>.
-            Docs mark <strong>VERIFIED</strong> (from Structure) vs <strong>ASSUMED</strong>.
-            Not a finished commercial plugin.
-        </div>
-
-        <div class="rr-cta">
-            <a class="primary" href="https://github.com/idle-hanz/2011-room-reverb/archive/refs/heads/main.zip">Download ZIP</a>
-            <a href="https://github.com/idle-hanz/2011-room-reverb">View on GitHub</a>
-            <a href="https://github.com/idle-hanz/2011-room-reverb/blob/main/docs/QUICKSTART.md">Quick start</a>
-            <a href="https://github.com/idle-hanz/2011-room-reverb/blob/main/docs/HOW_IT_WORKS_ILLUSTRATED.md">How it works</a>
-        </div>
-
-        <div class="rr-section">
-            <h2>Documentation (new edition)</h2>
-            <p>
-                Updated for the FastAPI Mic desk, independent source/mic heights, Hadamard N (8–128),
-                Lattice / Paths / Colour / Surfaces / Polar views, and the linked track-FX room idea.
-                Twelve diagrams ship in the Desktop pack under <code>docs/diagrams/</code>
-                (regenerate with <code>docs/generate_diagrams.py</code>).
-            </p>
-            <ul class="rr-doc-list">
-                <li><strong><a href="https://github.com/idle-hanz/2011-room-reverb/blob/main/docs/HOW_IT_WORKS_ILLUSTRATED.md">How it works — illustrated</a></strong> — theory with diagram callouts (Mic desk, Lattice, Colour, Polar, track-FX).</li>
-                <li><strong><a href="https://github.com/idle-hanz/2011-room-reverb/blob/main/docs/HOW_IT_WORKS.md">How it works — text</a></strong> — full VERIFIED / ASSUMED write-up.</li>
-                <li><strong><a href="https://github.com/idle-hanz/2011-room-reverb/blob/main/docs/UI_GUIDE.md">UI guide</a></strong> — every tab and knob → engine meaning.</li>
-                <li><strong><a href="https://github.com/idle-hanz/2011-room-reverb/blob/main/docs/QUICKSTART.md">Quick start</a></strong> — launch, first render, tab map.</li>
-            </ul>
-        </div>
-
-        <div class="rr-section">
-            <h2>Quick start (Windows)</h2>
-            <ol>
-                <li>Install Python 3 (tick “Add to PATH”).</li>
-                <li>Unzip the pack → open <code>software</code> (or use the pack-root CLICK ME shortcut).</li>
-                <li>Double-click <code>Launch Tweak App.bat</code> (first run creates <code>.venv</code>).</li>
-                <li>Browser → <code>http://127.0.0.1:7860</code>.</li>
-                <li>Place source / mics, load a dry WAV, Render → <code>software/renders/out.wav</code>.</li>
-            </ol>
-        </div>
-
-        <div class="rr-section">
-            <h2>Diagrams (overview)</h2>
-            <div class="rr-grid">
-                <figure>
-                    <img src="diagrams/01_signal_flow.svg" alt="Signal flow">
-                    <figcaption>Signal flow — early field into Hadamard FDN</figcaption>
-                </figure>
-                <figure>
-                    <img src="diagrams/03_image_mirrors.svg" alt="Image-source mirrors">
-                    <figcaption>Image-source mirrors</figcaption>
-                </figure>
-                <figure>
-                    <img src="diagrams/05_fdn_schematic.svg" alt="Hadamard FDN">
-                    <figcaption>Unscaled Hadamard FDN</figcaption>
-                </figure>
-                <figure>
-                    <img src="diagrams/02_room_geometry_xz.svg" alt="Room geometry">
-                    <figcaption>Room geometry (top)</figcaption>
-                </figure>
+        <div class="rr-listen">
+            <div class="rr-card">
+                <h2>Play live</h2>
+                <p>Running 32-line FDN in the browser.</p>
+                <audio controls preload="metadata" src="audio/play-live.wav"></audio>
+                <p style="margin: 0.7rem 0 0;"><a href="audio/play-live.wav" download>Download WAV</a></p>
             </div>
-            <p>Full set (12 PNGs) including Mic desk, Floor/Side heights, Lattice/Paths, Colour/Surfaces, Polar field, and track-FX sketch — in the pack’s <code>docs/diagrams/</code> folder.</p>
-        </div>
-
-        <div class="rr-section">
-            <h2>What’s in the pack</h2>
-            <ul>
-                <li><code>software/</code> — FastAPI tweak app, UI, engine</li>
-                <li><code>docs/</code> — quick start, how-it-works (illustrated + text), UI guide, diagrams</li>
-                <li><code>findings/</code> — Structure mining notes</li>
-                <li><code>ensemble/</code> — original Reaktor <code>.ens</code> (reference)</li>
-            </ul>
+            <div class="rr-card">
+                <h2>Render</h2>
+                <p>Baked IR, same Mix faders.</p>
+                <audio controls preload="metadata" src="audio/render.wav"></audio>
+                <p style="margin: 0.7rem 0 0;"><a href="audio/render.wav" download>Download WAV</a></p>
+            </div>
         </div>
     </div>
 
