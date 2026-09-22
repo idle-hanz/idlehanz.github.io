@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>2011 Room Reverb — listen - Idle Hanz</title>
-    <meta name="description" content="Play live vs Render from the 2011 Room Reverb rebuild.">
+    <meta name="description" content="Play live vs Render from a mono source, plus a stereo take, from the 2011 Room Reverb rebuild.">
     <link rel="stylesheet" href="../../assets/styles.css">
     <style>
         .rr-hero h1 { font-family: 'Cinzel', serif; margin-bottom: 0.25em; }
@@ -40,21 +40,27 @@
     <div class="page-content">
         <div class="rr-hero">
             <h1>2011 Room Reverb</h1>
-            <p class="rr-tagline">Same mix · Play live vs Render</p>
+            <p class="rr-tagline">Mono source · Play live vs Render — and a stereo take</p>
         </div>
 
         <div class="rr-listen">
             <div class="rr-card">
                 <h2>Play live</h2>
-                <p>Running 32-line FDN in the browser.</p>
+                <p>Running 32-line FDN. Mono source.</p>
                 <audio controls preload="metadata" src="audio/play-live.wav"></audio>
                 <p style="margin: 0.7rem 0 0;"><a href="audio/play-live.wav" download>Download WAV</a></p>
             </div>
             <div class="rr-card">
                 <h2>Render</h2>
-                <p>Baked IR, same Mix faders.</p>
+                <p>Baked IR, same Mix. Mono source.</p>
                 <audio controls preload="metadata" src="audio/render.wav"></audio>
                 <p style="margin: 0.7rem 0 0;"><a href="audio/render.wav" download>Download WAV</a></p>
+            </div>
+            <div class="rr-card">
+                <h2>Stereo</h2>
+                <p>Same room. Left and right of the file are two sources.</p>
+                <audio controls preload="metadata" src="audio/stereo.wav"></audio>
+                <p style="margin: 0.7rem 0 0;"><a href="audio/stereo.wav" download>Download WAV</a></p>
             </div>
         </div>
     </div>
