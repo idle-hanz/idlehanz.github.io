@@ -1,0 +1,11 @@
+{
+    "liveServer.settings.root": "/",
+    "files.exclude": {
+        "**/.git": true,
+        "**/.DS_Store": true,
+        "**/desktop.ini": true
+    },
+    "editor.formatOnSave": false,
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true
+}
