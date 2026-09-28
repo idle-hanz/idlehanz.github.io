@@ -596,6 +596,7 @@ body.ear-trainer-page {
     border-color: #4d5c38;
 }
 
+.ear-trainer-page #guess-buttons button.is-correct,
 .ear-trainer-page #ride-guess-buttons button.is-correct,
 .ear-trainer-page .ride-choice button.is-correct,
 .ear-trainer-page #ride-guess-buttons button.is-correct:hover,
@@ -606,6 +607,7 @@ body.ear-trainer-page {
     animation: ride-pulse-ok 0.5s ease 3;
 }
 
+.ear-trainer-page #guess-buttons button.is-wrong,
 .ear-trainer-page #ride-guess-buttons button.is-wrong,
 .ear-trainer-page .ride-choice button.is-wrong,
 .ear-trainer-page #ride-guess-buttons button.is-wrong:hover,
@@ -616,6 +618,7 @@ body.ear-trainer-page {
     animation: ride-pulse-bad 0.5s ease 3;
 }
 
+.ear-trainer-page #guess-buttons button.is-target,
 .ear-trainer-page #ride-guess-buttons button.is-target,
 .ear-trainer-page .ride-choice button.is-target,
 .ear-trainer-page #ride-guess-buttons button.is-target:hover {
@@ -1017,4 +1020,130 @@ body.ear-trainer-page {
         font-size: 1.4rem !important;
     }
 }
+}
+/* ---- Drill tabs ---- */
+.ear-trainer-page .et-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--et-border);
+    padding-bottom: 0.6rem;
+}
+
+.ear-trainer-page .et-tab {
+    border: 1px solid var(--et-border);
+    background: rgba(20, 16, 10, 0.55);
+    color: var(--et-muted);
+    border-radius: 999px;
+    padding: 0.5rem 1.1rem;
+    font-family: 'Cinzel', serif;
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.ear-trainer-page .et-tab:hover {
+    border-color: var(--et-accent-dark);
+    color: var(--et-text);
+}
+
+.ear-trainer-page .et-tab.is-active {
+    background: var(--et-accent-dark);
+    border-color: var(--et-accent);
+    color: #fff;
+}
+
+.ear-trainer-page .et-tab-sub {
+    font-family: 'Crimson Text', serif;
+    font-size: 0.8rem;
+    letter-spacing: 0;
+    opacity: 0.75;
+    margin-left: 0.25rem;
+}
+
+@media (max-width: 520px) {
+    .ear-trainer-page .et-tab-sub { display: none; }
+    .ear-trainer-page .text-6xl { font-size: 2.9rem !important; line-height: 1.05; }
+}
+
+/* ---- Panel header that wraps on small screens ---- */
+.ear-trainer-page .et-panel-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.9rem 1.25rem;
+    margin-bottom: 1.25rem;
+}
+
+.ear-trainer-page .et-panel-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* ---- Segmented buttons ---- */
+.ear-trainer-page .et-seg {
+    display: inline-flex;
+    flex-wrap: wrap;
+    border: 1px solid var(--et-border);
+    border-radius: 999px;
+    padding: 2px;
+    background: rgba(12, 10, 8, 0.55);
+}
+
+.ear-trainer-page .et-seg-btn {
+    border: none;
+    background: transparent;
+    color: var(--et-muted);
+    border-radius: 999px;
+    padding: 0.3rem 0.85rem;
+    font-size: 0.82rem;
+}
+
+.ear-trainer-page .et-seg-btn:hover { color: var(--et-text); }
+
+.ear-trainer-page .et-seg-btn.is-active {
+    background: var(--et-accent-dark);
+    color: #fff;
+}
+
+.ear-trainer-page .et-seg-btn.is-disabled,
+.ear-trainer-page .ride-chip.is-disabled {
+    opacity: 0.35;
+    pointer-events: none;
+}
+
+.ear-trainer-page .et-seg-sm .et-seg-btn {
+    padding: 0.15rem 0.6rem;
+    font-size: 0.72rem;
+}
+
+/* ---- Corrective: which version is audible ---- */
+.ear-trainer-page .corr-listen.is-listening {
+    box-shadow: 0 0 0 2px var(--et-accent-light);
+}
+
+/* ---- Frequency ID audition flash ---- */
+.ear-trainer-page #guess-buttons button.is-audition {
+    border-color: var(--et-accent) !important;
+}
+
+/* ---- Ride: difficulty board with an Auto column ---- */
+.ear-trainer-page .ride-diff-board.has-auto {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 640px) {
+    .ear-trainer-page .ride-diff-board.has-auto { grid-template-columns: 1fr; }
+}
+
+.ear-trainer-page .ride-diff-cell.is-auto strong { color: var(--et-accent-light); }
+
+.ear-trainer-page .ride-weak-cell small {
+    display: block;
+    font-size: 0.62rem;
+    opacity: 0.8;
+    line-height: 1;
 }
