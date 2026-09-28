@@ -29,13 +29,22 @@
         </div>
     </nav>
 
-    <div class="max-w-4xl mx-auto px-6 pt-12 pb-8 text-center">
+    <div class="max-w-4xl mx-auto px-6 pt-12 pb-6 text-center">
         <h1 class="text-6xl font-display font-semibold tracking-tighter mb-4">Train your ears.<br><span class="et-hero-accent">Master EQ.</span></h1>
         <p class="text-xl text-zinc-400">Ride along to your music.<br class="sm:hidden"> A change appears. Name it.</p>
     </div>
 
+    <!-- Drill tabs: one drill owns the audio and keyboard at a time -->
+    <div class="max-w-5xl mx-auto px-6 pb-6">
+        <div class="et-tabs" role="tablist" aria-label="Training drills">
+            <button type="button" role="tab" id="tab-ride" data-drill="ride" aria-controls="drill-ride" aria-selected="true" class="et-tab is-active">Ride <span class="et-tab-sub">on your music</span></button>
+            <button type="button" role="tab" id="tab-id" data-drill="id" aria-controls="drill-id" aria-selected="false" class="et-tab">Frequency ID <span class="et-tab-sub">noise bands</span></button>
+            <button type="button" role="tab" id="tab-corrective" data-drill="corrective" aria-controls="drill-corrective" aria-selected="false" class="et-tab">Corrective EQ <span class="et-tab-sub">fix a stem</span></button>
+        </div>
+    </div>
+
     <!-- Ride — live insert on your music -->
-    <div class="max-w-5xl mx-auto px-6 pb-16">
+    <div id="drill-ride" class="et-drill max-w-5xl mx-auto px-6 pb-16" role="tabpanel" aria-labelledby="tab-ride">
         <div id="ride-panel" class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 et-game-panel relative">
             <video id="ride-capture-video" class="ride-capture-video" playsinline muted></video>
             <input id="ride-folder-input" type="file" class="hidden" multiple webkitdirectory accept="audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.opus,.webm,.aiff">
@@ -83,7 +92,7 @@
                 <div id="ride-now-playing" class="ride-track">Nothing playing</div>
                 <div class="ride-prompt-row">
                     <div id="ride-status" class="ride-status">Choose a folder, then Start ride.</div>
-                    <button type="button" id="ride-ab-badge">Hold Space = clean</button>
+                    <button type="button" id="ride-ab-badge">Space = start · hold = clean</button>
                 </div>
                 <div id="ride-progress" class="ride-progress">
                     <div class="ride-score">
@@ -114,10 +123,12 @@
                         <button type="button" id="ride-skill-band" class="ride-chip is-active">Which band?</button>
                         <button type="button" id="ride-skill-amount" class="ride-chip">Band + amount</button>
                     </div>
-                    <span class="ride-kicker">Layout</span>
-                    <div class="ride-seg">
-                        <button type="button" id="ride-bands-few" class="ride-chip is-active">7 bands</button>
-                        <button type="button" id="ride-bands-many" class="ride-chip">14 bands</button>
+                    <span class="ride-kicker">Bands</span>
+                    <div class="ride-seg" id="ride-layout-row">
+                        <button type="button" data-layout="starter" class="ride-chip" title="4 far-apart bands, two octaves apart">4 bands</button>
+                        <button type="button" data-layout="seven" class="ride-chip is-active" title="7 named ranges">7 bands</button>
+                        <button type="button" data-layout="octaves" class="ride-chip" title="Standard octave bands, 63 Hz to 16 kHz">Octaves</button>
+                        <button type="button" data-layout="thirds" class="ride-chip" title="Third-octave bands, 63 Hz to 12.5 kHz (Which band? only)">Thirds</button>
                     </div>
                 </div>
                 <div id="ride-level-row" class="ride-diff">
@@ -153,86 +164,78 @@
             </div>
         </div>
     </div>
-
     <!-- Frequency ID -->
-    <div class="max-w-5xl mx-auto px-6 pb-16">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 et-game-panel">
-            <div class="flex items-center justify-between mb-6">
-                <div>
+    <div id="drill-id" class="et-drill hidden max-w-5xl mx-auto px-6 pb-16" role="tabpanel" aria-labelledby="tab-id">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 sm:p-8 et-game-panel">
+            <div class="et-panel-head">
+                <div class="min-w-0">
                     <div class="et-section-label">Frequency Identification</div>
-                    <div class="text-3xl font-semibold">Which frequency was boosted?</div>
+                    <div class="text-3xl font-semibold">Which band is playing?</div>
+                    <div class="text-xs text-zinc-400 mt-1">A slice of pink noise is filtered to one band. Every band is loudness-matched, so you judge pitch, not volume.</div>
                 </div>
-
-                <!-- Game 1 Mode Selector -->
-                <div class="flex items-center bg-zinc-800 rounded-3xl p-1 text-sm mr-3">
-                    <button onclick="setIDGameMode('practice')" id="id-mode-practice"
-                            class="px-4 py-1.5 rounded-[20px] bg-emerald-500 text-white font-medium">Practice</button>
-                    <button onclick="setIDGameMode('test')" id="id-mode-test"
-                            class="px-4 py-1.5 rounded-[20px] text-zinc-300 hover:bg-zinc-700">Test (10 rounds)</button>
-                </div>
-
-                <div class="flex items-center gap-x-3">
-                    <div class="flex items-center bg-zinc-800 rounded-3xl p-1 text-xs">
-                        <button onclick="setBandMode('few')" id="btn-few"
-                                class="px-4 py-1.5 rounded-[20px] bg-emerald-500 text-white font-medium">Few Bands</button>
-                        <button onclick="setBandMode('many')" id="btn-many"
-                                class="px-4 py-1.5 rounded-[20px] text-zinc-300 hover:bg-zinc-700">Many Bands</button>
+                <div class="et-panel-controls">
+                    <div class="et-seg" role="group" aria-label="Mode">
+                        <button type="button" id="id-mode-practice" class="et-seg-btn is-active">Practice</button>
+                        <button type="button" id="id-mode-test" class="et-seg-btn">Test (10 rounds)</button>
                     </div>
-
-                    <button id="id-play-btn" onclick="startIDRound()" class="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-3xl flex items-center gap-x-2">
-                        <i class="fa-solid fa-play"></i> <span id="id-play-text">PLAY</span>
-                    </button>
+                    <div class="et-seg" role="group" aria-label="Bands" id="id-set-row">
+                        <button type="button" data-set="starter" class="et-seg-btn">4</button>
+                        <button type="button" data-set="seven" class="et-seg-btn is-active">7</button>
+                        <button type="button" data-set="octaves" class="et-seg-btn">Octaves</button>
+                        <button type="button" data-set="thirds" class="et-seg-btn">Thirds</button>
+                    </div>
                 </div>
             </div>
 
-            <div class="flex items-center gap-x-6 mb-5 text-sm">
-                <div class="flex items-center gap-x-2">
+            <div class="flex flex-wrap items-center gap-3 mb-5">
+                <button type="button" id="id-play-btn" class="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-3xl flex items-center gap-x-2">
+                    <i class="fa-solid fa-play"></i> <span id="id-play-text">PLAY RANDOM</span>
+                </button>
+                <button type="button" id="id-replay-btn" class="hidden px-4 py-3 border border-zinc-700 hover:bg-zinc-800 rounded-3xl text-sm flex items-center gap-x-2">
+                    <i class="fa-solid fa-rotate-right"></i> <span>Replay</span>
+                </button>
+                <div class="flex items-center gap-x-2 text-sm ml-1">
                     <span class="text-emerald-400 font-mono text-xl" id="id-streak">0</span>
                     <span class="text-xs text-zinc-500">streak</span>
                 </div>
-                <div class="flex items-center gap-x-2">
+                <div class="flex items-center gap-x-2 text-sm">
                     <span class="font-semibold" id="id-accuracy">--</span>
                     <span class="text-xs text-zinc-500">accuracy</span>
                 </div>
             </div>
 
-            <!-- New: controllable isolation / surrounding noise for the ID game -->
-            <div class="flex items-center gap-x-3 mb-5 text-xs">
-                <div class="text-zinc-400">Isolation</div>
-                <input type="range" id="id-masking" min="0" max="0.9" step="0.05" value="0.22"
-                       class="w-32 accent-emerald-500" oninput="updateMaskingDisplay()">
-                <div class="font-mono w-12 text-emerald-400" id="id-masking-val">22%</div>
-                <div class="text-[10px] text-zinc-500 max-w-[180px]">Low = more isolated band (easier to pick out). Raise for more surrounding noise as you improve.</div>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mb-5 text-xs">
+                <label for="id-masking" class="text-zinc-400">Background noise</label>
+                <input type="range" id="id-masking" min="0" max="1" step="0.05" value="0.2" class="w-32 accent-emerald-500">
+                <div class="font-mono w-12 text-emerald-400" id="id-masking-val">20%</div>
+                <div class="text-[10px] text-zinc-500 max-w-[260px]">Broadband noise around the band. 0% = band alone (easiest). 100% = noise as loud as the band (hard).</div>
             </div>
 
+            <div id="id-prompt" class="text-sm text-zinc-400 mb-3" aria-live="polite">Press <b>Play random</b> (or Space), then click the band you heard. With nothing playing, click a band to audition it.</div>
             <div id="id-test-progress" class="hidden text-sm text-violet-400 mb-3 font-medium"></div>
 
-            <div id="guess-buttons" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-3 mb-6">
-                <!-- Populated by JS -->
-            </div>
+            <div id="guess-buttons" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-3 mb-6"></div>
 
-            <div id="id-feedback" class="hidden p-4 rounded-2xl text-sm"></div>
+            <div id="id-feedback" class="hidden p-4 rounded-2xl text-sm" aria-live="polite"></div>
         </div>
     </div>
 
     <!-- Corrective EQ - Production Focused -->
-    <div class="max-w-5xl mx-auto px-6 pb-20">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 et-game-panel">
-            <div class="flex items-center justify-between mb-6">
-                <div>
+    <div id="drill-corrective" class="et-drill hidden max-w-5xl mx-auto px-6 pb-20" role="tabpanel" aria-labelledby="tab-corrective">
+        <div id="corrective-panel" class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 sm:p-8 et-game-panel">
+            <div class="et-panel-head">
+                <div class="min-w-0">
                     <div class="et-section-label">Corrective EQ — Production Training</div>
                     <div class="text-3xl font-semibold">Load real audio &amp; fix the problem by ear</div>
-                    <div class="text-xs text-zinc-400 mt-1">Simple mode: only <strong>one band</strong> is affected (3dB or 6dB, wide or narrow Q)</div>
+                    <div class="text-xs text-zinc-400 mt-1">One band has a hidden bell (3 or 6 dB, wide or narrow). Your EQ sits after it, like an insert in your DAW. Versions are loudness-matched.</div>
                     <div id="best-match" class="text-xs text-zinc-500"></div>
                 </div>
-                <div class="flex gap-x-2">
-                    <button onclick="document.getElementById('audio-file-input').click()" 
-                            class="px-5 py-3 border border-zinc-700 hover:bg-zinc-800 rounded-3xl text-sm flex items-center gap-x-2">
-                        <i class="fa-solid fa-upload"></i> <span>Load WAV(s)</span>
+                <div class="et-panel-controls">
+                    <button type="button" id="corr-load-btn" class="px-5 py-3 border border-zinc-700 hover:bg-zinc-800 rounded-3xl text-sm flex items-center gap-x-2">
+                        <i class="fa-solid fa-upload"></i> <span>Load audio</span>
                     </button>
-                    <input type="file" id="audio-file-input" accept=".wav,audio/wav" multiple class="hidden" onchange="handleFileSelect(this.files)">
-                    
-                    <button onclick="generateProblem()" class="px-5 py-3 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-3xl flex items-center gap-x-2">
+                    <input type="file" id="audio-file-input" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg,.aiff" multiple class="hidden">
+                    <button type="button" id="corr-new-btn" class="px-5 py-3 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-3xl flex items-center gap-x-2">
                         <i class="fa-solid fa-dice"></i> <span>New Problem</span>
                     </button>
                 </div>
@@ -240,1415 +243,1297 @@
 
             <!-- Level info -->
             <div class="mb-4 p-3 bg-zinc-950 border border-zinc-800 rounded-2xl">
-                <div class="flex items-center justify-between mb-2">
+                <div class="flex flex-wrap items-center justify-between gap-2">
                     <div>
                         <span class="text-sm text-zinc-400">Level </span>
                         <span id="level-display" class="text-lg font-semibold text-emerald-400">1/6</span>
                         <span id="level-desc" class="text-xs text-zinc-500 ml-2"></span>
                     </div>
-                    <button onclick="tryAdvanceLevel()" class="text-xs px-3 py-1 border border-zinc-700 hover:bg-zinc-800 rounded-xl">Try Next Level</button>
+                    <div class="flex items-center gap-2">
+                        <div class="et-seg" role="group" aria-label="Corrective bands" id="corr-set-row">
+                            <button type="button" data-set="seven" class="et-seg-btn is-active">7 bands</button>
+                            <button type="button" data-set="octaves" class="et-seg-btn">Octaves</button>
+                        </div>
+                        <button type="button" id="corr-prev-level" class="text-xs px-3 py-1 border border-zinc-700 hover:bg-zinc-800 rounded-xl">Level −</button>
+                        <button type="button" id="corr-next-level" class="text-xs px-3 py-1 border border-zinc-700 hover:bg-zinc-800 rounded-xl">Level +</button>
+                    </div>
                 </div>
             </div>
 
             <!-- Audio Tracks (files display) -->
             <div class="mb-6">
                 <div class="text-sm text-zinc-400 mb-2">LOADED TRACKS (stems or mixes)</div>
-                <div id="track-list" class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3 min-h-[60px] text-sm">
-                    <!-- Populated dynamically -->
-                </div>
-                <div class="text-[10px] text-zinc-500 mt-1">Tip: Use short loops (4-10s) of individual stems (kick, bass, vocal) or full mixes. Problems respect the current level rules.</div>
+                <div id="track-list" class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3 min-h-[60px] text-sm"></div>
+                <div class="text-[10px] text-zinc-500 mt-1">Tip: short loops (4–10 s) of single stems (kick, bass, vocal) or full mixes work best.</div>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
                 <!-- Playback Controls -->
                 <div class="lg:col-span-2">
-                    <div class="text-sm text-zinc-400 mb-2">PLAYBACK</div>
+                    <div class="text-sm text-zinc-400 mb-2">LISTEN — switches instantly, playback keeps running</div>
                     <div class="space-y-2">
-                        <button onclick="playProblemVersion()" class="w-full py-3 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-3xl flex items-center justify-center gap-x-2">
-                            <i class="fa-solid fa-play"></i> <span>PLAY PROBLEM VERSION</span>
+                        <button type="button" id="corr-play-problem" data-listen="problem" class="corr-listen w-full py-3 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-3xl flex items-center justify-center gap-x-2">
+                            <i class="fa-solid fa-play"></i> <span>PROBLEM VERSION</span>
                         </button>
-
-                        <!-- Match mode indicator: sits between Problem and Your EQ -->
-                        <div id="match-indicator" class="hidden text-center text-violet-400 text-[10px] py-0.5 font-medium tracking-tight">
-                            ↑ your EQ should sound like the Problem Version above
-                        </div>
-
-                        <button onclick="playUserCorrection()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-3xl flex items-center justify-center gap-x-2">
-                            <i class="fa-solid fa-play"></i> <span>PLAY YOUR EQ</span>
+                        <div id="match-indicator" class="hidden text-center text-violet-400 text-[10px] py-0.5 font-medium tracking-tight">↑ your EQ should sound like the Problem Version above</div>
+                        <button type="button" id="corr-play-user" data-listen="user" class="corr-listen w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-3xl flex items-center justify-center gap-x-2">
+                            <i class="fa-solid fa-play"></i> <span>YOUR EQ</span>
                         </button>
-
-                        <!-- Correct/fix mode indicator: sits between Your EQ and Clean -->
-                        <div id="fix-indicator" class="hidden text-center text-emerald-400 text-[10px] py-0.5 font-medium tracking-tight">
-                            ↓ your EQ correction should sound like Clean below
-                        </div>
-
-                        <button onclick="playCleanVersion()" class="w-full py-3 border border-zinc-700 hover:bg-zinc-800 rounded-3xl flex items-center justify-center gap-x-2 text-sm">
-                            <span>Play Clean (no EQ)</span>
+                        <div id="fix-indicator" class="hidden text-center text-emerald-400 text-[10px] py-0.5 font-medium tracking-tight">↓ your EQ correction should sound like Clean below</div>
+                        <button type="button" id="corr-play-clean" data-listen="clean" class="corr-listen w-full py-3 border border-zinc-700 hover:bg-zinc-800 rounded-3xl flex items-center justify-center gap-x-2 text-sm">
+                            <span>CLEAN (no EQ)</span>
                         </button>
-
-                        <button onclick="stopAllAudio()" class="w-full py-2 border border-zinc-700 hover:bg-zinc-800 rounded-3xl flex items-center justify-center gap-x-2 text-sm">
+                        <button type="button" id="corr-stop" class="w-full py-2 border border-zinc-700 hover:bg-zinc-800 rounded-3xl flex items-center justify-center gap-x-2 text-sm">
                             <i class="fa-solid fa-stop"></i> <span>STOP</span>
                         </button>
-
-                        <!-- Mode switch moved under STOP -->
                         <div class="flex items-center gap-x-2 pt-1">
                             <div class="text-xs text-zinc-400">Mode:</div>
                             <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="mode-toggle" class="sr-only peer" onchange="toggleCorrectiveMode()">
+                                <input type="checkbox" id="mode-toggle" class="sr-only peer" aria-label="Match mode">
                                 <div class="w-9 h-5 bg-emerald-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
                             </label>
                             <div id="mode-label" class="text-xs font-medium text-emerald-400">Correct</div>
                         </div>
                     </div>
 
-                    <!-- Mix context from other stems (much more realistic than white noise) -->
                     <div class="mt-4">
                         <div class="flex items-center justify-between text-xs mb-1">
-                            <div class="text-zinc-400">Other Stems Level</div>
+                            <label for="corrective-masking" class="text-zinc-400">Other stems level</label>
                             <div class="font-mono text-emerald-400" id="corrective-masking-val">0%</div>
                         </div>
-                        <input type="range" id="corrective-masking" min="0" max="0.8" step="0.05" value="0"
-                               class="w-full accent-emerald-500" oninput="document.getElementById('corrective-masking-val').textContent = Math.round(parseFloat(this.value)*100)+'%'">
-                        <div class="text-[10px] text-zinc-500">If you load multiple stems, this mixes the others (real mix context). Falls back to noise if alone.</div>
-
-                        <!-- Dynamic game instructions / goal reminder -->
+                        <input type="range" id="corrective-masking" min="0" max="0.8" step="0.05" value="0" class="w-full accent-emerald-500">
+                        <div class="text-[10px] text-zinc-500">With several stems loaded, this mixes in the others (real mix context). With one stem it adds pink noise.</div>
                         <div id="game-instructions" class="mt-2 p-2.5 bg-zinc-950 border border-zinc-700 rounded-xl text-[10px] text-zinc-300 leading-snug"></div>
                     </div>
                 </div>
 
                 <!-- Your Parametric EQ -->
                 <div class="lg:col-span-3">
-                    <div class="text-sm text-emerald-400 mb-2">YOUR PARAMETRIC EQ (adjust to fix the problem)</div>
-                    <div id="sliders" class="space-y-3 text-sm">
-                        <!-- Populated by createCorrectiveSliders() - now includes Gain + Q -->
-                    </div>
-
-                    <!-- Simple frequency response curve visualizer -->
+                    <div class="text-sm text-emerald-400 mb-2">YOUR PARAMETRIC EQ</div>
+                    <div id="sliders" class="space-y-3 text-sm"></div>
                     <div class="mt-4">
-                        <div class="text-[10px] text-zinc-500 mb-1">Current EQ Curve (approximate)</div>
+                        <div class="text-[10px] text-zinc-500 mb-1">Your EQ curve</div>
                         <canvas id="eq-curve" width="520" height="110" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl"></canvas>
                     </div>
                 </div>
             </div>
 
-            <button onclick="submitCorrection()" class="mt-6 w-full py-4 bg-white text-zinc-950 font-semibold rounded-3xl text-lg">
-                SUBMIT CORRECTION
-            </button>
+            <button type="button" id="corr-submit" class="mt-6 w-full py-4 bg-white text-zinc-950 font-semibold rounded-3xl text-lg">SUBMIT CORRECTION</button>
 
-            <div id="corrective-result" class="hidden mt-6 p-4 bg-zinc-800 rounded-2xl text-center"></div>
+            <div id="corrective-result" class="hidden mt-6 p-4 bg-zinc-800 rounded-2xl text-center" aria-live="polite"></div>
         </div>
     </div>
 
     <script>
-        let audioContext;
-        let noiseBuffer;
-        let currentSource = null;
-        let currentBandMode = 'few';
+    (function () {
+        'use strict';
 
-        let idStreak = 0;
-        let idCorrect = 0;
-        let idTotal = 0;
+        /* ==================== SHARED HELPERS ==================== */
+        function escapeHtml(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+        function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+        function fmtHz(f) { return f < 1000 ? f + ' Hz' : (f / 1000) + ' kHz'; }
+        function badgeHz(f) { return f < 1000 ? String(f) : (f / 1000) + 'k'; }
+        function fmtDb(g) {
+            var r = Math.round(g * 10) / 10;
+            return (r > 0 ? '+' : '') + (Math.abs(r % 1) > 0.01 ? r.toFixed(1) : String(r));
+        }
+        function hslHex(h, s, l) {
+            s /= 100; l /= 100;
+            var k = function (n) { return (n + h / 30) % 12; };
+            var a = s * Math.min(l, 1 - l);
+            var f = function (n) { return l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))); };
+            var hex = function (x) { return ('0' + Math.round(x * 255).toString(16)).slice(-2); };
+            return '#' + hex(f(0)) + hex(f(8)) + hex(f(4));
+        }
+        /* Colour follows log-frequency so a band has the same colour in every layout. */
+        function bandColor(freq) {
+            var t = (Math.log10(freq) - Math.log10(35)) / (Math.log10(14000) - Math.log10(35));
+            return hslHex(clamp(t, 0, 1) * 300, 72, 60);
+        }
+        function octaveRange(f, frac) {
+            var r = Math.pow(2, frac / 2);
+            var fmt = function (x) { return x < 1000 ? String(Math.round(x)) : (Math.round(x / 100) / 10) + 'k'; };
+            return fmt(f / r) + '–' + fmt(f * r) + ' Hz';
+        }
+        function mkBands(list, frac) {
+            return list.map(function (b) {
+                if (typeof b === 'number') b = { freq: b, name: fmtHz(b) };
+                return { name: b.name, freq: b.freq, range: b.range || octaveRange(b.freq, frac), color: bandColor(b.freq) };
+            });
+        }
 
-        // Game 1 modes
-        let idGameMode = 'practice';   // 'practice' | 'test'
-        let testCurrentRound = 0;
-        let testCorrect = 0;
-        const testTotalRounds = 10;
+        /* Graded band sets. q = bell width used for EQ problems, matched to the
+           spacing between neighbouring bands so adjacent answers stay
+           distinguishable (octave spacing ~ Q 1.4, third-octave ~ Q 4.3).
+           idQ = bandpass width for the noise drill. */
+        var BAND_SETS = {
+            starter: {
+                id: 'starter', label: '4 bands', q: 1.0, idQ: 2.9,
+                bands: mkBands([
+                    { name: 'Bass', freq: 125, range: '60–250 Hz' },
+                    { name: 'Low Mids', freq: 500, range: '250 Hz–1 kHz' },
+                    { name: 'Upper Mids', freq: 2000, range: '1–4 kHz' },
+                    { name: 'Highs', freq: 8000, range: '4–16 kHz' }
+                ])
+            },
+            seven: {
+                id: 'seven', label: '7 bands', q: 1.2, idQ: 2.9,
+                bands: mkBands([
+                    { name: 'Sub Bass', freq: 40, range: '20–60 Hz' },
+                    { name: 'Bass', freq: 120, range: '60–200 Hz' },
+                    { name: 'Low Mids', freq: 300, range: '200–500 Hz' },
+                    { name: 'Mids', freq: 700, range: '500 Hz–1 kHz' },
+                    { name: 'Upper Mids', freq: 1500, range: '1–2.5 kHz' },
+                    { name: 'Presence', freq: 3500, range: '2.5–5 kHz' },
+                    { name: 'Highs', freq: 8000, range: '5–16 kHz' }
+                ])
+            },
+            octaves: {
+                id: 'octaves', label: 'Octaves', q: 1.41, idQ: 2.9,
+                bands: mkBands([63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000], 1)
+            },
+            thirds: {
+                id: 'thirds', label: 'Thirds', q: 4.32, idQ: 4.32,
+                bands: mkBands([63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800,
+                    1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500], 1 / 3)
+            }
+        };
 
-        // For future / matching persistence
-        let bestMatchAccuracy = 0;
-
-        const fewBands = [
-            { name: "Sub Bass", freq: 40, range: "20-60 Hz", color: "#ef4444" },
-            { name: "Bass", freq: 120, range: "60-250 Hz", color: "#f97316" },
-            { name: "Low Mids", freq: 300, range: "250-500 Hz", color: "#eab308" },
-            { name: "Mids", freq: 700, range: "500-2k Hz", color: "#22c55e" },
-            { name: "Upper Mids", freq: 1500, range: "2k-4k Hz", color: "#3b82f6" },
-            { name: "Presence", freq: 3500, range: "3k-5k Hz", color: "#a855f7" },
-            { name: "Highs", freq: 8000, range: "6k-20k Hz", color: "#ec4899" }
-        ];
-
-        const manyBands = [
-            { name: "80 Hz", freq: 80, range: "60-110 Hz", color: "#ef4444" },
-            { name: "100 Hz", freq: 100, range: "80-140 Hz", color: "#f97316" },
-            { name: "160 Hz", freq: 160, range: "120-220 Hz", color: "#fb923c" },
-            { name: "315 Hz", freq: 315, range: "240-420 Hz", color: "#eab308" },
-            { name: "500 Hz", freq: 500, range: "380-650 Hz", color: "#84cc16" },
-            { name: "800 Hz", freq: 800, range: "600-1.1k Hz", color: "#22c55e" },
-            { name: "1 kHz", freq: 1000, range: "750-1.4k Hz", color: "#10b981" },
-            { name: "2 kHz", freq: 2000, range: "1.5k-2.8k Hz", color: "#14b8a6" },
-            { name: "4 kHz", freq: 4000, range: "3k-5.5k Hz", color: "#06b6d4" },
-            { name: "5 kHz", freq: 5000, range: "3.8k-6.5k Hz", color: "#3b82f6" },
-            { name: "6 kHz", freq: 6000, range: "4.5k-8k Hz", color: "#6366f1" },
-            { name: "8 kHz", freq: 8000, range: "6k-11k Hz", color: "#a855f7" },
-            { name: "10 kHz", freq: 10000, range: "7.5k-14k Hz", color: "#c026ff" },
-            { name: "15 kHz", freq: 15000, range: "11k-20k Hz", color: "#e879f9" }
-        ];
-
-        let currentBands = fewBands;
-        let currentTargetBand = null;
-        let feedbackTimeout = null;
-
-        let matchTarget = [];
-        let userGains = [];
-        let userQs = []; // New: Q/bandwidth per band for parametric realism
-
-        // Corrective game state
-        let problemGains = [];
-        let problemQs = [];
-
-        // Audio file support
-        let loadedTracks = []; // [{name, buffer}]
-        let currentTrackIndex = -1;
-        let currentTrackBuffer = null;
-        let trackSource = null;
-        let currentNoiseSrc = null;  // for masking noise cleanup
-        let contextSources = [];     // other stems playing as mix context
-
-        // Discrete levels for current difficulty (beginner mode)
-        const ALLOWED_GAINS = [-6, -3, 0, 3, 6];
-        const WIDE_Q = 1.2;
-        const NARROW_Q = 6;
-
-        // Level progression rules
-        // Each level defines what kinds of problems can be generated.
-        // Sliders will be restricted to the corresponding correction values.
-        const LEVEL_RULES = [
-            { level: 1, mags: [6], signs: ['boost'], qTypes: ['narrow'] },           // 6dB boost, narrow Q only
-            { level: 2, mags: [6], signs: ['boost'], qTypes: ['narrow', 'wide'] },  // 6dB boost, choice of Q
-            { level: 3, mags: [6], signs: ['boost', 'cut'], qTypes: ['wide'] },     // ±6dB, wide Q only
-            { level: 4, mags: [6], signs: ['boost', 'cut'], qTypes: ['narrow', 'wide'] }, // ±6dB, any Q
-            { level: 5, mags: [3, 6], signs: ['boost', 'cut'], qTypes: ['wide'] },  // ±3/6dB, wide Q only
-            { level: 6, mags: [3, 6], signs: ['boost', 'cut'], qTypes: ['narrow', 'wide'] }  // full freedom
-        ];
-
-        let currentLevel = 1;
-        let unlockedLevels = 1; // can be increased on good scores
-        let correctiveMode = 'correct';
+        /* ==================== SHARED AUDIO ==================== */
+        /* Every drill plays into masterBus: -6 dB of headroom, then a gentle
+           limiter so EQ boosts never hard-clip at the output (clipping
+           distortion would itself be a clue). */
+        var audioContext = null;
+        var masterBus = null;
+        var pinkBuffer = null;
 
         function initAudio() {
-            if (audioContext) return;
+            if (audioContext) return audioContext;
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            noiseBuffer = createNoiseBuffer();
+            masterBus = audioContext.createGain();
+            masterBus.gain.value = 0.5; // -6 dB headroom
+            var limiter = audioContext.createDynamicsCompressor();
+            limiter.threshold.value = -1.5;
+            limiter.knee.value = 0;
+            limiter.ratio.value = 20;
+            limiter.attack.value = 0.002;
+            limiter.release.value = 0.15;
+            masterBus.connect(limiter);
+            limiter.connect(audioContext.destination);
+            pinkBuffer = createPinkNoiseBuffer(audioContext, 6);
+            return audioContext;
+        }
+        function resumeAudio() {
+            if (audioContext && audioContext.state === 'suspended') audioContext.resume();
         }
 
-        function createNoiseBuffer() {
-            const bufferSize = audioContext.sampleRate * 4;
-            const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
-            const data = buffer.getChannelData(0);
-            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-            return buffer;
+        /* Paul Kellet's refined pink filter: equal energy per octave. */
+        function createPinkNoiseBuffer(ctx, seconds) {
+            var len = Math.floor(ctx.sampleRate * seconds);
+            var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+            var d = buf.getChannelData(0);
+            var b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+            for (var i = 0; i < len; i++) {
+                var w = Math.random() * 2 - 1;
+                b0 = 0.99886 * b0 + w * 0.0555179;
+                b1 = 0.99332 * b1 + w * 0.0750759;
+                b2 = 0.96900 * b2 + w * 0.1538520;
+                b3 = 0.86650 * b3 + w * 0.3104856;
+                b4 = 0.55000 * b4 + w * 0.5329522;
+                b5 = -0.7616 * b5 - w * 0.0168980;
+                d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11;
+                b6 = w * 0.115926;
+            }
+            return buf;
         }
 
-        function yieldToOtherGames() {
-            if (window.EQRide) window.EQRide.suspendForOtherGame();
-        }
-
-        function playWithEQ(gains) {
-            if (!audioContext) initAudio();
-            yieldToOtherGames();
-            if (currentSource) { try { currentSource.stop(); } catch(e){} }
-
-            const source = audioContext.createBufferSource();
-            source.buffer = noiseBuffer;
-
-            let node = source;
-
-            const useQs = (arguments.length > 1 && Array.isArray(arguments[1])) ? arguments[1] : new Array(gains.length).fill(2.0);
-            currentBands.forEach((band, i) => {
-                const f = audioContext.createBiquadFilter();
-                f.type = 'peaking';
-                f.frequency.value = band.freq;
-                f.gain.value = gains[i] || 0;
-                f.Q.value = useQs[i] || 2.0;
-                node.connect(f); node = f;
+        /* Approximate K-weighting (BS.1770 pre-filter) so "equal loudness"
+           means roughly equal LUFS, not just equal RMS. */
+        function kWeightedRms(buffer, startSec, durSec) {
+            var sr = buffer.sampleRate;
+            var dur = Math.min(durSec || buffer.duration, buffer.duration);
+            var frames = Math.max(256, Math.floor(sr * dur));
+            var ctx = new OfflineAudioContext(1, frames, sr);
+            var src = ctx.createBufferSource();
+            src.buffer = buffer;
+            var hs = ctx.createBiquadFilter();
+            hs.type = 'highshelf'; hs.frequency.value = 1682; hs.gain.value = 4;
+            var hp = ctx.createBiquadFilter();
+            hp.type = 'highpass'; hp.frequency.value = 38; hp.Q.value = 0.5;
+            src.connect(hs); hs.connect(hp); hp.connect(ctx.destination);
+            var start = clamp(startSec || 0, 0, Math.max(0, buffer.duration - dur));
+            src.start(0, start, dur);
+            return ctx.startRendering().then(function (out) {
+                var x = out.getChannelData(0), s = 0;
+                var skip = Math.min(Math.floor(sr * 0.05), x.length >> 2); // filter warm-up
+                for (var i = skip; i < x.length; i++) s += x[i] * x[i];
+                return Math.sqrt(s / Math.max(1, x.length - skip));
             });
-
-            const master = audioContext.createGain();
-            master.gain.value = 0.7;
-            node.connect(master);
-            master.connect(audioContext.destination);
-
-            source.start();
-            currentSource = source;
-
-            if (audioContext.state === 'suspended') audioContext.resume();
         }
 
-        /**
-         * Improved band isolation for the Frequency ID game.
-         * Uses a narrow bandpass filter on the target band (high isolation)
-         * mixed with a controllable amount of broadband surrounding noise.
-         *
-         * maskingLevel: 0.0 = nearly pure isolated band (easiest to pick out)
-         *                 1.0 = full broadband noise + the band boost (harder, more like real mixing)
-         *
-         * This fixes the "no audio" problem from previous isolation attempts by:
-         * - Always ensuring the bandpass path has significant gain.
-         * - Using a parallel mix architecture (broad + isolated) so signal is never completely filtered out.
-         * - Reasonable Q and gain compensation.
-         */
-        function playIsolatedBand(bandIndex, maskingLevel = 0.25) {
-            if (!audioContext) initAudio();
-            yieldToOtherGames();
-            if (currentSource) { try { currentSource.stop(); } catch(e){} }
-
-            const source = audioContext.createBufferSource();
-            source.buffer = noiseBuffer;
-
-            // === Broadband "surrounding" masking path ===
-            const broadGain = audioContext.createGain();
-            broadGain.gain.value = maskingLevel * 0.65;  // scale so full masking isn't overwhelming
-            source.connect(broadGain);
-
-            // === Isolated target band path (the key fix) ===
-            const bp = audioContext.createBiquadFilter();
-            bp.type = 'bandpass';
-            bp.frequency.value = currentBands[bandIndex].freq;
-            bp.Q.value = 9.0;   // Narrow but not so narrow that it disappears or sounds artificial. Tweak 6-14 as needed.
-
-            const bpGain = audioContext.createGain();
-            // Significant compensation + boost. Narrow bands have less total energy, so we lift them.
-            // This is what was missing in previous "isolation" attempts that produced silence.
-            bpGain.gain.value = 22 + (maskingLevel * 4);  // around +27 dB base, a bit more when more masking
-
-            source.connect(bp);
-            bp.connect(bpGain);
-
-            // Master bus
-            const master = audioContext.createGain();
-            master.gain.value = 0.72;
-
-            broadGain.connect(master);
-            bpGain.connect(master);
-            master.connect(audioContext.destination);
-
-            source.start();
-            currentSource = source;
-
-            if (audioContext.state === 'suspended') audioContext.resume();
+        function stopNode(n) {
+            if (!n) return;
+            try { n.stop(); } catch (e) { /* already stopped */ }
+            try { n.disconnect(); } catch (e2) { /* already gone */ }
         }
 
-        // ==================== AUDIO FILE SUPPORT ====================
-        function handleFileSelect(files) {
-            stopAllAudio();
-            if (!audioContext) initAudio();  // Ensure AudioContext exists before decodeAudioData (fixes "doesn't load" issue)
-
-            loadedTracks = [];
-            const promises = [];
-
-            for (let file of files) {
-                // Try any audio file; browser decodeAudioData supports WAV, MP3, OGG, etc. in most modern browsers.
-                const promise = new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        if (!audioContext) initAudio();
-                        audioContext.decodeAudioData(e.target.result, (buffer) => {
-                            loadedTracks.push({ name: file.name, buffer: buffer });
-                            resolve();
-                        }, (err) => {
-                            console.error('Decode error for', file.name, err);
-                            // Show user-friendly message for this file
-                            const list = document.getElementById('track-list');
-                            if (list) list.innerHTML += `<div class="text-xs text-red-400">Failed to load ${file.name}.</div>`;
-                            resolve();
-                        });
-                    };
-                    reader.readAsArrayBuffer(file);
+        /* ==================== STATS (Frequency ID + Corrective) ==================== */
+        var STATS_KEY = 'eqEarTrainerStats';
+        var stats = { idStreak: 0, idCorrect: 0, idTotal: 0, bestMatchAccuracy: 0, corrLevel: 1, corrUnlocked: 1 };
+        function loadStats() {
+            try {
+                var saved = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
+                Object.keys(stats).forEach(function (k) {
+                    if (typeof saved[k] === 'number' && isFinite(saved[k])) stats[k] = saved[k];
                 });
-                promises.push(promise);
-            }
+                stats.corrUnlocked = clamp(Math.round(stats.corrUnlocked), 1, 6);
+                stats.corrLevel = clamp(Math.round(stats.corrLevel), 1, stats.corrUnlocked);
+            } catch (e) { /* ignore */ }
+        }
+        function saveStats() {
+            try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (e) { /* quota */ }
+        }
 
-            Promise.all(promises).then(() => {
-                if (loadedTracks.length > 0) {
-                    currentTrackIndex = 0;
-                    currentTrackBuffer = loadedTracks[0].buffer;
-                    updateTrackUI();
-                    // Auto generate a problem for the new track
-                    generateProblem();
-                } else if (files.length > 0) {
-                    // All were invalid or decode failed
-                    document.getElementById('track-list').innerHTML = '<div class="text-xs text-red-400">No valid audio files loaded. Try WAV or other supported formats.</div>';
-                }
+        /* ==================== FREQUENCY ID ==================== */
+        var ID_TARGET_K_RMS = 0.15;   // ~ -16.5 dBFS K-weighted, before the -6 dB bus
+        var ID_PEAK_CAP = 0.8;
+        var ID_PLAY_SEC = 3;
+        var TEST_ROUNDS = 10;
+        var idBufferCache = {};       // "freq|q" -> loudness-normalized AudioBuffer
+        var idNoiseBed = null;        // pink noise normalized to the same loudness
+        var id = {
+            setId: 'seven',
+            mode: 'practice',         // practice | test
+            target: -1,               // band index awaiting an answer
+            locked: false,            // true between an answer and the next round
+            round: 0,                 // test: current round 1..10, 0 = not running
+            correct: 0,
+            lastTarget: -1,
+            nodes: null,
+            pending: null,
+            timer: null
+        };
+
+        function idBands() { return BAND_SETS[id.setId].bands; }
+
+        function normalizeBuffer(buf) {
+            return kWeightedRms(buf, 0, buf.duration).then(function (k) {
+                var d = buf.getChannelData(0), peak = 0, i;
+                for (i = 0; i < d.length; i++) { var a = Math.abs(d[i]); if (a > peak) peak = a; }
+                var g = k > 1e-9 ? ID_TARGET_K_RMS / k : 1;
+                if (peak * g > ID_PEAK_CAP) g = ID_PEAK_CAP / peak;
+                for (i = 0; i < d.length; i++) d[i] *= g;
+                buf._kRms = k * g;
+                buf._peak = peak * g;
+                return buf;
             });
         }
 
-        function updateTrackUI() {
-            const container = document.getElementById('track-list');
-            if (!container) return;
-            container.innerHTML = '';
-
-            if (loadedTracks.length === 0) {
-                container.innerHTML = '<div class="text-xs text-zinc-500">No tracks loaded. Drag WAVs or use button.</div>';
-                return;
-            }
-
-            loadedTracks.forEach((track, i) => {
-                const div = document.createElement('div');
-                div.className = `flex items-center justify-between p-2 rounded-xl text-sm cursor-pointer ${i === currentTrackIndex ? 'bg-emerald-900/40' : 'hover:bg-zinc-800'}`;
-                div.innerHTML = `
-                    <div class="flex items-center gap-x-2">
-                        <i class="fa-solid fa-music text-emerald-400"></i>
-                        <span>${track.name}</span>
-                    </div>
-                    <button class="text-xs px-2 py-0.5 bg-zinc-700 rounded" onclick="event.stopImmediatePropagation(); selectTrack(${i});">Use</button>
-                `;
-                div.onclick = () => selectTrack(i);
-                container.appendChild(div);
-            });
+        function renderIdBand(freq, q) {
+            var key = freq + '|' + q;
+            if (idBufferCache[key]) return Promise.resolve(idBufferCache[key]);
+            var sr = audioContext.sampleRate;
+            var off = new OfflineAudioContext(1, Math.floor(sr * (ID_PLAY_SEC + 0.5)), sr);
+            var src = off.createBufferSource();
+            src.buffer = pinkBuffer;
+            src.loop = true;
+            /* Two cascaded bandpasses: steeper skirts, so the band is a clear
+               pitch region rather than a smeared tilt. */
+            var bp1 = off.createBiquadFilter(); bp1.type = 'bandpass'; bp1.frequency.value = freq; bp1.Q.value = q;
+            var bp2 = off.createBiquadFilter(); bp2.type = 'bandpass'; bp2.frequency.value = freq; bp2.Q.value = q;
+            src.connect(bp1); bp1.connect(bp2); bp2.connect(off.destination);
+            src.start(0, Math.random() * 2);
+            return off.startRendering().then(function (raw) {
+                var skip = Math.floor(sr * 0.5); // drop filter ring-up
+                var buf = audioContext.createBuffer(1, raw.length - skip, sr);
+                buf.getChannelData(0).set(raw.getChannelData(0).subarray(skip));
+                return normalizeBuffer(buf);
+            }).then(function (b) { idBufferCache[key] = b; return b; });
         }
 
-        function selectTrack(index) {
-            stopAllAudio();
-            currentTrackIndex = index;
-            currentTrackBuffer = loadedTracks[index].buffer;
-            updateTrackUI();
-            generateProblem(); // fresh problem for this track
+        function ensureIdBuffers(setId) {
+            initAudio();
+            var set = BAND_SETS[setId];
+            var jobs = set.bands.map(function (b) { return renderIdBand(b.freq, set.idQ); });
+            if (!idNoiseBed) {
+                var copy = audioContext.createBuffer(1, pinkBuffer.length, pinkBuffer.sampleRate);
+                copy.getChannelData(0).set(pinkBuffer.getChannelData(0));
+                jobs.push(normalizeBuffer(copy).then(function (b) { idNoiseBed = b; return b; }));
+            }
+            return Promise.all(jobs);
         }
 
-        function generateProblem() {
-            if (!currentTrackBuffer) {
-                alert('Load an audio track first (WAV recommended).');
-                return;
+        function stopIdAudio() {
+            id.pending = null;
+            if (id.nodes) {
+                stopNode(id.nodes.band);
+                stopNode(id.nodes.noise);
+                id.nodes = null;
             }
-
-            stopAllAudio();
-
-            // Simplified single-filter problem for easier training.
-            // Only ONE band is affected.
-            // Problem magnitude: exactly 3dB or 6dB (direction random: boost or cut).
-            // Q type: either wide (broad, musical) or narrow (surgical).
-            // We can add more levels / multiple bands later as requested.
-
-            problemGains = new Array(currentBands.length).fill(0);
-            problemQs = new Array(currentBands.length).fill(1.8);
-
-            const idx = Math.floor(Math.random() * currentBands.length);
-
-            // Respect current level rules
-            const rules = LEVEL_RULES[currentLevel - 1];
-            const magnitude = rules.mags[Math.floor(Math.random() * rules.mags.length)];
-            const sign = rules.signs[Math.floor(Math.random() * rules.signs.length)];
-            const gain = sign === 'boost' ? magnitude : -magnitude;
-
-            const qType = rules.qTypes[Math.floor(Math.random() * rules.qTypes.length)];
-            const q = qType === 'narrow' ? NARROW_Q : WIDE_Q;
-
-            problemGains[idx] = gain;
-            problemQs[idx] = q;
-
-            // Reset user's settings
-            userGains = new Array(currentBands.length).fill(0);
-            userQs = new Array(currentBands.length).fill(1.8);
-
-            correctiveMode = 'correct';
-            updateModeButtons();
-            updateLevelUI();
-            updateGameInstructions();
-
-            createCorrectiveSliders();
-            document.getElementById('corrective-result').classList.add('hidden');
-
-            // Play using the current mode (defaults to correct on new problem)
-            playCurrentMode();
         }
 
-        function playTrackWithEQ(buffer, gains, qs = null) {
-            if (!audioContext) initAudio();
-            yieldToOtherGames();
-            if (trackSource) { try { trackSource.stop(); } catch(e){} }
-            if (currentSource) { try { currentSource.stop(); } catch(e){} }
-            if (currentNoiseSrc) { try { currentNoiseSrc.stop(); } catch(e){} }
-            currentNoiseSrc = null;
-
-            // Stop any previous "other stems" context sources.
-            // Without this, playing different versions would layer extra context audio,
-            // making "Your EQ" (even when perfect) sound different from "Play Clean".
-            contextSources.forEach(src => { try { src.stop(); } catch(e){} });
-            contextSources = [];
-
-            if (!buffer) {
-                // Fallback to noise
-                playWithEQ(gains);
-                return;
-            }
-
-            const source = audioContext.createBufferSource();
-            source.buffer = buffer;
-            source.loop = true;
-
-            let node = source;
-
-            const useQs = qs || new Array(gains.length).fill(1.8);
-
-            currentBands.forEach((band, i) => {
-                const f = audioContext.createBiquadFilter();
-                f.type = 'peaking';
-                f.frequency.value = band.freq;
-                f.gain.value = gains[i] || 0;
-                f.Q.value = useQs[i] || 1.8;
-                node.connect(f); node = f;
-            });
-
-            // Mix context: prefer real other stems (much better simulation of actual mixing work).
-            // If other tracks are loaded, sum them dry at a level controlled by the slider.
-            // Falls back to white noise only if the user has only loaded one track.
-            const maskingSlider = document.getElementById('corrective-masking');
-            const maskingLevel = maskingSlider ? parseFloat(maskingSlider.value) : 0;
-
-            if (maskingLevel > 0.01) {
-                if (loadedTracks.length > 1) {
-                    // Use other stems as mix context (recommended realistic mode)
-                    const contextGain = audioContext.createGain();
-                    contextGain.gain.value = maskingLevel * 0.9;
-
-                    loadedTracks.forEach((track, i) => {
-                        if (i === currentTrackIndex) return; // skip the main track we're EQing
-
-                        const src = audioContext.createBufferSource();
-                        src.buffer = track.buffer;
-                        src.loop = true;
-                        src.connect(contextGain);
-                        src.start();
-                        contextSources.push(src);
-                    });
-
-                    contextGain.connect(audioContext.destination);
-                } else if (noiseBuffer) {
-                    // Fallback: white noise (for when working on a single stem)
-                    const noiseSrc = audioContext.createBufferSource();
-                    noiseSrc.buffer = noiseBuffer;
+        function playIdBand(index) {
+            initAudio();
+            resumeAudio();
+            if (window.EQRide) window.EQRide.deactivate();
+            var set = BAND_SETS[id.setId];
+            var band = set.bands[index];
+            if (!band) return;
+            var token = {};
+            id.pending = token;
+            ensureIdBuffers(id.setId).then(function () {
+                if (id.pending !== token) return;
+                if (id.nodes) { stopNode(id.nodes.band); stopNode(id.nodes.noise); }
+                var buf = idBufferCache[band.freq + '|' + set.idQ];
+                var t = audioContext.currentTime + 0.02;
+                var env = audioContext.createGain();
+                env.gain.setValueAtTime(0, t);
+                env.gain.linearRampToValueAtTime(1, t + 0.03);
+                env.gain.setValueAtTime(1, t + ID_PLAY_SEC - 0.06);
+                env.gain.linearRampToValueAtTime(0, t + ID_PLAY_SEC);
+                env.connect(masterBus);
+                var bandSrc = audioContext.createBufferSource();
+                bandSrc.buffer = buf;
+                bandSrc.connect(env);
+                bandSrc.start(t);
+                bandSrc.stop(t + ID_PLAY_SEC + 0.02);
+                var noiseSrc = null;
+                var masking = parseFloat(document.getElementById('id-masking').value) || 0;
+                if (masking > 0.001 && idNoiseBed) {
+                    var ng = audioContext.createGain();
+                    ng.gain.value = masking; // 1.0 = same K-weighted loudness as the band
+                    noiseSrc = audioContext.createBufferSource();
+                    noiseSrc.buffer = idNoiseBed;
                     noiseSrc.loop = true;
-
-                    const nGain = audioContext.createGain();
-                    nGain.gain.value = maskingLevel * 0.4;
-
-                    noiseSrc.connect(nGain);
-                    nGain.connect(audioContext.destination);
-
-                    noiseSrc.start();
-                    currentNoiseSrc = noiseSrc;
+                    noiseSrc.connect(ng);
+                    ng.connect(env);
+                    noiseSrc.start(t, Math.random() * 3);
+                    noiseSrc.stop(t + ID_PLAY_SEC + 0.02);
                 }
-            }
-
-            const master = audioContext.createGain();
-            master.gain.value = 0.85;
-            node.connect(master);
-            master.connect(audioContext.destination);
-
-            source.start();
-            trackSource = source;
-
-            if (audioContext.state === 'suspended') audioContext.resume();
+                id.nodes = { band: bandSrc, noise: noiseSrc };
+            });
         }
 
-        function playProblemVersion() {
-            if (!currentTrackBuffer || !problemGains.length) {
-                alert('Generate a problem first.');
+        function pickIdTarget() {
+            var n = idBands().length;
+            var i = Math.floor(Math.random() * n);
+            if (n > 1 && i === id.lastTarget) i = (i + 1 + Math.floor(Math.random() * (n - 1))) % n;
+            id.lastTarget = i;
+            return i;
+        }
+
+        function setIdPrompt(html) { document.getElementById('id-prompt').innerHTML = html; }
+        function hideIdFeedback() { document.getElementById('id-feedback').classList.add('hidden'); }
+        function showIdFeedback(kind, html) {
+            var fb = document.getElementById('id-feedback');
+            var st = {
+                ok: ['rgba(16,185,129,0.1)', '1px solid #22c55e'],
+                bad: ['rgba(244,63,94,0.1)', '1px solid #f43f5e'],
+                warn: ['rgba(245,158,11,0.1)', '1px solid #f59e0b'],
+                neutral: ['rgba(39,39,42,0.6)', '1px solid #3f3f46']
+            }[kind];
+            fb.style.background = st[0];
+            fb.style.border = st[1];
+            fb.innerHTML = html;
+            fb.classList.remove('hidden');
+        }
+
+        function syncIdControls() {
+            document.getElementById('id-play-text').textContent = id.mode === 'practice'
+                ? 'PLAY RANDOM' : (id.round ? 'RESTART TEST' : 'START 10-ROUND TEST');
+            document.getElementById('id-replay-btn').classList.toggle('hidden', id.target < 0);
+            document.getElementById('id-mode-practice').classList.toggle('is-active', id.mode === 'practice');
+            document.getElementById('id-mode-test').classList.toggle('is-active', id.mode === 'test');
+            var prog = document.getElementById('id-test-progress');
+            if (id.mode === 'test' && id.round) {
+                prog.classList.remove('hidden');
+                prog.textContent = 'Test • Round ' + id.round + ' / ' + TEST_ROUNDS + ' • ' + id.correct + ' correct';
+            } else {
+                prog.classList.add('hidden');
+            }
+        }
+
+        function renderIdStats() {
+            document.getElementById('id-streak').textContent = stats.idStreak;
+            document.getElementById('id-accuracy').textContent = stats.idTotal
+                ? Math.round((stats.idCorrect / stats.idTotal) * 100) + '%' : '--';
+        }
+
+        function clearIdMarks() {
+            document.querySelectorAll('#guess-buttons button').forEach(function (b) {
+                b.classList.remove('is-correct', 'is-wrong', 'is-target');
+            });
+        }
+
+        function newIdRound() {
+            clearTimeout(id.timer);
+            hideIdFeedback();
+            clearIdMarks();
+            id.locked = false;
+            id.target = pickIdTarget();
+            playIdBand(id.target);
+            setIdPrompt('Which band? Click it (or press 1–' + Math.min(9, idBands().length) + '). <b>Replay</b> (or Space) to hear it again.');
+            syncIdControls();
+        }
+
+        function idPlayPressed() {
+            if (id.mode === 'test') { id.round = 1; id.correct = 0; }
+            newIdRound();
+        }
+
+        function idReplay() { if (id.target >= 0) playIdBand(id.target); }
+
+        function idBandClicked(index, btn) {
+            if (id.locked) return; // already answered; next round is coming
+            if (id.target >= 0) { answerId(index); return; }
+            if (id.mode === 'test') {
+                showIdFeedback('warn', '<div class="text-amber-400 font-semibold">Press Start 10-round test first.</div>');
                 return;
             }
-            stopAllAudio();
-            playTrackWithEQ(currentTrackBuffer, problemGains, problemQs);
-        }
-
-        function playUserCorrection() {
-            playCurrentMode();
-        }
-
-        function playCleanVersion() {
-            if (!currentTrackBuffer) return;
-            stopAllAudio();
-            const zeros = new Array(currentBands.length).fill(0);
-            const defaultQs = new Array(currentBands.length).fill(1.8);
-            playTrackWithEQ(currentTrackBuffer, zeros, defaultQs);
-        }
-
-        function stopAllAudio(opts) {
-            if (trackSource) { try { trackSource.stop(); } catch(e){} trackSource = null; }
-            if (currentNoiseSrc) { try { currentNoiseSrc.stop(); } catch(e){} currentNoiseSrc = null; }
-            if (currentSource) { try { currentSource.stop(); } catch(e){} currentSource = null; }
-            contextSources.forEach(src => { try { src.stop(); } catch(e){} });
-            contextSources = [];
-            if (!(opts && opts.fromRide)) yieldToOtherGames();
-        }
-
-        function setCorrectiveMode(newMode) {
-            if (newMode === correctiveMode) return;
-
-            // Flip the gains around 0 dB so the physical fader positions
-            // now represent the equivalent action in the other mode.
-            for (let i = 0; i < userGains.length; i++) {
-                userGains[i] = -userGains[i];
+            // Practice with nothing pending: audition this band (not scored).
+            playIdBand(index);
+            if (btn) {
+                btn.classList.add('is-audition');
+                setTimeout(function () { btn.classList.remove('is-audition'); }, 350);
             }
-            // Q values stay the same (width doesn't have a "direction")
-
-            correctiveMode = newMode;
-
-            // Sync the checkbox + label + colours
-            syncModeUI();
-
-            updateGameInstructions();
-
-            // Rebuild the slider controls with the flipped values (they will snap to allowed)
-            createCorrectiveSliders();
-
-            // Switch the audio to the appropriate base + current (flipped) settings
-            playCurrentMode();
+            setIdPrompt('Auditioning <b>' + escapeHtml(idBands()[index].name) + '</b>. Press <b>Play random</b> to be quizzed.');
         }
 
-        function toggleCorrectiveMode() {
-            const checkbox = document.getElementById('mode-toggle');
-            const newMode = checkbox.checked ? 'match' : 'correct';
-            setCorrectiveMode(newMode);
-        }
-
-        function syncModeUI() {
-            const checkbox = document.getElementById('mode-toggle');
-            const label = document.getElementById('mode-label');
-            // Target the main corrective panel for colour scheme (border + accent)
-            const panels = document.querySelectorAll('div.bg-zinc-900.border.border-zinc-800.rounded-3xl');
-            const panel = panels[panels.length - 1]; // usually the last/big one is the corrective section
-
-            if (!checkbox || !label) return;
-
-            if (correctiveMode === 'correct') {
-                checkbox.checked = false;
-                label.textContent = 'Correct (fix affected)';
-                label.className = 'text-sm font-medium text-emerald-400';
-                if (panel) {
-                    panel.style.borderColor = '#c9a36e';
-                }
+        function answerId(index) {
+            var bands = idBands();
+            var target = bands[id.target];
+            var ok = index === id.target;
+            id.locked = true;
+            stats.idTotal++;
+            if (ok) { stats.idCorrect++; stats.idStreak++; } else { stats.idStreak = 0; }
+            saveStats();
+            renderIdStats();
+            var buttons = document.querySelectorAll('#guess-buttons button');
+            if (buttons[index]) buttons[index].classList.add(ok ? 'is-correct' : 'is-wrong');
+            if (!ok && buttons[id.target]) buttons[id.target].classList.add('is-target');
+            var label = escapeHtml(target.name) + ' (' + escapeHtml(target.range) + ')';
+            if (ok) showIdFeedback('ok', '<div class="text-emerald-400 font-semibold">Correct! It was ' + label + '</div>');
+            else showIdFeedback('bad', '<div class="text-rose-400 font-semibold">Not quite — it was ' + label + '. You picked ' + escapeHtml(bands[index].name) + '.</div>');
+            if (id.mode === 'test') {
+                if (ok) id.correct++;
+                syncIdControls();
+                id.timer = setTimeout(function () {
+                    clearIdMarks();
+                    if (id.round < TEST_ROUNDS) { id.round++; newIdRound(); }
+                    else showIdTestResults();
+                }, 1400);
             } else {
-                checkbox.checked = true;
-                label.textContent = 'Match (apply to clean)';
-                label.className = 'text-sm font-medium text-violet-400';
-                if (panel) {
-                    panel.style.borderColor = '#9a7b5a';
-                }
-            }
-
-            // Show the appropriate flow indicator between buttons
-            const matchInd = document.getElementById('match-indicator');
-            const fixInd = document.getElementById('fix-indicator');
-            if (matchInd && fixInd) {
-                if (correctiveMode === 'correct') {
-                    matchInd.classList.add('hidden');
-                    fixInd.classList.remove('hidden');
-                } else {
-                    fixInd.classList.add('hidden');
-                    matchInd.classList.remove('hidden');
-                }
+                id.timer = setTimeout(function () {
+                    clearIdMarks();
+                    id.target = -1;
+                    id.locked = false;
+                    syncIdControls();
+                    setIdPrompt('Press <b>Play random</b> (or Space) for the next one, or click a band to audition it.');
+                }, 1400);
             }
         }
 
-        // Legacy button updater (kept for safety, now delegates to sync)
-        function updateModeButtons() {
-            syncModeUI();
+        function showIdTestResults() {
+            var score = id.correct;
+            var pct = Math.round((score / TEST_ROUNDS) * 100);
+            var msg = pct === 100 ? 'Perfect! Excellent ear training.' : pct >= 80 ? 'Great work!' : pct >= 60 ? 'Solid progress.' : 'Keep practicing — the ranges will get more familiar.';
+            id.target = -1;
+            id.locked = false;
+            id.round = 0;
+            syncIdControls();
+            showIdFeedback('neutral',
+                '<div class="text-center">' +
+                '<div class="text-5xl font-display font-semibold text-emerald-400">' + score + ' / ' + TEST_ROUNDS + '</div>' +
+                '<div class="text-2xl mt-1">' + pct + '%</div>' +
+                '<div class="text-sm text-zinc-400 mt-1">' + msg + '</div>' +
+                '<div class="mt-4 flex gap-x-3 justify-center">' +
+                '<button type="button" data-id-action="again" class="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-2xl">Play Again</button>' +
+                '<button type="button" data-id-action="practice" class="px-5 py-2 border border-zinc-700 hover:bg-zinc-800 text-sm rounded-2xl">Back to Practice</button>' +
+                '</div></div>');
+            setIdPrompt('Test finished.');
         }
 
-        function updateLevelUI() {
-            const disp = document.getElementById('level-display');
-            const desc = document.getElementById('level-desc');
-            if (!disp) return;
-
-            disp.textContent = `${currentLevel}/6`;
-
-            const rules = LEVEL_RULES[currentLevel - 1];
-            let descText = `${rules.mags.join('/')}dB `;
-            if (rules.signs.length === 1) descText += rules.signs[0] + ' only, ';
-            else descText += 'boost/cut, ';
-
-            if (rules.qTypes.length === 1) descText += rules.qTypes[0] + ' Q';
-            else descText += 'any Q';
-
-            if (desc) desc.textContent = descText;
+        function resetIdRound() {
+            clearTimeout(id.timer);
+            stopIdAudio();
+            id.target = -1;
+            id.locked = false;
+            id.round = 0;
+            id.correct = 0;
+            clearIdMarks();
+            hideIdFeedback();
         }
 
-        function updateGameInstructions() {
-            const el = document.getElementById('game-instructions');
-            if (!el || !currentLevel) return;
-
-            const rules = LEVEL_RULES[currentLevel - 1];
-            const magDesc = rules.mags.length > 1 ? rules.mags.join(' or ') : rules.mags[0];
-            const signDesc = rules.signs.length > 1 ? 'boost or cut' : rules.signs[0];
-            const qDesc = rules.qTypes.length > 1 ? 'narrow or wide' : rules.qTypes[0];
-
-            let html = '';
-            if (correctiveMode === 'correct') {
-                html = `<strong>Level ${currentLevel} — Correct (fix) mode</strong><br>
-The loaded track has a hidden problem: a <strong>${magDesc} dB ${qDesc} ${signDesc}</strong> on one band.<br><br>
-<b>Your goal:</b> Use the sliders to apply the exact opposite correction. A/B with the "Play Your EQ" and "Play Clean" buttons until they sound identical.`;
-            } else {
-                html = `<strong>Level ${currentLevel} — Match mode</strong><br>
-You are working on the clean track. The "Play Problem Version" has a hidden <strong>${magDesc} dB ${qDesc} ${signDesc}</strong> on one band.<br><br>
-<b>Your goal:</b> Replicate that exact EQ move with your faders so "Play Your EQ" sounds the same as the problem version.`;
-            }
-            el.innerHTML = html;
+        function setIdMode(mode) {
+            if (id.mode === mode) return;
+            resetIdRound();
+            id.mode = mode;
+            setIdPrompt(mode === 'test'
+                ? 'Press <b>Start 10-round test</b>. Each band plays once (Replay is allowed); click what you heard.'
+                : 'Press <b>Play random</b> (or Space), then click the band you heard. With nothing playing, click a band to audition it.');
+            syncIdControls();
         }
 
-        function tryAdvanceLevel() {
-            if (currentLevel < 6 && currentLevel < unlockedLevels) {
-                currentLevel++;
-                updateLevelUI();
-                generateProblem();
-            } else if (currentLevel < 6) {
-                alert('Score 80%+ on this level (via Submit) to unlock the next one.');
-            } else {
-                alert('Max level reached!');
-            }
-        }
-
-        function playCurrentMode() {
-            if (!currentTrackBuffer) return;
-
-            let effectiveGains;
-            if (correctiveMode === 'correct') {
-                // Working on the affected sample: effective = problem + user's correction
-                effectiveGains = problemGains.map((p, i) => (p || 0) + (userGains[i] || 0));
-            } else {
-                // Working on the clean sample: apply user's match settings directly
-                effectiveGains = [...userGains];
-            }
-
-            playTrackWithEQ(currentTrackBuffer, effectiveGains, userQs);
-        }
-
-        function submitCorrection() {
-            if (!problemGains || problemGains.length === 0) {
-                alert('Generate a problem first.');
-                return;
-            }
-
-            // Find the single affected band
-            let affectedIdx = -1;
-            for (let i = 0; i < problemGains.length; i++) {
-                if (Math.abs(problemGains[i]) > 0.1) {
-                    affectedIdx = i;
-                    break;
-                }
-            }
-
-            if (affectedIdx === -1) {
-                alert('No problem was generated.');
-                return;
-            }
-
-            const band = currentBands[affectedIdx];
-            const problemGain = problemGains[affectedIdx];
-            const problemQ = problemQs[affectedIdx];
-
-            // The target the user is trying to achieve depends on the current mode
-            let targetGain;
-            if (correctiveMode === 'correct') {
-                targetGain = -problemGain;  // to correct a boost problem, you cut
-            } else {
-                targetGain = problemGain;   // to match the target on clean, you apply the same
-            }
-
-            const gainError = Math.abs(userGains[affectedIdx] - targetGain);
-            const qError = Math.abs(userQs[affectedIdx] - problemQ);
-
-            let score = Math.max(0, Math.round(100 - (gainError * 14) - (qError * 4)));
-            score = Math.min(100, Math.max(25, score));
-
-            if (score > bestMatchAccuracy) {
-                bestMatchAccuracy = score;
-                saveStats();
-            }
-
-            // Simple progression: good score unlocks next level
-            if (score >= 80 && currentLevel < 6) {
-                if (currentLevel + 1 > unlockedLevels) {
-                    unlockedLevels = currentLevel + 1;
-                    // gentle notification
-                    setTimeout(() => {
-                        const d = document.getElementById('level-desc');
-                        if (d) d.textContent += ' (next level unlocked!)';
-                    }, 1200);
-                }
-            }
-
-            const bestEl = document.getElementById('best-match');
-            if (bestEl) bestEl.textContent = `Personal best: ${bestMatchAccuracy}%`;
-
-            const resultEl = document.getElementById('corrective-result');
-            resultEl.classList.remove('hidden');
-
-            const problemDirection = problemGain > 0 ? 'boost' : 'cut';
-            const qType = problemQ > 3 ? 'narrow' : 'wide';
-            const targetDirection = targetGain > 0 ? 'boost' : 'cut';
-
-            resultEl.innerHTML = `
-                <div class="text-5xl font-display font-semibold text-emerald-400">${score}</div>
-                <div class="text-sm text-zinc-400">Correction Accuracy (mode: ${correctiveMode})</div>
-                <div class="text-xs mt-1">Hidden problem: <strong>${Math.abs(problemGain)} dB ${qType} ${problemDirection}</strong> at <strong>${band.name}</strong></div>
-                <div class="text-xs mt-1 text-zinc-300">In <strong>${correctiveMode}</strong> mode the target was <strong>${targetDirection}</strong> (you applied ${userGains[affectedIdx] > 0 ? '+' : ''}${userGains[affectedIdx].toFixed(1)} dB)</div>
-                <div class="text-xs mt-2 text-zinc-500">Best: ${bestMatchAccuracy}%</div>
-                <button onclick="applyPerfectCorrection()" class="mt-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded-2xl">
-                    Show perfect correction (set sliders &amp; play)
-                </button>
-            `;
-        }
-
-        function applyPerfectCorrection() {
-            if (!problemGains || problemGains.length === 0) return;
-
-            let affectedIdx = -1;
-            for (let i = 0; i < problemGains.length; i++) {
-                if (Math.abs(problemGains[i]) > 0.1) {
-                    affectedIdx = i;
-                    break;
-                }
-            }
-            if (affectedIdx === -1) return;
-
-            const problemGain = problemGains[affectedIdx];
-            const problemQ = problemQs[affectedIdx];
-
-            let targetGain;
-            if (correctiveMode === 'correct') {
-                targetGain = -problemGain;
-            } else {
-                targetGain = problemGain;
-            }
-
-            // Set only the affected band to the perfect value, reset others to 0 for clarity
-            userGains = new Array(currentBands.length).fill(0);
-            userQs = new Array(currentBands.length).fill(1.8);
-
-            userGains[affectedIdx] = targetGain;
-            userQs[affectedIdx] = problemQ;
-
-            createCorrectiveSliders();  // update the DOM faders and labels
-            playCurrentMode();          // play the now-perfect result
-        }
-
-        function getLevelAllowedValues() {
-            const rules = LEVEL_RULES[currentLevel - 1];
-            const allowedGains = [0];
-            // Always provide both + and - versions of the level's magnitudes
-            // (regardless of what signs problems use in the level rules).
-            // This way in "correct" mode you can select the inverse (e.g. cut to fix a boost problem),
-            // and the faders always extend from -maxMag to +maxMag for the level (e.g. -6 to +6).
-            rules.mags.forEach(m => {
-                allowedGains.push(m);
-                allowedGains.push(-m);
+        function setIdSet(setId) {
+            if (!BAND_SETS[setId]) return;
+            resetIdRound();
+            id.setId = setId;
+            id.lastTarget = -1;
+            document.querySelectorAll('#id-set-row [data-set]').forEach(function (b) {
+                b.classList.toggle('is-active', b.getAttribute('data-set') === setId);
             });
-            // Unique sorted
-            const uniqueGains = [...new Set(allowedGains)].sort((a,b)=>a-b);
-
-            const allowedQs = [];
-            rules.qTypes.forEach(t => {
-                allowedQs.push(t === 'narrow' ? NARROW_Q : WIDE_Q);
-            });
-
-            return { gains: uniqueGains, qs: [...new Set(allowedQs)] };
-        }
-
-        function createCorrectiveSliders() {
-            const container = document.getElementById('sliders');
-            container.innerHTML = '';
-
-            if (!currentBands || currentBands.length === 0) return;
-
-            const allowed = getLevelAllowedValues();
-
-            // Ensure arrays are sized and snapped to allowed
-            if (userGains.length !== currentBands.length) {
-                userGains = new Array(currentBands.length).fill(0);
-            }
-            if (userQs.length !== currentBands.length) {
-                userQs = new Array(currentBands.length).fill(1.8);
-            }
-
-            currentBands.forEach((band, i) => {
-                const row = document.createElement('div');
-                row.className = 'space-y-1';
-
-                // Snap to nearest allowed for this level
-                let g = userGains[i];
-                userGains[i] = allowed.gains.reduce((prev, curr) => Math.abs(curr - g) < Math.abs(prev - g) ? curr : prev);
-
-                let q = userQs[i];
-                userQs[i] = allowed.qs.reduce((prev, curr) => Math.abs(curr - q) < Math.abs(prev - q) ? curr : prev);
-
-                const qDisplay = userQs[i] > 3 ? 'narrow' : 'wide';
-
-                const badgeText = band.freq < 1000 ? band.freq : (band.freq / 1000) + 'k';
-
-                row.innerHTML = `
-                    <div class="flex items-center justify-between text-xs">
-                        <div class="flex items-center gap-x-2">
-                            <div class="w-5 h-5 rounded flex-shrink-0 flex items-center justify-center text-[9px] font-mono" 
-                                 style="background:${band.color}22; color:${band.color};">
-                                ${badgeText}
-                            </div>
-                            <div class="font-medium" style="color:${band.color};">${band.name}</div>
-                        </div>
-                        <div class="font-mono text-emerald-400" id="gain-val-${i}">${userGains[i].toFixed(1)} dB</div>
-                    </div>
-                    <div class="flex items-center gap-x-2">
-                        <input type="range" min="${Math.min(...allowed.gains)}" max="${Math.max(...allowed.gains)}" step="3" value="${userGains[i]}" 
-                               class="flex-1 accent-emerald-500"
-                               oninput="snapGain(this, ${i});">
-                        <div class="w-9 text-[10px] text-right text-zinc-400">Gain</div>
-                    </div>
-
-                    <div class="flex items-center gap-x-2 mt-1">
-                        <input type="range" min="${Math.min(...allowed.qs)}" max="${Math.max(...allowed.qs)}" step="4.8" value="${userQs[i]}" 
-                               class="flex-1 accent-violet-500"
-                               oninput="snapQ(this, ${i});">
-                        <div class="w-9 text-[10px] text-right text-zinc-400">Q</div>
-                        <div class="font-mono text-xs w-12 text-right text-violet-400" id="q-val-${i}">${qDisplay} (${userQs[i].toFixed(1)})</div>
-                    </div>
-                `;
-                container.appendChild(row);
-            });
-
-            drawEQCurve();
-        }
-
-        function snapGain(slider, i) {
-            const allowed = getLevelAllowedValues();
-            let val = parseFloat(slider.value);
-            userGains[i] = allowed.gains.reduce((prev, curr) => Math.abs(curr - val) < Math.abs(prev - val) ? curr : prev);
-            slider.value = userGains[i];  // snap the slider handle
-            updateCorrectiveVisual(i);
-            playCurrentMode();  // live update audio with the new setting in current mode
-        }
-
-        function snapQ(slider, i) {
-            const allowed = getLevelAllowedValues();
-            let val = parseFloat(slider.value);
-            userQs[i] = allowed.qs.reduce((prev, curr) => Math.abs(curr - val) < Math.abs(prev - val) ? curr : prev);
-            // Update display value for the representative
-            const qDisplay = userQs[i] > 3 ? 'narrow' : 'wide';
-            const qRep = userQs[i] > 3 ? 6 : 1.2;
-            slider.value = qRep;
-            updateCorrectiveVisual(i);
-            playCurrentMode();  // live update audio with the new setting in current mode
-        }
-
-        function updateCorrectiveVisual(i) {
-            const gainVal = document.getElementById(`gain-val-${i}`);
-            const qVal = document.getElementById(`q-val-${i}`);
-            if (gainVal) gainVal.textContent = (userGains[i] > 0 ? '+' : '') + userGains[i].toFixed(1) + ' dB';
-            if (qVal) {
-                const qDisplay = userQs[i] > 3 ? 'narrow' : 'wide';
-                qVal.textContent = `${qDisplay} (${userQs[i].toFixed(1)})`;
-            }
-            drawEQCurve();
-        }
-
-        function drawEQCurve() {
-            const canvas = document.getElementById('eq-curve');
-            if (!canvas || !currentBands) return;
-            const ctx = canvas.getContext('2d');
-            const w = canvas.width;
-            const h = canvas.height;
-            ctx.clearRect(0, 0, w, h);
-
-            // Background grid
-            ctx.strokeStyle = '#27272a';
-            ctx.lineWidth = 1;
-            for (let x = 0; x < w; x += 40) {
-                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-            }
-            for (let y = 20; y < h; y += 20) {
-                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-            }
-
-            // Log frequency scale
-            const minF = 20, maxF = 20000;
-            const logMin = Math.log10(minF), logMax = Math.log10(maxF);
-
-            ctx.strokeStyle = '#c9a36e';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-
-            const gains = userGains || [];
-            const qs = userQs || [];
-
-            for (let x = 0; x < w; x++) {
-                const logF = logMin + (x / w) * (logMax - logMin);
-                const f = Math.pow(10, logF);
-
-                let totalGain = 0;
-
-                for (let i = 0; i < currentBands.length; i++) {
-                    const bandF = currentBands[i].freq;
-                    const g = gains[i] || 0;
-                    const q = qs[i] || 1.8;
-                    if (Math.abs(g) < 0.1) continue;
-
-                    // Simple peaking approximation
-                    const octaves = Math.log2(f / bandF);
-                    const width = 1 / (q * 0.7); // rough
-                    const bell = Math.exp( - (octaves * octaves) / (2 * width * width) );
-                    totalGain += g * bell;
-                }
-
-                const y = h/2 - (totalGain / 24) * (h/2); // scale -12 to +12 roughly
-                if (x === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            }
-            ctx.stroke();
-
-            // Labels
-            ctx.fillStyle = '#52525b';
-            ctx.font = '9px sans-serif';
-            ctx.fillText('20', 4, h-4);
-            ctx.fillText('200', w*0.25, h-4);
-            ctx.fillText('2k', w*0.5, h-4);
-            ctx.fillText('20k', w-20, h-4);
-            ctx.fillText('+12dB', 4, 12);
-            ctx.fillText('-12dB', 4, h-14);
-        }
-
-        function setBandMode(mode) {
-            currentBandMode = mode;
-
-            if (mode === 'few') {
-                currentBands = fewBands;
-                document.getElementById('btn-few').classList.add('bg-emerald-500', 'text-white');
-                document.getElementById('btn-few').classList.remove('text-zinc-300', 'hover:bg-zinc-700');
-                document.getElementById('btn-many').classList.remove('bg-emerald-500', 'text-white');
-                document.getElementById('btn-many').classList.add('text-zinc-300', 'hover:bg-zinc-700');
-            } else {
-                currentBands = manyBands;
-                document.getElementById('btn-many').classList.add('bg-emerald-500', 'text-white');
-                document.getElementById('btn-many').classList.remove('text-zinc-300', 'hover:bg-zinc-700');
-                document.getElementById('btn-few').classList.remove('bg-emerald-500', 'text-white');
-                document.getElementById('btn-few').classList.add('text-zinc-300', 'hover:bg-zinc-700');
-            }
-
-            currentTargetBand = null;
-            if (feedbackTimeout) clearTimeout(feedbackTimeout);
-            document.getElementById('id-feedback').classList.add('hidden');
-
             createGuessButtons();
-            // Do not call old createSliders here - corrective sliders are managed separately
-            // matchTarget etc cleared for legacy if needed
-            if (document.getElementById('match-result')) document.getElementById('match-result').classList.add('hidden');
-
-            // Keep the masking slider display consistent
-            updateMaskingDisplay();
-
-            // If a test is running, reset it when changing band sets
-            if (idGameMode === 'test' && testCurrentRound > 0) {
-                testCurrentRound = 0;
-                testCorrect = 0;
-                currentTargetBand = null;
-                document.getElementById('id-feedback').classList.add('hidden');
-                const progressEl = document.getElementById('id-test-progress');
-                if (progressEl) progressEl.classList.add('hidden');
-            }
+            syncIdControls();
+            if (audioContext) ensureIdBuffers(setId);
         }
 
         function createGuessButtons() {
-            const container = document.getElementById('guess-buttons');
+            var container = document.getElementById('guess-buttons');
             container.innerHTML = '';
-
-            currentBands.forEach((band, i) => {
-                const btn = document.createElement('button');
-                btn.className = `p-4 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl text-left transition-all`;
-                btn.innerHTML = `
-                    <div class="flex items-center gap-x-3">
-                        <div class="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-mono" style="background:${band.color}22; color:${band.color}">
-                            ${band.freq < 1000 ? band.freq : (band.freq/1000) + 'k'}
-                        </div>
-                        <div>
-                            <div class="font-semibold">${band.name}</div>
-                            ${band.range ? `<div class="text-[10px] text-zinc-500">${band.range}</div>` : ''}
-                        </div>
-                    </div>
-                `;
-                btn.onclick = () => handleBandClick(band, btn);
+            var bands = idBands();
+            var compact = bands.length > 9;
+            container.className = compact
+                ? 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 mb-6'
+                : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-3 mb-6';
+            bands.forEach(function (band, i) {
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'id-band-btn ' + (compact ? 'p-2' : 'p-4') + ' bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl text-left transition-all';
+                btn.setAttribute('aria-label', band.name + ', ' + band.range + (i < 9 ? ', key ' + (i + 1) : ''));
+                btn.innerHTML = compact
+                    ? '<div class="font-mono text-sm" style="color:' + band.color + '">' + escapeHtml(badgeHz(band.freq)) + '</div>'
+                    : '<div class="flex items-center gap-x-3">' +
+                        '<div class="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-mono" style="background:' + band.color + '22; color:' + band.color + '">' + escapeHtml(badgeHz(band.freq)) + '</div>' +
+                        '<div><div class="font-semibold">' + escapeHtml(band.name) + '</div>' +
+                        '<div class="text-[10px] text-zinc-500">' + escapeHtml(band.range) + '</div></div></div>';
+                btn.addEventListener('click', function () { idBandClicked(i, btn); });
                 container.appendChild(btn);
             });
         }
 
-        function startIDRound() {
-            // Clear any previous state
-            if (feedbackTimeout) clearTimeout(feedbackTimeout);
-            document.getElementById('id-feedback').classList.add('hidden');
-
-            if (idGameMode === 'practice') {
-                // Practice mode: just play one random band for listening practice
-                const randomIndex = Math.floor(Math.random() * currentBands.length);
-                currentTargetBand = currentBands[randomIndex];
-
-                const maskingSlider = document.getElementById('id-masking');
-                const maskingLevel = maskingSlider ? parseFloat(maskingSlider.value) : 0.25;
-                playIsolatedBand(randomIndex, maskingLevel);
-            } else {
-                // Test mode: structured 10-round quiz
-                if (testCurrentRound === 0) {
-                    testCurrentRound = 1;
-                    testCorrect = 0;
-                }
-
-                const randomIndex = Math.floor(Math.random() * currentBands.length);
-                currentTargetBand = currentBands[randomIndex];
-
-                const maskingSlider = document.getElementById('id-masking');
-                const maskingLevel = maskingSlider ? parseFloat(maskingSlider.value) : 0.25;
-                playIsolatedBand(randomIndex, maskingLevel);
-
-                updateTestProgress();
-            }
-        }
-
-        function guessFrequency(clickedBand, btn) {
-            const fb = document.getElementById('id-feedback');
-            fb.classList.remove('hidden');
-
-            idTotal++;
-
-            const rangeText = currentTargetBand && currentTargetBand.range ? ` (${currentTargetBand.range})` : '';
-
-            let wasCorrect = false;
-            if (currentTargetBand && clickedBand.freq === currentTargetBand.freq) {
-                wasCorrect = true;
-                idCorrect++;
-                idStreak++;
-                fb.innerHTML = `<div class="text-emerald-400 font-semibold">Correct! It was ${currentTargetBand.name}${rangeText}</div>`;
-                fb.style.background = 'rgba(16,185,129,0.1)';
-                fb.style.border = '1px solid #22c55e';
-
-                document.getElementById('id-streak').textContent = idStreak;
-                updateAccuracy();
-                saveStats();
-            } else if (currentTargetBand) {
-                idStreak = 0;
-                document.getElementById('id-streak').textContent = '0';
-                fb.innerHTML = `<div class="text-rose-400 font-semibold">Wrong. It was ${currentTargetBand.name}${rangeText}</div>`;
-                fb.style.background = 'rgba(244,63,94,0.1)';
-                fb.style.border = '1px solid #f43f5e';
-                saveStats();
-            } else {
-                fb.innerHTML = `<div class="text-amber-400 font-semibold">Please click PLAY first</div>`;
-                fb.style.background = 'rgba(245,158,11,0.1)';
-                fb.style.border = '1px solid #f59e0b';
-            }
-
-            if (idGameMode === 'test' && currentTargetBand) {
-                if (wasCorrect) testCorrect++;
-                updateTestProgress();
-
-                // Auto-advance after short delay
-                setTimeout(() => {
-                    fb.classList.add('hidden');
-                    currentTargetBand = null;
-
-                    if (testCurrentRound < testTotalRounds) {
-                        testCurrentRound++;
-                        startIDRound();
-                    } else {
-                        showTestResults();
-                    }
-                }, 1350);
-            } else {
-                // Practice mode - clear after delay
-                feedbackTimeout = setTimeout(() => {
-                    fb.classList.add('hidden');
-                    currentTargetBand = null;
-                }, 1800);
-            }
-        }
-
-        function updateAccuracy() {
-            if (idTotal > 0) {
-                const acc = Math.round((idCorrect / idTotal) * 100);
-                document.getElementById('id-accuracy').textContent = acc + '%';
-            }
-        }
-
-        function updateMaskingDisplay() {
-            const slider = document.getElementById('id-masking');
-            const valEl = document.getElementById('id-masking-val');
-            if (!slider || !valEl) return;
-            const pct = Math.round(parseFloat(slider.value) * 100);
-            valEl.textContent = pct + '%';
-        }
-
-        function handleBandClick(band, btn) {
-            if (idGameMode === 'practice') {
-                // Free listening mode - just play the band
-                const maskingSlider = document.getElementById('id-masking');
-                const maskingLevel = maskingSlider ? parseFloat(maskingSlider.value) : 0.25;
-                playIsolatedBand(currentBands.indexOf(band), maskingLevel);
-
-                currentTargetBand = null;
-                document.getElementById('id-feedback').classList.add('hidden');
-
-                // Brief visual pulse on the button
-                const originalBorder = btn.style.border;
-                btn.style.border = '1px solid #c9a36e';
-                setTimeout(() => {
-                    btn.style.border = originalBorder || '1px solid #3f3f46';
-                }, 350);
-            } else {
-                // Test mode - clicking counts as a guess
-                guessFrequency(band, btn);
-            }
-        }
-
-        function setIDGameMode(mode) {
-            if (idGameMode === mode) return;
-            idGameMode = mode;
-
-            const practiceBtn = document.getElementById('id-mode-practice');
-            const testBtn = document.getElementById('id-mode-test');
-            const playText = document.getElementById('id-play-text');
-            const progressEl = document.getElementById('id-test-progress');
-
-            if (mode === 'practice') {
-                if (practiceBtn) practiceBtn.className = 'px-4 py-1.5 rounded-[20px] bg-emerald-500 text-white font-medium';
-                if (testBtn) testBtn.className = 'px-4 py-1.5 rounded-[20px] text-zinc-300 hover:bg-zinc-700';
-                if (playText) playText.textContent = 'PLAY RANDOM';
-                if (progressEl) progressEl.classList.add('hidden');
-
-                // Clear any active test
-                testCurrentRound = 0;
-                testCorrect = 0;
-                currentTargetBand = null;
-                document.getElementById('id-feedback').classList.add('hidden');
-            } else {
-                if (practiceBtn) practiceBtn.className = 'px-4 py-1.5 rounded-[20px] text-zinc-300 hover:bg-zinc-700';
-                if (testBtn) testBtn.className = 'px-4 py-1.5 rounded-[20px] bg-violet-500 text-white font-medium';
-                if (playText) playText.textContent = 'START 10-ROUND TEST';
-                if (progressEl) progressEl.classList.add('hidden');
-
-                // Reset test state
-                testCurrentRound = 0;
-                testCorrect = 0;
-                currentTargetBand = null;
-                document.getElementById('id-feedback').classList.add('hidden');
-            }
-        }
-
-        function updateTestProgress() {
-            const el = document.getElementById('id-test-progress');
-            if (!el || idGameMode !== 'test' || testCurrentRound === 0) {
-                if (el) el.classList.add('hidden');
+        function idHandleKey(e) {
+            if (e.key === ' ' || e.key === 'Spacebar') {
+                e.preventDefault();
+                if (e.repeat || id.locked) return;
+                if (id.target >= 0) idReplay();
+                else idPlayPressed();
                 return;
             }
-            el.classList.remove('hidden');
-            el.textContent = `Test Mode • Round ${testCurrentRound} / ${testTotalRounds} • ${testCorrect} correct`;
+            var num = parseInt(e.key, 10);
+            if (!isNaN(num) && num >= 1 && num <= Math.min(9, idBands().length)) {
+                e.preventDefault();
+                idBandClicked(num - 1, document.querySelectorAll('#guess-buttons button')[num - 1]);
+            }
         }
 
-        function showTestResults() {
-            const fb = document.getElementById('id-feedback');
-            const progressEl = document.getElementById('id-test-progress');
-            if (progressEl) progressEl.classList.add('hidden');
-
-            fb.classList.remove('hidden');
-
-            const percent = Math.round((testCorrect / testTotalRounds) * 100);
-            let message = '';
-            if (percent === 100) message = 'Perfect! Excellent ear training.';
-            else if (percent >= 80) message = 'Great work!';
-            else if (percent >= 60) message = 'Solid progress.';
-            else message = 'Keep practicing — the ranges will get more familiar.';
-
-            fb.innerHTML = `
-                <div class="text-center">
-                    <div class="text-5xl font-display font-semibold text-emerald-400">${testCorrect} / ${testTotalRounds}</div>
-                    <div class="text-2xl mt-1">${percent}%</div>
-                    <div class="text-sm text-zinc-400 mt-1">${message}</div>
-
-                    <div class="mt-4 flex gap-x-3 justify-center">
-                        <button onclick="restartTest()" class="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-2xl">Play Again</button>
-                        <button onclick="setIDGameMode('practice')" class="px-5 py-2 border border-zinc-700 hover:bg-zinc-800 text-sm rounded-2xl">Back to Practice</button>
-                    </div>
-                </div>
-            `;
-
-            currentTargetBand = null;
-            testCurrentRound = 0;
-        }
-
-        function restartTest() {
-            const fb = document.getElementById('id-feedback');
-            fb.classList.add('hidden');
-            testCurrentRound = 0;
-            testCorrect = 0;
-            document.getElementById('id-test-progress').classList.add('hidden');
-            startIDRound();
-        }
-
-        // Persistence for ID game stats (was missing despite README claim)
-        function loadStats() {
-            try {
-                const saved = JSON.parse(localStorage.getItem('eqEarTrainerStats') || '{}');
-                if (typeof saved.idStreak === 'number') idStreak = saved.idStreak;
-                if (typeof saved.idCorrect === 'number') idCorrect = saved.idCorrect;
-                if (typeof saved.idTotal === 'number') idTotal = saved.idTotal;
-                if (typeof saved.bestMatchAccuracy === 'number') bestMatchAccuracy = saved.bestMatchAccuracy;
-            } catch (e) {}
-        }
-
-        function saveStats() {
-            try {
-                localStorage.setItem('eqEarTrainerStats', JSON.stringify({
-                    idStreak: idStreak,
-                    idCorrect: idCorrect,
-                    idTotal: idTotal,
-                    bestMatchAccuracy: bestMatchAccuracy
-                }));
-            } catch (e) {}
-        }
-
-        function createSliders() {
-            // Legacy function - corrective game now uses createCorrectiveSliders()
-            // This is kept for backward compat but does nothing in the new UI
-            console.log('[EQ Trainer] Legacy createSliders called (no-op in corrective mode)');
-        }
-
-        function updateSliderVisual(i, val) {
-            document.getElementById(`val-${i}`).textContent = (parseFloat(val) > 0 ? '+' : '') + parseFloat(val).toFixed(1) + ' dB';
-        }
-
-        function randomizeTarget() {
-            matchTarget = currentBands.map(() => (Math.random() * 16 - 8).toFixed(1) * 1);
-            userGains = new Array(currentBands.length).fill(0);
-
-            const inputs = document.querySelectorAll('#sliders input');
-            inputs.forEach((input, i) => {
-                input.value = 0;
-                document.getElementById(`val-${i}`).textContent = '0 dB';
+        function initIdDrill() {
+            document.getElementById('id-play-btn').addEventListener('click', idPlayPressed);
+            document.getElementById('id-replay-btn').addEventListener('click', idReplay);
+            document.getElementById('id-mode-practice').addEventListener('click', function () { setIdMode('practice'); });
+            document.getElementById('id-mode-test').addEventListener('click', function () { setIdMode('test'); });
+            document.querySelectorAll('#id-set-row [data-set]').forEach(function (b) {
+                b.addEventListener('click', function () { setIdSet(b.getAttribute('data-set')); });
             });
-
-            document.getElementById('match-result').classList.add('hidden');
-        }
-
-        function playReference() {
-            if (!matchTarget.length) {
-                alert('Click "New Target" first');
-                return;
-            }
-            playWithEQ(matchTarget);
-        }
-
-        function playUserEQ() {
-            playWithEQ(userGains);
-        }
-
-        function submitMatch() {
-            if (!matchTarget.length) {
-                alert('Click "New Target" first');
-                return;
-            }
-
-            let diff = 0;
-            for (let i = 0; i < currentBands.length; i++) {
-                diff += Math.abs(matchTarget[i] - userGains[i]);
-            }
-            const accuracy = Math.max(0, Math.round(100 - (diff / currentBands.length) * 6));
-
-            if (accuracy > bestMatchAccuracy) {
-                bestMatchAccuracy = accuracy;
-                saveStats();
-            }
-
-            const bestEl = document.getElementById('best-match');
-            if (bestEl) bestEl.textContent = `Personal best: ${bestMatchAccuracy}%`;
-
-            const result = document.getElementById('match-result');
-            result.classList.remove('hidden');
-            result.innerHTML = `
-                <div class="text-5xl font-display font-semibold text-emerald-400">${accuracy}</div>
-                <div class="text-sm text-zinc-400">% Match Accuracy</div>
-                ${bestMatchAccuracy > accuracy ? `<div class="text-xs text-zinc-500 mt-1">New personal best!</div>` : ''}
-            `;
-        }
-
-        function setupKeyboard() {
-            document.addEventListener('keydown', function(e) {
-                if (window.EQRide && window.EQRide.handleKey(e)) return;
-
-                if (e.key === ' ' || e.key === 'Spacebar') {
-                    e.preventDefault();
-                    startIDRound();
-                }
-
-                const num = parseInt(e.key);
-                if (!isNaN(num) && num >= 1 && num <= currentBands.length) {
-                    const buttons = document.querySelectorAll('#guess-buttons button');
-                    if (buttons[num - 1]) buttons[num - 1].click();
-                }
+            var mask = document.getElementById('id-masking');
+            mask.addEventListener('input', function () {
+                document.getElementById('id-masking-val').textContent = Math.round(parseFloat(mask.value) * 100) + '%';
             });
-            document.addEventListener('keyup', function(e) {
-                if (window.EQRide && window.EQRide.handleKeyUp(e)) return;
+            document.getElementById('id-feedback').addEventListener('click', function (e) {
+                var b = e.target.closest('[data-id-action]');
+                if (!b) return;
+                if (b.getAttribute('data-id-action') === 'again') idPlayPressed();
+                else setIdMode('practice');
             });
-        }
-
-        function initializeApp() {
             createGuessButtons();
-            setIDGameMode('practice');  // default to practice / free listening
-            createSliders();
-            setupKeyboard();
+            renderIdStats();
+            syncIdControls();
+        }
 
-            if (window.EQRide) {
-                window.EQRide.init({
-                    getContext: function () {
-                        initAudio();
-                        return audioContext;
-                    },
-                    stopOtherAudio: function () {
-                        stopAllAudio({ fromRide: true });
-                    },
-                    getFewBands: function () { return fewBands; },
-                    getManyBands: function () { return manyBands; }
+        /* ==================== CORRECTIVE EQ ==================== */
+        /* Signal flow, built once per track; afterwards only parameters change:
+             track -> hidden problem bells -> your bells -> loudness trim -> bus
+           "Problem", "Your EQ" and "Clean" are just parameter states, so
+           switching is instant and the loop keeps its place. */
+        var WIDE_Q = 1.2, NARROW_Q = 6;
+        var LEVEL_RULES = [
+            { level: 1, mags: [6], signs: ['boost'], qTypes: ['narrow'] },
+            { level: 2, mags: [6], signs: ['boost'], qTypes: ['narrow', 'wide'] },
+            { level: 3, mags: [6], signs: ['boost', 'cut'], qTypes: ['wide'] },
+            { level: 4, mags: [6], signs: ['boost', 'cut'], qTypes: ['narrow', 'wide'] },
+            { level: 5, mags: [3, 6], signs: ['boost', 'cut'], qTypes: ['wide'] },
+            { level: 6, mags: [3, 6], signs: ['boost', 'cut'], qTypes: ['narrow', 'wide'] }
+        ];
+        var corr = {
+            setId: 'seven',
+            tracks: [],
+            trackIndex: -1,
+            problem: null,        // {idx, gain, q}
+            userGains: [],
+            userQs: [],
+            mode: 'correct',      // correct | match
+            listen: 'user',       // problem | user | clean
+            g: null,              // live graph
+            matchToken: 0,
+            matchTimer: null
+        };
+
+        function corrBands() { return BAND_SETS[corr.setId].bands; }
+        function corrRules() { return LEVEL_RULES[stats.corrLevel - 1]; }
+        function currentBuffer() { return corr.tracks[corr.trackIndex] ? corr.tracks[corr.trackIndex].buffer : null; }
+
+        function allowedValues() {
+            var rules = corrRules();
+            var gains = [0];
+            rules.mags.forEach(function (m) { gains.push(m, -m); });
+            gains = Array.from(new Set(gains)).sort(function (a, b) { return a - b; });
+            var qs = Array.from(new Set(rules.qTypes.map(function (t) { return t === 'narrow' ? NARROW_Q : WIDE_Q; })));
+            return { gains: gains, qs: qs };
+        }
+        function nearest(list, v) {
+            return list.reduce(function (p, c) { return Math.abs(c - v) < Math.abs(p - v) ? c : p; });
+        }
+        function resetUser() {
+            var n = corrBands().length;
+            var qs = allowedValues().qs;
+            corr.userGains = new Array(n).fill(0);
+            corr.userQs = new Array(n).fill(qs.indexOf(WIDE_Q) >= 0 ? WIDE_Q : qs[0]);
+        }
+
+        /* Gains for each stage in the current listen state. */
+        function stageGains() {
+            var n = corrBands().length;
+            var prob = new Array(n).fill(0), probQ = new Array(n).fill(WIDE_Q), user = new Array(n).fill(0);
+            var p = corr.problem;
+            if (p) {
+                probQ[p.idx] = p.q;
+                if (corr.listen === 'problem' || (corr.listen === 'user' && corr.mode === 'correct')) prob[p.idx] = p.gain;
+            }
+            if (corr.listen === 'user') user = corr.userGains.slice();
+            return { prob: prob, probQ: probQ, user: user, userQ: corr.userQs.slice() };
+        }
+
+        function stopCorrective() {
+            clearTimeout(corr.matchTimer);
+            corr.matchToken++;
+            if (corr.g) {
+                stopNode(corr.g.src);
+                corr.g.ctxSrcs.forEach(stopNode);
+                try { corr.g.out.disconnect(); } catch (e) { /* gone */ }
+                try { corr.g.ctxGain.disconnect(); } catch (e2) { /* gone */ }
+                corr.g = null;
+            }
+            syncListenButtons();
+        }
+
+        function buildCorrGraph() {
+            stopCorrective();
+            var buf = currentBuffer();
+            if (!buf) return;
+            initAudio();
+            resumeAudio();
+            if (window.EQRide) window.EQRide.deactivate();
+            var ctx = audioContext;
+            var bands = corrBands();
+            var src = ctx.createBufferSource();
+            src.buffer = buf;
+            src.loop = true;
+            var node = src;
+            var chain = function () {
+                return bands.map(function (b) {
+                    var f = ctx.createBiquadFilter();
+                    f.type = 'peaking';
+                    f.frequency.value = b.freq;
+                    f.gain.value = 0;
+                    f.Q.value = WIDE_Q;
+                    node.connect(f);
+                    node = f;
+                    return f;
                 });
+            };
+            var pf = chain();   // hidden problem
+            var uf = chain();   // your EQ, after the problem (like an insert)
+            var comp = ctx.createGain();
+            var out = ctx.createGain();
+            node.connect(comp); comp.connect(out); out.connect(masterBus);
+            var ctxGain = ctx.createGain();
+            ctxGain.gain.value = 0;
+            ctxGain.connect(masterBus);
+            var ctxSrcs = [];
+            if (corr.tracks.length > 1) {
+                corr.tracks.forEach(function (t, i) {
+                    if (i === corr.trackIndex) return;
+                    var s = ctx.createBufferSource();
+                    s.buffer = t.buffer;
+                    s.loop = true;
+                    s.connect(ctxGain);
+                    ctxSrcs.push(s);
+                });
+            } else {
+                var ns = ctx.createBufferSource();
+                ns.buffer = pinkBuffer;
+                ns.loop = true;
+                var nTrim = ctx.createGain();
+                nTrim.gain.value = 0.5;
+                ns.connect(nTrim); nTrim.connect(ctxGain);
+                ctxSrcs.push(ns);
             }
+            var t0 = ctx.currentTime + 0.03;
+            src.start(t0);
+            ctxSrcs.forEach(function (s) { s.start(t0); });
+            corr.g = { src: src, pf: pf, uf: uf, comp: comp, out: out, ctxGain: ctxGain, ctxSrcs: ctxSrcs, startedAt: t0, buffer: buf };
+            applyCorrState(true);
+            updateContextLevel();
+        }
 
-            document.getElementById('btn-few').classList.add('bg-emerald-500', 'text-white');
+        function applyCorrState(immediate) {
+            syncListenButtons();
+            if (!corr.g) return;
+            var t = audioContext.currentTime;
+            var s = stageGains();
+            var tc = immediate ? 0.001 : 0.015;
+            corr.g.pf.forEach(function (f, i) {
+                f.Q.setValueAtTime(s.probQ[i], t);
+                f.gain.setTargetAtTime(s.prob[i], t, tc);
+            });
+            corr.g.uf.forEach(function (f, i) {
+                f.Q.setValueAtTime(s.userQ[i] || WIDE_Q, t);
+                f.gain.setTargetAtTime(s.user[i] || 0, t, tc);
+            });
+            scheduleLoudnessMatch();
+        }
 
-            // Initialize the new masking/isolation slider display
-            updateMaskingDisplay();
+        function updateContextLevel() {
+            var v = parseFloat(document.getElementById('corrective-masking').value) || 0;
+            document.getElementById('corrective-masking-val').textContent = Math.round(v * 100) + '%';
+            if (corr.g) corr.g.ctxGain.gain.setTargetAtTime(v * 0.9, audioContext.currentTime, 0.02);
+        }
 
-            // Load persisted stats
-            loadStats();
-            document.getElementById('id-streak').textContent = idStreak;
-            if (idTotal > 0) {
-                const acc = Math.round((idCorrect / idTotal) * 100);
-                document.getElementById('id-accuracy').textContent = acc + '%';
+        /* Loudness match: render a short excerpt clean and with the current EQ
+           state (K-weighted), then trim the EQ'd path to the clean loudness.
+           Keeps "louder sounds better" out of the A/B. */
+        function scheduleLoudnessMatch() {
+            clearTimeout(corr.matchTimer);
+            if (!corr.g) return;
+            var token = ++corr.matchToken;
+            corr.matchTimer = setTimeout(function () { runLoudnessMatch(token); }, 90);
+        }
+
+        function runLoudnessMatch(token) {
+            var g = corr.g;
+            if (!g || typeof OfflineAudioContext === 'undefined') return;
+            var s = stageGains();
+            var nonzero = function (arr) { return arr.some(function (x) { return Math.abs(x) > 0.01; }); };
+            if (!nonzero(s.prob) && !nonzero(s.user)) {
+                g.comp.gain.setTargetAtTime(1, audioContext.currentTime, 0.03);
+                return;
             }
-            if (bestMatchAccuracy > 0) {
-                const bestEl = document.getElementById('best-match');
-                if (bestEl) bestEl.textContent = `Personal best: ${bestMatchAccuracy}%`;
-            }
+            var buf = g.buffer;
+            var dur = Math.min(4, buf.duration);
+            var pos = ((audioContext.currentTime - g.startedAt) % buf.duration + buf.duration) % buf.duration;
+            var start = Math.min(pos, Math.max(0, buf.duration - dur));
+            var bands = corrBands();
+            var render = function (withEq) {
+                var sr = buf.sampleRate;
+                var off = new OfflineAudioContext(1, Math.max(256, Math.floor(sr * dur)), sr);
+                var src = off.createBufferSource();
+                src.buffer = buf;
+                var node = src;
+                var add = function (gains, qs) {
+                    bands.forEach(function (b, i) {
+                        if (Math.abs(gains[i] || 0) < 0.01) return;
+                        var f = off.createBiquadFilter();
+                        f.type = 'peaking'; f.frequency.value = b.freq; f.gain.value = gains[i]; f.Q.value = qs[i] || WIDE_Q;
+                        node.connect(f); node = f;
+                    });
+                };
+                if (withEq) { add(s.prob, s.probQ); add(s.user, s.userQ); }
+                var hs = off.createBiquadFilter(); hs.type = 'highshelf'; hs.frequency.value = 1682; hs.gain.value = 4;
+                var hp = off.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 38; hp.Q.value = 0.5;
+                node.connect(hs); hs.connect(hp); hp.connect(off.destination);
+                src.start(0, start, dur);
+                return off.startRendering().then(function (o) {
+                    var x = o.getChannelData(0), sum = 0;
+                    for (var i = 0; i < x.length; i++) sum += x[i] * x[i];
+                    return Math.sqrt(sum / Math.max(1, x.length));
+                });
+            };
+            Promise.all([render(false), render(true)]).then(function (r) {
+                if (token !== corr.matchToken || corr.g !== g) return;
+                if (!(r[0] > 1e-7) || !(r[1] > 1e-7)) return;
+                g.comp.gain.setTargetAtTime(clamp(r[0] / r[1], 0.3, 3), audioContext.currentTime, 0.03);
+            }).catch(function () { /* keep previous trim */ });
+        }
 
-            // Initialize corrective UI (empty until audio is loaded)
-            correctiveMode = 'correct';
-            updateModeButtons();
+        function setListen(which) {
+            if (!currentBuffer()) { corrMessage('Load an audio file first.'); return; }
+            if (which === 'problem' && !corr.problem) { corrMessage('Press New Problem first.'); return; }
+            corr.listen = which;
+            if (!corr.g) buildCorrGraph();
+            else applyCorrState(false);
+        }
+
+        function syncListenButtons() {
+            document.querySelectorAll('.corr-listen').forEach(function (b) {
+                var on = !!corr.g && b.getAttribute('data-listen') === corr.listen;
+                b.classList.toggle('is-listening', on);
+                b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+        }
+
+        function corrMessage(text) {
+            var el = document.getElementById('corrective-result');
+            el.classList.remove('hidden');
+            el.innerHTML = '<div class="text-sm text-amber-300">' + escapeHtml(text) + '</div>';
+        }
+
+        function handleFileSelect(files) {
+            initAudio();
+            var list = Array.prototype.slice.call(files || []);
+            if (!list.length) return;
+            stopCorrective();
+            document.getElementById('track-list').innerHTML = '<div class="text-xs text-zinc-500">Decoding…</div>';
+            var loaded = [], failed = [];
+            Promise.all(list.map(function (file) {
+                return file.arrayBuffer().then(function (ab) {
+                    return audioContext.decodeAudioData(ab);
+                }).then(function (buffer) {
+                    loaded.push({ name: file.name, buffer: buffer });
+                }).catch(function () { failed.push(file.name); });
+            })).then(function () {
+                loaded.sort(function (a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true }); });
+                corr.tracks = loaded;
+                corr.trackIndex = loaded.length ? 0 : -1;
+                updateTrackUI(failed);
+                if (loaded.length) generateProblem(true);
+            });
+        }
+
+        function updateTrackUI(failed) {
+            var container = document.getElementById('track-list');
+            container.innerHTML = '';
+            if (!corr.tracks.length) {
+                container.innerHTML = '<div class="text-xs text-zinc-400 text-center py-2 border border-dashed border-zinc-700 rounded">Drag &amp; drop audio files here<br>or use the “Load audio” button above</div>';
+            }
+            corr.tracks.forEach(function (track, i) {
+                var row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'w-full flex items-center justify-between p-2 rounded-xl text-sm text-left ' + (i === corr.trackIndex ? 'bg-emerald-900/40' : 'hover:bg-zinc-800');
+                row.innerHTML = '<span class="flex items-center gap-x-2 min-w-0"><i class="fa-solid fa-music text-emerald-400"></i><span class="truncate"></span></span>' +
+                    '<span class="text-[10px] text-zinc-500">' + (i === corr.trackIndex ? 'EQing' : 'use') + '</span>';
+                row.querySelector('.truncate').textContent = track.name; // never raw HTML
+                row.addEventListener('click', function () { selectTrack(i); });
+                container.appendChild(row);
+            });
+            (failed || []).forEach(function (name) {
+                var d = document.createElement('div');
+                d.className = 'text-xs text-red-400';
+                d.textContent = 'Failed to load ' + name + '.';
+                container.appendChild(d);
+            });
+        }
+
+        function selectTrack(i) {
+            if (i === corr.trackIndex) return;
+            corr.trackIndex = i;
+            updateTrackUI();
+            generateProblem(true);
+        }
+
+        function generateProblem(rebuild) {
+            if (!currentBuffer()) { corrMessage('Load an audio track first.'); return; }
+            var bands = corrBands();
+            var rules = corrRules();
+            var pick = function (arr) { return arr[Math.floor(Math.random() * arr.length)]; };
+            var mag = pick(rules.mags);
+            corr.problem = {
+                idx: Math.floor(Math.random() * bands.length),
+                gain: pick(rules.signs) === 'boost' ? mag : -mag,
+                q: pick(rules.qTypes) === 'narrow' ? NARROW_Q : WIDE_Q
+            };
+            resetUser();
+            setCorrMode('correct', true);
+            corr.listen = 'problem';
             updateLevelUI();
             updateGameInstructions();
             createCorrectiveSliders();
-            const trackListEl = document.getElementById('track-list');
-            trackListEl.innerHTML = '<div class="text-xs text-zinc-400 text-center py-2 border border-dashed border-zinc-700 rounded">Drag &amp; drop audio files (WAV recommended) here<br>or use the "Load WAV(s)" button above</div>';
-
-            // Also draw initial curve
-            setTimeout(drawEQCurve, 50);
-
-            // Make sure level display is correct from the start
-            updateLevelUI();
-
-            // Drag & drop support
-            trackListEl.ondragover = (e) => { e.preventDefault(); trackListEl.classList.add('bg-zinc-800'); };
-            trackListEl.ondragleave = () => trackListEl.classList.remove('bg-zinc-800');
-            trackListEl.ondrop = (e) => {
-                e.preventDefault();
-                trackListEl.classList.remove('bg-zinc-800');
-                handleFileSelect(e.dataTransfer.files);
-            };
-
-            console.log('%c[EQ Ear Trainer] Real audio + corrective EQ mode active', 'color:#c9a36e');
+            document.getElementById('corrective-result').classList.add('hidden');
+            if (rebuild || !corr.g || corr.g.buffer !== currentBuffer()) buildCorrGraph();
+            else applyCorrState(false);
         }
 
-        window.onload = initializeApp;
+        function setCorrMode(mode, silent) {
+            if (mode !== corr.mode) {
+                // Flip faders so they represent the equivalent move in the other mode.
+                corr.userGains = corr.userGains.map(function (g) { return -g; });
+            } else if (!silent) {
+                return;
+            }
+            corr.mode = mode;
+            var label = document.getElementById('mode-label');
+            var panel = document.getElementById('corrective-panel');
+            document.getElementById('mode-toggle').checked = mode === 'match';
+            label.textContent = mode === 'correct' ? 'Correct (fix affected)' : 'Match (apply to clean)';
+            label.className = 'text-sm font-medium ' + (mode === 'correct' ? 'text-emerald-400' : 'text-violet-400');
+            if (panel) panel.style.borderColor = mode === 'correct' ? '#c9a36e' : '#9a7b5a';
+            document.getElementById('match-indicator').classList.toggle('hidden', mode !== 'match');
+            document.getElementById('fix-indicator').classList.toggle('hidden', mode !== 'correct');
+            if (silent) return;
+            updateGameInstructions();
+            createCorrectiveSliders();
+            corr.listen = 'user';
+            if (corr.g) applyCorrState(false);
+        }
+
+        function updateLevelUI() {
+            var rules = corrRules();
+            document.getElementById('level-display').textContent = stats.corrLevel + '/6';
+            var d = rules.mags.join('/') + ' dB ' + (rules.signs.length === 1 ? rules.signs[0] + ' only, ' : 'boost/cut, ') +
+                (rules.qTypes.length === 1 ? rules.qTypes[0] + ' Q' : 'any Q');
+            if (stats.corrUnlocked > stats.corrLevel) d += ' · level ' + (stats.corrLevel + 1) + ' unlocked';
+            document.getElementById('level-desc').textContent = d;
+        }
+
+        function updateGameInstructions() {
+            var rules = corrRules();
+            var mag = rules.mags.join(' or ');
+            var sign = rules.signs.length > 1 ? 'boost or cut' : rules.signs[0];
+            var q = rules.qTypes.length > 1 ? 'narrow or wide' : rules.qTypes[0];
+            document.getElementById('game-instructions').innerHTML = corr.mode === 'correct'
+                ? '<strong>Level ' + stats.corrLevel + ' — Correct (fix) mode</strong><br>The track has a hidden <strong>' + mag + ' dB ' + q + ' ' + sign + '</strong> on one band. Your EQ comes after it.<br><br><b>Goal:</b> find the band and apply the opposite gain with the same width, until “Your EQ” sounds identical to “Clean”. The wrong width leaves an audible residue.'
+                : '<strong>Level ' + stats.corrLevel + ' — Match mode</strong><br>“Problem Version” has a hidden <strong>' + mag + ' dB ' + q + ' ' + sign + '</strong> on one band.<br><br><b>Goal:</b> recreate that move on the clean track so “Your EQ” sounds the same as the problem version.';
+        }
+
+        function changeLevel(delta) {
+            var next = stats.corrLevel + delta;
+            if (next < 1) return;
+            if (next > 6) { corrMessage('Level 6 is the top level.'); return; }
+            if (next > stats.corrUnlocked) { corrMessage('Score 80+ on level ' + stats.corrLevel + ' to unlock level ' + next + '.'); return; }
+            stats.corrLevel = next;
+            saveStats();
+            updateLevelUI();
+            updateGameInstructions();
+            if (currentBuffer()) generateProblem(false);
+            else { resetUser(); createCorrectiveSliders(); }
+        }
+
+        function setCorrSet(setId) {
+            if (!BAND_SETS[setId] || setId === corr.setId) return;
+            corr.setId = setId;
+            document.querySelectorAll('#corr-set-row [data-set]').forEach(function (b) {
+                b.classList.toggle('is-active', b.getAttribute('data-set') === setId);
+            });
+            corr.problem = null;
+            resetUser();
+            if (currentBuffer()) generateProblem(true); // one filter per band, so rebuild the graph
+            else createCorrectiveSliders();
+        }
+
+        function submitCorrection() {
+            var p = corr.problem;
+            if (!p) { corrMessage('Load audio and press New Problem first.'); return; }
+            var target = corr.mode === 'correct' ? -p.gain : p.gain;
+            var userG = corr.userGains[p.idx] || 0;
+            var userQ = corr.userQs[p.idx] || WIDE_Q;
+            var gainErr = Math.abs(userG - target);
+            var qWrong = Math.abs(userQ - p.q) > 0.5;
+            var stray = 0;
+            corr.userGains.forEach(function (g, i) { if (i !== p.idx) stray += Math.abs(g); });
+            var score = Math.round(clamp(100 - gainErr * 12 - (qWrong ? 25 : 0) - stray * 5, 0, 100));
+            if (score > stats.bestMatchAccuracy) stats.bestMatchAccuracy = score;
+            var unlockedNow = false;
+            if (score >= 80 && stats.corrLevel < 6 && stats.corrLevel + 1 > stats.corrUnlocked) {
+                stats.corrUnlocked = stats.corrLevel + 1;
+                unlockedNow = true;
+            }
+            saveStats();
+            updateLevelUI();
+            document.getElementById('best-match').textContent = 'Personal best: ' + stats.bestMatchAccuracy + '%';
+            var band = corrBands()[p.idx];
+            var qName = function (q) { return q > 3 ? 'narrow' : 'wide'; };
+            var el = document.getElementById('corrective-result');
+            el.classList.remove('hidden');
+            el.innerHTML =
+                '<div class="text-5xl font-display font-semibold text-emerald-400">' + score + '</div>' +
+                '<div class="text-sm text-zinc-400">Correction accuracy (' + corr.mode + ' mode)</div>' +
+                '<div class="text-xs mt-1">Hidden problem: <strong>' + fmtDb(p.gain) + ' dB ' + qName(p.q) + '</strong> at <strong>' + escapeHtml(band.name) + '</strong></div>' +
+                '<div class="text-xs mt-1 text-zinc-300">Target on that band: <strong>' + fmtDb(target) + ' dB, ' + qName(p.q) + '</strong> · you set ' + fmtDb(userG) + ' dB, ' + qName(userQ) +
+                (stray ? ' · other bands moved ' + stray + ' dB in total' : '') + '</div>' +
+                (unlockedNow ? '<div class="text-xs mt-1 text-emerald-300">Level ' + stats.corrUnlocked + ' unlocked — press Level +.</div>' : '') +
+                '<button type="button" id="corr-show-perfect" class="mt-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded-2xl">Show perfect correction (set sliders &amp; play)</button>';
+            document.getElementById('corr-show-perfect').addEventListener('click', applyPerfectCorrection);
+        }
+
+        function applyPerfectCorrection() {
+            var p = corr.problem;
+            if (!p) return;
+            resetUser();
+            corr.userGains[p.idx] = corr.mode === 'correct' ? -p.gain : p.gain;
+            corr.userQs[p.idx] = p.q;
+            createCorrectiveSliders();
+            setListen('user');
+        }
+
+        function onUserEqChanged() {
+            drawEQCurve();
+            corr.listen = 'user';
+            if (corr.g) applyCorrState(false);
+            else if (currentBuffer()) buildCorrGraph();
+        }
+
+        function createCorrectiveSliders() {
+            var container = document.getElementById('sliders');
+            container.innerHTML = '';
+            var bands = corrBands();
+            var allowed = allowedValues();
+            if (corr.userGains.length !== bands.length) resetUser();
+            bands.forEach(function (band, i) {
+                corr.userGains[i] = nearest(allowed.gains, corr.userGains[i]);
+                corr.userQs[i] = nearest(allowed.qs, corr.userQs[i]);
+                var single = allowed.qs.length === 1;
+                var qBtn = function (q, name) {
+                    return '<button type="button" data-q="' + q + '" class="et-seg-btn' + (corr.userQs[i] === q ? ' is-active' : '') +
+                        (allowed.qs.indexOf(q) < 0 ? ' is-disabled' : '') + '">' + name + '</button>';
+                };
+                var row = document.createElement('div');
+                row.className = 'space-y-1';
+                row.innerHTML =
+                    '<div class="flex items-center justify-between text-xs">' +
+                        '<div class="flex items-center gap-x-2">' +
+                            '<div class="w-6 h-5 rounded flex-shrink-0 flex items-center justify-center text-[9px] font-mono" style="background:' + band.color + '22; color:' + band.color + ';">' + escapeHtml(badgeHz(band.freq)) + '</div>' +
+                            '<div class="font-medium" style="color:' + band.color + ';">' + escapeHtml(band.name) + '</div>' +
+                        '</div>' +
+                        '<div class="font-mono text-emerald-400" data-gain-val>' + fmtDb(corr.userGains[i]) + ' dB</div>' +
+                    '</div>' +
+                    '<div class="flex items-center gap-x-2">' +
+                        '<input type="range" data-gain min="' + Math.min.apply(null, allowed.gains) + '" max="' + Math.max.apply(null, allowed.gains) + '" step="3" value="' + corr.userGains[i] + '" class="flex-1 accent-emerald-500" aria-label="' + escapeHtml(band.name) + ' gain">' +
+                        '<div class="w-9 text-[10px] text-right text-zinc-400">Gain</div>' +
+                    '</div>' +
+                    '<div class="flex items-center gap-x-2 mt-1">' +
+                        '<div class="et-seg et-seg-sm" role="group" aria-label="' + escapeHtml(band.name) + ' width">' + qBtn(WIDE_Q, 'wide') + qBtn(NARROW_Q, 'narrow') + '</div>' +
+                        '<div class="text-[10px] text-zinc-500">' + (single ? 'this level uses ' + (allowed.qs[0] === NARROW_Q ? 'narrow' : 'wide') + ' only' : 'Q ' + WIDE_Q + ' / ' + NARROW_Q) + '</div>' +
+                    '</div>';
+                var slider = row.querySelector('[data-gain]');
+                slider.addEventListener('input', function () {
+                    var v = nearest(allowedValues().gains, parseFloat(slider.value));
+                    slider.value = v;
+                    if (v === corr.userGains[i]) return;
+                    corr.userGains[i] = v;
+                    row.querySelector('[data-gain-val]').textContent = fmtDb(v) + ' dB';
+                    onUserEqChanged();
+                });
+                row.querySelectorAll('[data-q]').forEach(function (b) {
+                    b.addEventListener('click', function () {
+                        var q = parseFloat(b.getAttribute('data-q'));
+                        if (allowedValues().qs.indexOf(q) < 0) return;
+                        corr.userQs[i] = q;
+                        row.querySelectorAll('[data-q]').forEach(function (o) { o.classList.toggle('is-active', o === b); });
+                        onUserEqChanged();
+                    });
+                });
+                container.appendChild(row);
+            });
+            drawEQCurve();
+        }
+
+        /* Exact RBJ peaking magnitude (the maths BiquadFilterNode uses). */
+        function peakingDb(f, f0, gainDb, q, sr) {
+            if (Math.abs(gainDb) < 0.01) return 0;
+            var A = Math.pow(10, gainDb / 40), w0 = 2 * Math.PI * f0 / sr, alpha = Math.sin(w0) / (2 * q);
+            var b0 = 1 + alpha * A, b1 = -2 * Math.cos(w0), b2 = 1 - alpha * A;
+            var a0 = 1 + alpha / A, a1 = b1, a2 = 1 - alpha / A;
+            var w = 2 * Math.PI * f / sr, c1 = Math.cos(w), s1 = Math.sin(w), c2 = Math.cos(2 * w), s2 = Math.sin(2 * w);
+            var nr = b0 + b1 * c1 + b2 * c2, ni = -(b1 * s1 + b2 * s2);
+            var dr = a0 + a1 * c1 + a2 * c2, di = -(a1 * s1 + a2 * s2);
+            return 10 * Math.log10((nr * nr + ni * ni) / (dr * dr + di * di));
+        }
+
+        function drawEQCurve() {
+            var canvas = document.getElementById('eq-curve');
+            if (!canvas) return;
+            var ctx = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+            var lmin = Math.log10(20), lmax = Math.log10(20000);
+            var xOf = function (f) { return (Math.log10(f) - lmin) / (lmax - lmin) * w; };
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#27272a';
+            [50, 100, 200, 500, 1000, 2000, 5000, 10000].forEach(function (f) {
+                ctx.beginPath(); ctx.moveTo(xOf(f), 0); ctx.lineTo(xOf(f), h); ctx.stroke();
+            });
+            [-6, 0, 6].forEach(function (db) {
+                var y = h / 2 - (db / 12) * (h / 2);
+                ctx.strokeStyle = db === 0 ? '#3f3f46' : '#27272a';
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+            });
+            var sr = audioContext ? audioContext.sampleRate : 48000;
+            var bands = corrBands();
+            ctx.strokeStyle = '#c9a36e';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (var x = 0; x <= w; x++) {
+                var f = Math.pow(10, lmin + (x / w) * (lmax - lmin));
+                var total = 0;
+                for (var i = 0; i < bands.length; i++) total += peakingDb(f, bands[i].freq, corr.userGains[i] || 0, corr.userQs[i] || WIDE_Q, sr);
+                var y = h / 2 - (clamp(total, -12, 12) / 12) * (h / 2);
+                if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            ctx.fillStyle = '#71717a';
+            ctx.font = '9px sans-serif';
+            ctx.fillText('20', 3, h - 4);
+            ctx.fillText('100', xOf(100) - 8, h - 4);
+            ctx.fillText('1k', xOf(1000) - 5, h - 4);
+            ctx.fillText('10k', xOf(10000) - 8, h - 4);
+            ctx.fillText('+12 dB', 4, 11);
+            ctx.fillText('-12 dB', 4, h - 14);
+        }
+
+        function initCorrectiveDrill() {
+            var fileInput = document.getElementById('audio-file-input');
+            document.getElementById('corr-load-btn').addEventListener('click', function () { fileInput.click(); });
+            fileInput.addEventListener('change', function () { handleFileSelect(fileInput.files); fileInput.value = ''; });
+            document.getElementById('corr-new-btn').addEventListener('click', function () { generateProblem(false); });
+            document.getElementById('corr-prev-level').addEventListener('click', function () { changeLevel(-1); });
+            document.getElementById('corr-next-level').addEventListener('click', function () { changeLevel(1); });
+            document.querySelectorAll('.corr-listen').forEach(function (b) {
+                b.addEventListener('click', function () { setListen(b.getAttribute('data-listen')); });
+            });
+            document.getElementById('corr-stop').addEventListener('click', stopCorrective);
+            document.getElementById('corr-submit').addEventListener('click', submitCorrection);
+            document.getElementById('mode-toggle').addEventListener('change', function (e) {
+                setCorrMode(e.target.checked ? 'match' : 'correct');
+            });
+            document.getElementById('corrective-masking').addEventListener('input', updateContextLevel);
+            document.querySelectorAll('#corr-set-row [data-set]').forEach(function (b) {
+                b.addEventListener('click', function () { setCorrSet(b.getAttribute('data-set')); });
+            });
+            var list = document.getElementById('track-list');
+            list.addEventListener('dragover', function (e) { e.preventDefault(); list.classList.add('bg-zinc-800'); });
+            list.addEventListener('dragleave', function () { list.classList.remove('bg-zinc-800'); });
+            list.addEventListener('drop', function (e) {
+                e.preventDefault();
+                list.classList.remove('bg-zinc-800');
+                handleFileSelect(e.dataTransfer.files);
+            });
+            if (stats.bestMatchAccuracy > 0) document.getElementById('best-match').textContent = 'Personal best: ' + stats.bestMatchAccuracy + '%';
+            setCorrMode('correct', true);
+            resetUser();
+            updateLevelUI();
+            updateGameInstructions();
+            createCorrectiveSliders();
+            updateTrackUI();
+        }
+
+        /* ==================== TABS + KEYBOARD ==================== */
+        /* Only the visible drill owns the audio and the keyboard. */
+        var DRILLS = ['ride', 'id', 'corrective'];
+        var HASH = { ride: '#ride', id: '#frequency-id', corrective: '#corrective' };
+        var activeDrill = 'ride';
+
+        function stopDrillAudio(drill) {
+            if (drill === 'ride') { if (window.EQRide) window.EQRide.deactivate(); }
+            else if (drill === 'id') { resetIdRound(); syncIdControls(); }
+            else if (drill === 'corrective') { stopCorrective(); }
+        }
+
+        function switchDrill(drill, opts) {
+            if (DRILLS.indexOf(drill) < 0) drill = 'ride';
+            if (drill !== activeDrill) stopDrillAudio(activeDrill);
+            activeDrill = drill;
+            DRILLS.forEach(function (d) {
+                var tab = document.getElementById('tab-' + d);
+                document.getElementById('drill-' + d).classList.toggle('hidden', d !== drill);
+                tab.classList.toggle('is-active', d === drill);
+                tab.setAttribute('aria-selected', d === drill ? 'true' : 'false');
+                tab.tabIndex = d === drill ? 0 : -1;
+            });
+            if (!(opts && opts.fromHash) && history.replaceState) history.replaceState(null, '', HASH[drill]);
+            if (drill === 'id' && audioContext) ensureIdBuffers(id.setId);
+        }
+
+        function drillFromHash() {
+            var h = (location.hash || '').toLowerCase();
+            for (var k in HASH) { if (HASH[k] === h) return k; }
+            return 'ride';
+        }
+
+        function isTyping(e) {
+            var t = e.target, tag = t && t.tagName;
+            return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!(t && t.isContentEditable);
+        }
+
+        function tourOpen() {
+            var el = document.getElementById('ride-tour');
+            return !!(el && !el.classList.contains('hidden'));
+        }
+
+        function setupKeyboard() {
+            document.addEventListener('keydown', function (e) {
+                if (e.metaKey || e.ctrlKey || e.altKey) return;
+                if (tourOpen() || isTyping(e)) return;
+                if (activeDrill === 'ride') { if (window.EQRide) window.EQRide.handleKey(e); }
+                else if (activeDrill === 'id') idHandleKey(e);
+            });
+            document.addEventListener('keyup', function (e) {
+                if (isTyping(e)) return;
+                // Space is a drill shortcut on Ride / Frequency ID: stop a focused
+                // button from also "clicking" when Space is released.
+                if ((e.key === ' ' || e.key === 'Spacebar') && activeDrill !== 'corrective') e.preventDefault();
+                if (activeDrill === 'ride' && window.EQRide) window.EQRide.handleKeyUp(e);
+            });
+        }
+
+        function setupTabs() {
+            DRILLS.forEach(function (d) {
+                document.getElementById('tab-' + d).addEventListener('click', function () { switchDrill(d); });
+            });
+            document.querySelector('.et-tabs').addEventListener('keydown', function (e) {
+                if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                e.preventDefault();
+                var i = DRILLS.indexOf(activeDrill) + (e.key === 'ArrowRight' ? 1 : -1);
+                var next = DRILLS[(i + DRILLS.length) % DRILLS.length];
+                switchDrill(next);
+                document.getElementById('tab-' + next).focus();
+            });
+            window.addEventListener('hashchange', function () { switchDrill(drillFromHash(), { fromHash: true }); });
+        }
+
+        /* ==================== BOOT ==================== */
+        function initializeApp() {
+            loadStats();
+            initIdDrill();
+            initCorrectiveDrill();
+            setupTabs();
+            setupKeyboard();
+            if (window.EQRide) {
+                window.EQRide.init({
+                    getContext: function () { return initAudio(); },
+                    getOutput: function () { initAudio(); return masterBus; },
+                    stopOtherAudio: function () { stopIdAudio(); stopCorrective(); },
+                    getBandSets: function () { return BAND_SETS; }
+                });
+            }
+            switchDrill(drillFromHash(), { fromHash: true });
+        }
+
+        window.addEventListener('DOMContentLoaded', initializeApp);
+
+        /* Read-only hooks for automated checks. */
+        window.EQTrainerDebug = {
+            initAudio: initAudio,
+            ensureIdBuffers: ensureIdBuffers,
+            idBufferCache: idBufferCache,
+            getIdNoiseBed: function () { return idNoiseBed; },
+            bandSets: BAND_SETS,
+            corr: corr,
+            id: id,
+            getActiveDrill: function () { return activeDrill; },
+            getStageGains: stageGains
+        };
+    })();
     </script>
     <script src="ride.js"></script>
 

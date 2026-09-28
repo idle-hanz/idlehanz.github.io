@@ -4,6 +4,16 @@
     'use strict';
 
     var STORAGE_KEY = 'eqEarTrainerRideStats';
+    var SET_KEY = 'eqEarTrainerRideSet';
+    var STATS_VERSION = 2;
+    var LAYOUTS = ['starter', 'seven', 'octaves', 'thirds'];
+    /* Staircase for Auto difficulty: 2 right in a row -> smaller change,
+       1 wrong -> bigger (2-down/1-up converges on ~71% correct). m is the
+       boost size in dB; cuts are played twice as deep (cuts are harder). */
+    var STAIR_START = 6;
+    var STAIR_MIN = 0.5;
+    var STAIR_MAX = 12;
+    var STAIR_STEP = 1.26;
     var IDB_NAME = 'eq-ear-trainer-ride';
     var AUDIO_EXT = /\.(mp3|wav|wave|flac|m4a|aac|ogg|opus|webm|aiff|aif)$/i;
     var SKIP_DIRS = /^(node_modules|__pycache__|\.git|\.svn|desktop\.ini)$/i;
@@ -207,7 +217,7 @@
         });
     }
 
-    function RideEngine(ctx) {
+    function RideEngine(ctx, output) {
         this.ctx = ctx;
         this.input = ctx.createGain();
         this.eq = ctx.createBiquadFilter();
@@ -228,7 +238,7 @@
         this.eq.connect(this.comp);
         this.comp.connect(this.wet);
         this.wet.connect(this.gate);
-        this.gate.connect(ctx.destination);
+        this.gate.connect(output || ctx.destination);
         this.analyser = ctx.createAnalyser();
         this.analyser.fftSize = 2048;
         this.analyser.smoothingTimeConstant = 0.35;
@@ -461,9 +471,23 @@
             }
             if (f >= lo && f <= hi && v > peak) peak = v;
         }
-        if (!isFinite(peak) || peak < -120) return true;
+        // Silence (or a gap between tracks) is not a place to hide a problem.
+        if (!isFinite(peak) || peak < -120) return false;
         var avg = count ? sum / count : -80;
         return peak > -62 && peak > avg - 3;
+    };
+
+    RideEngine.prototype.isSilent = function () {
+        if (!this.analyser || !this.playing) return true;
+        var n = this.analyser.fftSize;
+        if (!this._td || this._td.length !== n) this._td = new Float32Array(n);
+        this.analyser.getFloatTimeDomainData(this._td);
+        var peak = 0;
+        for (var i = 0; i < n; i++) {
+            var a = Math.abs(this._td[i]);
+            if (a > peak) peak = a;
+        }
+        return peak < 0.0015; // about -56 dBFS
     };
 
     RideEngine.prototype.calibrateCompensation = function (problem) {
@@ -525,17 +549,20 @@
 
     function defaultStats() {
         return {
+            version: STATS_VERSION,
             skill: 'band',
             bandStep: 1,
+            bandAuto: false,
             amountLevel: 'easy',
-            bandMode: 'few',
+            bandMode: 'seven',
             loop: true,
             loopSlice: false,
             gapAB: false,
             streak: 0,
             correct: 0,
             total: 0,
-            perBand: {}
+            perBand: {},
+            stair: {}
         };
     }
 
@@ -553,14 +580,23 @@
                 s.bandStep = 5;
             }
             if (raw.amountLevel === 'easy' || raw.amountLevel === 'hard') s.amountLevel = raw.amountLevel;
-            if (raw.bandMode === 'many' || raw.bandMode === 'few') s.bandMode = raw.bandMode;
+            if (LAYOUTS.indexOf(raw.bandMode) >= 0) s.bandMode = raw.bandMode;
+            else if (raw.bandMode === 'few') s.bandMode = 'seven';
+            else if (raw.bandMode === 'many') s.bandMode = 'octaves';
+            if (typeof raw.bandAuto === 'boolean') s.bandAuto = raw.bandAuto;
             if (typeof raw.loop === 'boolean') s.loop = raw.loop;
             if (typeof raw.loopSlice === 'boolean') s.loopSlice = raw.loopSlice;
             if (typeof raw.gapAB === 'boolean') s.gapAB = raw.gapAB;
             if (typeof raw.streak === 'number') s.streak = raw.streak;
             if (typeof raw.correct === 'number') s.correct = raw.correct;
             if (typeof raw.total === 'number') s.total = raw.total;
-            if (raw.perBand && typeof raw.perBand === 'object') s.perBand = raw.perBand;
+            /* v1 per-band history mixed every layout and difficulty together,
+               so it is dropped; overall streak/accuracy carry over. */
+            if (raw.version === STATS_VERSION) {
+                if (raw.perBand && typeof raw.perBand === 'object') s.perBand = raw.perBand;
+                if (raw.stair && typeof raw.stair === 'object') s.stair = raw.stair;
+            }
+            if (s.skill === 'amount' && s.bandMode === 'thirds') s.bandMode = 'octaves';
             return s;
         } catch (e) {
             return defaultStats();
@@ -570,6 +606,30 @@
     function saveStats(stats) {
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
+        } catch (e) { /* quota */ }
+    }
+
+    function loadSet() {
+        try {
+            var s = JSON.parse(localStorage.getItem(SET_KEY) || 'null');
+            if (!s || typeof s.date !== 'string' || typeof s.done !== 'number') return null;
+            return {
+                date: s.date,
+                done: s.done,
+                hits: typeof s.hits === 'number' ? s.hits : 0,
+                activeMs: typeof s.activeMs === 'number' ? s.activeMs : 0,
+                finished: !!s.finished,
+                log: Array.isArray(s.log) ? s.log.slice(-200) : []
+            };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function saveSet(session) {
+        if (!session) return;
+        try {
+            localStorage.setItem(SET_KEY, JSON.stringify(session));
         } catch (e) { /* quota */ }
     }
 
@@ -649,7 +709,7 @@
     Ride.prototype._ensureEngine = function () {
         var ctx = this._ctx();
         if (!this.engine || this.engine.ctx !== ctx) {
-            this.engine = new RideEngine(ctx);
+            this.engine = new RideEngine(ctx, this.hooks.getOutput ? this.hooks.getOutput() : null);
             var self = this;
             this.engine.onStreamEnded = function () {
                 self._onCaptureEnded();
@@ -747,8 +807,9 @@
         byId('ride-skill-amount').addEventListener('click', function () { self._setSkill('amount'); });
         var watchBtn = byId('ride-watch-btn');
         if (watchBtn) watchBtn.addEventListener('click', function () { self.toggleWatch(); });
-        byId('ride-bands-few').addEventListener('click', function () { self._setBandMode('few'); });
-        byId('ride-bands-many').addEventListener('click', function () { self._setBandMode('many'); });
+        document.querySelectorAll('#ride-layout-row [data-layout]').forEach(function (btn) {
+            btn.addEventListener('click', function () { self._setBandMode(btn.getAttribute('data-layout')); });
+        });
 
         this.els.panel.addEventListener('dragover', function (e) {
             e.preventDefault();
@@ -803,6 +864,10 @@
     Ride.prototype._setSkill = function (skill, silent) {
         if (skill !== 'amount') skill = 'band';
         this.stats.skill = skill;
+        if (skill === 'amount' && this.stats.bandMode === 'thirds') {
+            this._setBandMode('octaves', true);
+        }
+        this._syncLayoutUi();
         ['band', 'amount'].forEach(function (s) {
             var btn = document.getElementById('ride-skill-' + s);
             if (btn) btn.classList.toggle('is-active', s === skill);
@@ -831,17 +896,29 @@
             this.els.skillHint.textContent = this.stats.amountLevel === 'hard'
                 ? 'Now: Hard — boost +3 / +1.5, cut −3 / −6'
                 : 'Now: Easy — boost +6 / +3, cut −6 / −12';
+        } else if (this.stats.bandAuto) {
+            this.els.skillHint.textContent = 'Now: Auto — each band adapts on its own (2 right = smaller, 1 wrong = bigger). Boosts and cuts mixed; cuts are twice as deep.';
         } else {
             var rung = BAND_LADDER[(this.stats.bandStep || 1) - 1] || BAND_LADDER[0];
             var group = rung.step <= 2 ? 'Easy' : rung.step <= 4 ? 'Medium' : 'Hard';
-            this.els.skillHint.textContent = 'Now: ' + group + ' · ' + (rung.gain > 0 ? 'boost' : 'cut') + ' ' + rung.label + ' dB';
+            var lo = Infinity, hi = -Infinity;
+            (this.bands || []).forEach(function (b) {
+                var g = Math.abs(scaleDetectability(rung.gain, b.freq));
+                if (g < lo) lo = g;
+                if (g > hi) hi = g;
+            });
+            var sign = rung.gain > 0 ? '+' : '−';
+            var range = isFinite(lo) && hi - lo > 0.05
+                ? ' — actually plays ' + sign + (Math.round(lo * 10) / 10) + ' to ' + sign + (Math.round(hi * 10) / 10) + ' dB, scaled per band for audibility'
+                : '';
+            this.els.skillHint.textContent = 'Now: ' + group + ' · ' + (rung.gain > 0 ? 'boost' : 'cut') + ' ' + rung.label + ' dB' + range;
         }
     };
 
     Ride.prototype._bandDiffBoard = function () {
-        var step = this.stats.bandStep || 1;
+        var step = this.stats.bandAuto ? 0 : (this.stats.bandStep || 1);
         var board = document.createElement('div');
-        board.className = 'ride-diff-board';
+        board.className = 'ride-diff-board has-auto';
         var groups = [
             { name: 'Easy', steps: [BAND_LADDER[0], BAND_LADDER[1]] },
             { name: 'Medium', steps: [BAND_LADDER[2], BAND_LADDER[3]] },
@@ -865,6 +942,20 @@
             });
             board.appendChild(col);
         });
+        var autoCol = document.createElement('div');
+        autoCol.className = 'ride-diff-col';
+        var autoLab = document.createElement('div');
+        autoLab.className = 'ride-diff-col-label';
+        autoLab.textContent = 'Auto';
+        autoCol.appendChild(autoLab);
+        var autoBtn = document.createElement('button');
+        autoBtn.type = 'button';
+        autoBtn.className = 'ride-diff-cell is-auto' + (this.stats.bandAuto ? ' is-active' : '');
+        autoBtn.dataset.level = 'auto';
+        autoBtn.title = 'Adaptive: each band finds your threshold';
+        autoBtn.innerHTML = '<strong>Adaptive</strong><span>per band</span>';
+        autoCol.appendChild(autoBtn);
+        board.appendChild(autoCol);
         return board;
     };
 
@@ -889,11 +980,17 @@
     Ride.prototype._setBandLevel = function (level, silent) {
         if (this.stats.skill === 'amount') {
             this.stats.amountLevel = level === 'hard' ? 'hard' : 'easy';
+        } else if (level === 'auto') {
+            this.stats.bandAuto = true;
         } else {
             var step = parseInt(level, 10);
             if (!(step >= 1 && step <= 6)) step = 1;
             this.stats.bandStep = step;
+            this.stats.bandAuto = false;
         }
+        this.deck = [];
+        this._renderWeakMap();
+        this._renderStats();
         this._syncSkillUi();
         this._renderGuess();
         if (!silent) {
@@ -939,19 +1036,19 @@
         {
             target: '.ride-prompt-row',
             title: 'Your cue',
-            html: 'This line tells you what to do next. Hold <strong>Space</strong> to hear the song clean. Let go to hear the change again. Tap and hold the gold badge for the same thing.'
+            html: 'This line tells you what to do next. Press <strong>Space</strong> to start a ride. Once a change is on, hold <strong>Space</strong> to hear the song clean; let go to hear the change again. Tap and hold the gold badge for the same thing.'
         },
         {
             target: '.ride-setup-row',
             skill: 'band',
             title: 'Two games',
-            html: '<strong>Which band?</strong> Name the part that changed — bass, mids, air. <strong>Band + amount</strong>: one tap for both the band and how much. Start with <strong>7 bands</strong>. Switch to 14 when that feels easy.'
+            html: '<strong>Which band?</strong> Name the part that changed — bass, mids, air. <strong>Band + amount</strong>: one tap for both the band and how much. Start with <strong>4</strong> or <strong>7 bands</strong>, then move to <strong>Octaves</strong>, then <strong>Thirds</strong>. The bell gets narrower as the bands get closer.'
         },
         {
             target: '#ride-level-row',
             skill: 'band',
             title: 'How hard',
-            html: 'Easy is a big boost (<strong>+6 dB</strong> — clearly louder). Next is a bigger cut (<strong>−12</strong>), because cuts are harder to hear. Then it gets smaller. Start on Easy.'
+            html: 'Easy is a big boost (<strong>+6 dB</strong> — clearly louder). Next is a bigger cut (<strong>−12</strong>), because cuts are harder to hear. Then it gets smaller. The exact amount is scaled a little per band so each is equally audible; the line above shows the real range. <strong>Auto</strong> adapts each band to you and tracks your threshold in dB.'
         },
         {
             target: '#ride-guess-buttons',
@@ -968,7 +1065,7 @@
         {
             target: '#ride-progress',
             title: 'Daily set',
-            html: 'A session is <strong>24 problems</strong>. <strong>New set</strong> starts a fresh 24. The chips under the score are your weakness map — red bands come back more often so you get better.'
+            html: 'A session is <strong>24 problems</strong> and survives a page refresh. <strong>New set</strong> starts a fresh 24. The chips under the score are your weakness map for this layout and difficulty — red bands come back more often. In Auto they also show your threshold.'
         },
         {
             target: '#ride-game-btn',
@@ -983,7 +1080,7 @@
         {
             target: '#ride-help-btn',
             title: 'You are ready',
-            html: '<strong>Help</strong> is always here. Two extra drills sit below this card if you want them later. Pick music, Start ride, hold Space, tap what you heard.'
+            html: '<strong>Help</strong> is always here. Two extra drills live in the tabs above. Pick music, Start ride, hold Space, tap what you heard.'
         }
     ];
 
@@ -1115,13 +1212,28 @@
             : 'Watch off. Start ride to play.');
     };
 
+    Ride.prototype._bandSet = function (mode) {
+        var sets = this.hooks.getBandSets();
+        return sets[mode] || sets.seven;
+    };
+
+    Ride.prototype._syncLayoutUi = function () {
+        var mode = this.stats.bandMode;
+        var amount = this.stats.skill === 'amount';
+        document.querySelectorAll('#ride-layout-row [data-layout]').forEach(function (btn) {
+            var id = btn.getAttribute('data-layout');
+            btn.classList.toggle('is-active', id === mode);
+            btn.classList.toggle('is-disabled', amount && id === 'thirds');
+        });
+    };
+
     Ride.prototype._setBandMode = function (mode, silent) {
+        if (LAYOUTS.indexOf(mode) < 0) mode = 'seven';
+        if (mode === 'thirds' && this.stats.skill === 'amount') mode = 'octaves';
         this.stats.bandMode = mode;
-        var fewBtn = document.getElementById('ride-bands-few');
-        var manyBtn = document.getElementById('ride-bands-many');
-        if (fewBtn) fewBtn.classList.toggle('is-active', mode === 'few');
-        if (manyBtn) manyBtn.classList.toggle('is-active', mode === 'many');
-        this.bands = mode === 'many' ? this.hooks.getManyBands().slice() : this.hooks.getFewBands().slice();
+        this._syncLayoutUi();
+        this.bands = this._bandSet(mode).bands.slice();
+        this._syncSkillUi();
         this.deck = [];
         this.lastBandIndex = -1;
         if (this.engine) this.engine.setBands(this.bands);
@@ -1195,6 +1307,8 @@
         return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
     };
 
+    /* The daily set lives in localStorage, keyed by date, so a refresh does
+       not lose progress. The clock only counts time while a ride is on. */
     Ride.prototype._ensureSession = function (forceNew) {
         var today = this._todayKey();
         if (!forceNew && this.session && this.session.date === today) {
@@ -1202,14 +1316,24 @@
             this._startSetClock();
             return;
         }
+        if (!forceNew) {
+            var saved = loadSet();
+            if (saved && saved.date === today) {
+                this.session = saved;
+                this._startSetClock();
+                this._renderSetBar();
+                return;
+            }
+        }
         this.session = {
             date: today,
             done: 0,
             hits: 0,
-            startedAt: Date.now(),
+            activeMs: 0,
             finished: false,
             log: []
         };
+        saveSet(this.session);
         this._hideSetReport();
         this._startSetClock();
         this._renderSetBar();
@@ -1218,7 +1342,19 @@
     Ride.prototype._startSetClock = function () {
         var self = this;
         if (this.setTimer) clearInterval(this.setTimer);
-        this.setTimer = setInterval(function () { self._renderSetBar(); }, 1000);
+        this._lastTick = Date.now();
+        var ticks = 0;
+        this.setTimer = setInterval(function () {
+            var now = Date.now();
+            var ses = self.session;
+            if (ses && !ses.finished && self.gameOn) {
+                ses.activeMs = (ses.activeMs || 0) + Math.min(5000, now - self._lastTick);
+                ticks += 1;
+                if (ticks % 10 === 0) saveSet(ses);
+            }
+            self._lastTick = now;
+            self._renderSetBar();
+        }, 1000);
     };
 
     Ride.prototype._fmtClock = function (ms) {
@@ -1235,8 +1371,9 @@
         if (!ses) return;
         if (prog) prog.textContent = 'Daily set ' + ses.done + ' / ' + SET_TARGET;
         if (clock) {
-            clock.textContent = this._fmtClock(Date.now() - ses.startedAt);
-            clock.classList.toggle('is-long', Date.now() - ses.startedAt > 10 * 60 * 1000);
+            clock.textContent = this._fmtClock(ses.activeMs || 0);
+            clock.title = 'Time spent riding today';
+            clock.classList.toggle('is-long', (ses.activeMs || 0) > 10 * 60 * 1000);
         }
     };
 
@@ -1248,6 +1385,7 @@
     Ride.prototype._endDailySet = function () {
         if (!this.session || this.session.finished) return;
         this.session.finished = true;
+        saveSet(this.session);
         if (this.setTimer) {
             clearInterval(this.setTimer);
             this.setTimer = null;
@@ -1264,7 +1402,9 @@
         if (!el || !body || !this.session) return;
         var ses = this.session;
         var pct = ses.done ? Math.round((ses.hits / ses.done) * 100) : 0;
-        var elapsed = this._fmtClock(Date.now() - ses.startedAt);
+        var elapsed = this._fmtClock(ses.activeMs || 0);
+        var self = this;
+        var auto = this.stats.skill === 'band' && this.stats.bandAuto;
         var lines = ['<div class="ride-set-hero">' + ses.hits + ' / ' + ses.done + ' · ' + pct + '% · ' + elapsed + '</div>'];
         var by = {};
         ses.log.forEach(function (row) {
@@ -1280,10 +1420,11 @@
             var ok = row ? row.hit : 0;
             var rate = n ? row.miss / n : 0;
             var col = n ? (rate > 0.45 ? '#c45c5c' : rate > 0.25 ? '#c9a36e' : '#8fad6e') : '#5a5144';
+            var thr = auto ? self._stairLabel(band.freq) : '';
             lines.push(
                 '<div class="ride-set-row"><span>' + band.name + '</span>' +
                 '<span class="ride-set-bar"><i style="width:' + Math.max(8, (n ? ok / n : 0) * 100) + '%;background:' + col + '"></i></span>' +
-                '<span>' + (n ? ok + '/' + n : '—') + '</span></div>'
+                '<span>' + (n ? ok + '/' + n : '—') + (thr ? ' · ' + thr : '') + '</span></div>'
             );
         });
         lines.push('</div>');
@@ -1295,6 +1436,7 @@
         this._hideSetReport();
         if (keep) {
             this.session.finished = true;
+            saveSet(this.session);
             this.startGame();
             return;
         }
@@ -1359,22 +1501,98 @@
         this._renderWeakMap();
     };
 
+    /* Per-band stats are kept separately for each layout + game + difficulty,
+       e.g. "octaves|band:3|1000", so a -3 dB miss never mixes with +6 dB hits. */
+    Ride.prototype._levelKey = function () {
+        if (this.stats.skill === 'amount') return 'amount:' + (this.stats.amountLevel || 'easy');
+        return this.stats.bandAuto ? 'band:auto' : 'band:' + (this.stats.bandStep || 1);
+    };
+
+    Ride.prototype._statKey = function (freq) {
+        return this.stats.bandMode + '|' + this._levelKey() + '|' + freq;
+    };
+
+    Ride.prototype._bandRow = function (freq) {
+        return this.stats.perBand[this._statKey(freq)] || { hit: 0, miss: 0 };
+    };
+
+    /* ---- Auto difficulty: one staircase per layout + band ---- */
+    Ride.prototype._stair = function (freq) {
+        var layout = this.stats.bandMode;
+        if (!this.stats.stair[layout]) this.stats.stair[layout] = {};
+        var key = String(freq);
+        var st = this.stats.stair[layout][key];
+        if (!st || typeof st.m !== 'number' || !isFinite(st.m)) {
+            st = this.stats.stair[layout][key] = { m: STAIR_START, run: 0, dir: 0, rev: [], n: 0 };
+        }
+        if (!Array.isArray(st.rev)) st.rev = [];
+        return st;
+    };
+
+    Ride.prototype._stairThreshold = function (freq) {
+        var st = this._stair(freq);
+        if (st.rev.length >= 2) {
+            var last = st.rev.slice(-6);
+            return last.reduce(function (a, b) { return a + b; }, 0) / last.length;
+        }
+        return null;
+    };
+
+    Ride.prototype._stairLabel = function (freq) {
+        var t = this._stairThreshold(freq);
+        return t == null ? '' : '≈' + (Math.round(t * 10) / 10) + ' dB';
+    };
+
+    Ride.prototype._stairUpdate = function (freq, ok) {
+        var st = this._stair(freq);
+        st.n = (st.n || 0) + 1;
+        if (ok) {
+            st.run = (st.run || 0) + 1;
+            if (st.run >= 2) {
+                st.run = 0;
+                if (st.dir === 1) st.rev.push(st.m);
+                st.dir = -1;
+                st.m = Math.max(STAIR_MIN, st.m / STAIR_STEP);
+            }
+        } else {
+            st.run = 0;
+            if (st.dir === -1) st.rev.push(st.m);
+            st.dir = 1;
+            st.m = Math.min(STAIR_MAX, st.m * STAIR_STEP);
+        }
+        if (st.rev.length > 12) st.rev = st.rev.slice(-12);
+    };
+
+    Ride.prototype._autoGain = function (freq, sign) {
+        var m = this._stair(freq).m;
+        var g = sign > 0 ? m : -Math.min(14, m * 2);
+        return Math.round(g * 10) / 10;
+    };
+
     Ride.prototype._renderWeakMap = function () {
         var host = document.getElementById('ride-weak-map');
         if (!host) return;
         host.innerHTML = '';
         var self = this;
+        var auto = this.stats.skill === 'band' && this.stats.bandAuto;
         this.bands.forEach(function (band) {
-            var row = self.stats.perBand[String(band.freq)] || { hit: 0, miss: 0 };
+            var row = self._bandRow(band.freq);
             var n = (row.hit || 0) + (row.miss || 0);
             var rate = n ? (row.miss || 0) / n : 0;
             var cell = document.createElement('span');
             cell.className = 'ride-weak-cell';
-            cell.title = band.name + (n ? (' · ' + Math.round((1 - rate) * 100) + '% of ' + n) : ' · no data yet');
+            var thr = auto ? self._stairThreshold(band.freq) : null;
+            cell.title = band.name + (n ? (' · ' + Math.round((1 - rate) * 100) + '% of ' + n) : ' · no data yet') +
+                (auto ? (thr != null ? ' · threshold ≈ ' + (Math.round(thr * 10) / 10) + ' dB boost / ' + (Math.round(thr * 20) / 10) + ' dB cut' : ' · threshold: not enough data yet') : '');
             if (n < 3) cell.style.background = 'rgba(90,81,68,0.45)';
             else if (rate > 0.45) cell.style.background = 'rgba(196,92,92,' + (0.35 + rate * 0.45) + ')';
             else cell.style.background = 'rgba(143,173,110,' + (0.28 + (1 - rate) * 0.4) + ')';
             cell.textContent = band.freq < 1000 ? String(band.freq) : ((band.freq / 1000) + 'k');
+            if (thr != null) {
+                var sm = document.createElement('small');
+                sm.textContent = (Math.round(thr * 10) / 10) + ' dB';
+                cell.appendChild(sm);
+            }
             host.appendChild(cell);
         });
     };
@@ -1382,7 +1600,7 @@
     Ride.prototype._updateABBadge = function () {
         if (!this.els.ab) return;
         if (!this.engine || !this.engine.problem) {
-            this.els.ab.textContent = 'Hold Space = clean';
+            this.els.ab.textContent = 'Space = start · hold = clean';
             this.els.ab.classList.remove('is-clean', 'is-problem');
             return;
         }
@@ -1398,22 +1616,21 @@
     };
 
     Ride.prototype._weakestLabel = function () {
-        var worstKey = null;
+        var worst = null;
         var worstRate = 0;
-        var per = this.stats.perBand;
-        Object.keys(per).forEach(function (k) {
-            var row = per[k];
+        var self = this;
+        this.bands.forEach(function (band) {
+            var row = self._bandRow(band.freq);
             var n = (row.hit || 0) + (row.miss || 0);
             if (n < 3) return;
             var rate = (row.miss || 0) / n;
             if (rate > worstRate) {
                 worstRate = rate;
-                worstKey = k;
+                worst = band;
             }
         });
-        if (!worstKey || worstRate < 0.35) return '';
-        var band = this.bands.find(function (b) { return String(b.freq) === worstKey; });
-        return band ? band.name : worstKey + ' Hz';
+        if (!worst || worstRate < 0.35) return '';
+        return worst.name;
     };
 
     Ride.prototype._fmtGain = function (g) {
@@ -1577,6 +1794,16 @@
         this.setStatus('Paused — the other trainer is using the audio. Press Play to come back.');
     };
 
+    /* Another drill took over (tab switch): stop the game and the music. */
+    Ride.prototype.deactivate = function () {
+        if (this.gameOn) this.stopGame();
+        if (this.engine && this.engine.playing) {
+            this.engine.pause();
+            this._syncPlayBtn();
+            this.setStatus('Paused while you use another drill. Press Play to come back.');
+        }
+    };
+
     Ride.prototype.togglePlay = function () {
         this._ensureEngine();
         if (this.hooks && this.hooks.stopOtherAudio) this.hooks.stopOtherAudio();
@@ -1666,7 +1893,7 @@
         var worstI = -1;
         var worstRate = 0.45;
         for (var i = 0; i < this.bands.length; i++) {
-            var row = this.stats.perBand[String(this.bands[i].freq)] || { hit: 0, miss: 0 };
+            var row = this._bandRow(this.bands[i].freq);
             var n = (row.hit || 0) + (row.miss || 0);
             if (n < 3) continue;
             var rate = (row.miss || 0) / n;
@@ -1700,7 +1927,7 @@
         }
         for (var w = 0; w < n; w++) {
             if (w === weak) continue;
-            var row = this.stats.perBand[String(this.bands[w].freq)] || { hit: 0, miss: 0 };
+            var row = this._bandRow(this.bands[w].freq);
             var nn = (row.hit || 0) + (row.miss || 0);
             if (nn >= 3 && (row.miss || 0) / nn >= 0.4) {
                 deck.splice(1 + Math.floor(Math.random() * deck.length), 0, w);
@@ -1731,18 +1958,20 @@
         return fallback;
     };
 
-    Ride.prototype._shapeForFreq = function (freq, skill) {
-        var q = 1.4;
-        var mag = 8;
-        if (freq <= 80) { q = 1.0; mag = 10; }
-        else if (freq <= 160) { q = 1.1; mag = 9; }
-        else if (freq <= 400) { q = 1.25; mag = 8; }
-        else if (freq <= 1200) { q = 1.4; mag = 8; }
-        else if (freq <= 3000) { q = 1.7; mag = 7; }
-        else if (freq <= 7000) { q = 2.2; mag = 7; }
-        else { q = 2.5; mag = 6; }
-        if (skill === 'direction') mag = Math.max(6, mag - 1);
-        return { q: q, mag: mag };
+    /* Bell width comes from the layout, matched to the spacing between
+       neighbouring bands (4 bands Q 1.0, 7 bands Q 1.2, octaves Q 1.41,
+       thirds Q 4.32), so adjacent answers stay distinguishable. */
+    Ride.prototype._shapeForFreq = function () {
+        var set = this._bandSet(this.stats.bandMode);
+        return { q: set.q || RIDE_Q };
+    };
+
+    /* Gain actually played for a band in the current game/difficulty. */
+    Ride.prototype._gainForBand = function (index, sign) {
+        var band = this.bands[index];
+        if (!band) return 0;
+        if (this.stats.bandAuto) return this._autoGain(band.freq, sign);
+        return scaleDetectability(this._bandLevelGain(), band.freq);
     };
 
     Ride.prototype._bandLevelGain = function () {
@@ -1753,18 +1982,24 @@
     Ride.prototype._applyNewProblem = function () {
         if (!this.gameOn) return;
         this._ensureEngine();
+        if (this.engine.isSilent()) {
+            // Nothing audible (paused, silent intro, gap between tracks): wait.
+            var selfWait = this;
+            this.setStatus('Waiting for sound…');
+            this.after(700, function () { selfWait._applyNewProblem(); });
+            return;
+        }
         var idx = this._pickBandIndex();
         var band = this.bands[idx];
         if (!band) return;
         var skill = this.stats.skill;
-        var shape = this._shapeForFreq(band.freq, skill);
-        var q = shape.q;
+        var q = this._shapeForFreq().q;
         var gain;
         if (skill === 'amount') {
             var choices = this._amountGains();
             gain = choices[Math.floor(Math.random() * choices.length)];
         } else {
-            gain = scaleDetectability(this._bandLevelGain(), band.freq);
+            gain = this._gainForBand(idx, Math.random() < 0.5 ? 1 : -1);
         }
         this._clearHighlights();
         this._hideResult();
@@ -1807,10 +2042,13 @@
             var right = this.els.guess.querySelector('button[data-index="' + this.currentProblem.index + '"]');
             if (right) right.classList.add('is-target');
         }
+        var p = this.currentProblem;
+        // Demo the guess the way it would really have been played on that band.
+        var guessGain = this.stats.bandAuto ? p.gain : this._gainForBand(index, p.gain >= 0 ? 1 : -1);
         this._finishRound(correct, 'band', {
             index: index,
-            gain: this.currentProblem.gain,
-            q: this._shapeForFreq(this.bands[index].freq, 'band').q
+            gain: guessGain,
+            q: this._shapeForFreq().q
         });
     };
 
@@ -1836,7 +2074,7 @@
         this._finishRound(ok, 'amount', {
             index: index,
             gain: gain,
-            q: gBand ? this._shapeForFreq(gBand.freq, 'amount').q : this.currentProblem.q
+            q: gBand ? this._shapeForFreq().q : this.currentProblem.q
         });
     };
 
@@ -1849,10 +2087,12 @@
             this.stats.streak = 0;
         }
         if (this.currentProblem) {
-            var key = String(this.bands[this.currentProblem.index].freq);
+            var freq = this.bands[this.currentProblem.index].freq;
+            var key = this._statKey(freq);
             if (!this.stats.perBand[key]) this.stats.perBand[key] = { hit: 0, miss: 0 };
             if (ok) this.stats.perBand[key].hit += 1;
             else this.stats.perBand[key].miss += 1;
+            if (this.stats.skill === 'band' && this.stats.bandAuto) this._stairUpdate(freq, ok);
         }
         saveStats(this.stats);
         this._renderStats();
@@ -1866,6 +2106,8 @@
                     ? this.bands[this.currentProblem.index].name : '',
                 ok: ok
             });
+            if (this.session.log.length > 200) this.session.log = this.session.log.slice(-200);
+            saveSet(this.session);
             this._renderSetBar();
         }
     };
@@ -1883,7 +2125,7 @@
             index: spec.index,
             freq: band.freq,
             gain: spec.gain,
-            q: spec.q || this._shapeForFreq(band.freq, this.stats.skill).q
+            q: spec.q || this._shapeForFreq().q
         });
         this._updateABBadge();
     };
@@ -1959,37 +2201,13 @@
 
     Ride.prototype._holdClean = function (on) {
         if (!this.engine || !this.engine.problem) {
-            if (on) this._ensurePlayingAndProblem();
+            // No problem yet: start a ride (with its clean listening period);
+            // never skip straight to a problem.
+            if (on && !this.gameOn) this.startGame();
             return;
         }
         this.engine.setABClean(!!on);
         this._updateABBadge();
-    };
-
-    Ride.prototype._ensurePlayingAndProblem = function () {
-        this._ensureEngine();
-        if (this.hooks && this.hooks.stopOtherAudio) this.hooks.stopOtherAudio();
-        this.gameOn = true;
-        this._syncGameBtn();
-        if (this.engine.playing && (this.engine.buffer || this.engine.kind === 'stream')) {
-            this.clearTimers();
-            this._applyNewProblem();
-            return;
-        }
-        if (this.source === 'library' && this.library.length) {
-            this._playCurrent();
-            return;
-        }
-        if (this.engine.buffer) {
-            this.engine.play();
-            this._syncPlayBtn();
-            this.clearTimers();
-            this._applyNewProblem();
-            return;
-        }
-        this._setSource('demo');
-        this.clearTimers();
-        this._applyNewProblem();
     };
 
     Ride.prototype.handleKeyUp = function (e) {
@@ -2002,22 +2220,21 @@
         return true;
     };
 
+    /* Called by the page only while the Ride tab is showing. */
     Ride.prototype.handleKey = function (e) {
         if (e.metaKey || e.ctrlKey || e.altKey) return false;
         var tag = e.target && e.target.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return false;
 
-        var rideHot = this.gameOn || (this.engine && this.engine.playing);
-        if (!rideHot && e.key !== ' ' && e.key !== 'Spacebar') return false;
-
         if (e.key === ' ' || e.key === 'Spacebar') {
             e.preventDefault();
             if (e.repeat) return true;
             if (this.engine && this.engine.problem) {
-                this._holdClean(true);
-            } else {
-                this._ensurePlayingAndProblem();
+                this._holdClean(true);       // hold = hear clean
+            } else if (!this.gameOn) {
+                this.startGame();            // starts with the clean listen
             }
+            // Ride on but between problems: ignore, keep the clean period.
             return true;
         }
         if (e.key === 'n' || e.key === 'N') {
@@ -2026,9 +2243,11 @@
             return true;
         }
         var num = parseInt(e.key, 10);
-        if (!isNaN(num) && num >= 1 && num <= this.bands.length && this.phase === 'problem' && this.stats.skill === 'band') {
+        if (!isNaN(num) && num >= 1 && num <= 9) {
             e.preventDefault();
-            this.guessBand(num - 1);
+            if (num <= this.bands.length && this.gameOn && this.phase === 'problem' && this.stats.skill === 'band') {
+                this.guessBand(num - 1);
+            }
             return true;
         }
         return false;
@@ -2346,6 +2565,7 @@
         handleKey: function (e) { return ride.handleKey(e); },
         handleKeyUp: function (e) { return ride.handleKeyUp(e); },
         suspendForOtherGame: function () { ride.suspendForOtherGame(); },
+        deactivate: function () { ride.deactivate(); },
         isActive: function () { return ride.isActive(); }
     };
 })(window);
