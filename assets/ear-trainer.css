@@ -1125,9 +1125,40 @@ body.ear-trainer-page {
     box-shadow: 0 0 0 2px var(--et-accent-light);
 }
 
-/* ---- Frequency ID audition flash ---- */
-.ear-trainer-page #guess-buttons button.is-audition {
-    border-color: var(--et-accent) !important;
+/* ---- Ride: Frequency ID difficulty = band layout (4 cards) ---- */
+.ear-trainer-page .ride-diff-board.is-amount.is-freq {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 640px) {
+    .ear-trainer-page .ride-diff-board.is-amount.is-freq { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---- Free play (Ride + Corrective) ---- */
+.ear-trainer-page .ride-free-chip.is-active {
+    background: rgba(143, 173, 110, 0.18);
+    border-color: #8fad6e;
+    color: #cfe3b8;
+}
+
+.ear-trainer-page #ride-panel.is-free #ride-guess-buttons button,
+.ear-trainer-page #ride-panel.is-free .ride-pad {
+    border-style: dashed;
+}
+
+.ear-trainer-page .corr-free-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding-top: 0.25rem;
+}
+
+.ear-trainer-page .corr-free-bands {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.4rem;
 }
 
 /* ---- Ride: difficulty board with an Auto column ---- */

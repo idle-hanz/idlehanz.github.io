@@ -26,6 +26,14 @@
     var NARROW_Q = 6;
     var RIDE_Q = 0.85;
     var MAX_LIBRARY = 4000;
+    /* Frequency ID solos one band of the music: two cascaded bandpasses at
+       the layout's Q, then a gain that puts every band at the same
+       K-weighted loudness (half the full mix, i.e. -6 dB). */
+    var SKILLS = ['freq', 'band', 'amount'];
+    var SOLO_TARGET = 0.5;
+    var SOLO_MIN_GAIN = 0.25;   // -12 dB
+    var SOLO_MAX_GAIN = 40;     // +32 dB, for bands the song barely uses
+    var FREQ_LISTEN_MS = 900;
 
     /* Detectability: boosts are easier than cuts (SoundGym; White; narrow-Q
        boosts more audible than equivalent cuts). Pedagogical pairing is ~2:1
@@ -93,7 +101,16 @@
         var src = ctx.createBufferSource();
         src.buffer = buffer;
         var node = src;
-        if (eq && Math.abs(eq.gain) > 0.01) {
+        if (eq && eq.kind === 'solo') {
+            [0, 1].forEach(function () {
+                var bp = ctx.createBiquadFilter();
+                bp.type = 'bandpass';
+                bp.frequency.value = eq.freq;
+                bp.Q.value = eq.q;
+                node.connect(bp);
+                node = bp;
+            });
+        } else if (eq && Math.abs(eq.gain) > 0.01) {
             var p = ctx.createBiquadFilter();
             p.type = 'peaking';
             p.frequency.value = eq.freq;
@@ -239,6 +256,25 @@
         this.comp.connect(this.wet);
         this.wet.connect(this.gate);
         this.gate.connect(output || ctx.destination);
+        // Solo path for Frequency ID: input -> bandpass -> bandpass -> solo.
+        this.bp1 = ctx.createBiquadFilter();
+        this.bp2 = ctx.createBiquadFilter();
+        this.bp1.type = 'bandpass';
+        this.bp2.type = 'bandpass';
+        this.solo = ctx.createGain();
+        this.solo.gain.value = 0;
+        this.input.connect(this.bp1);
+        this.bp1.connect(this.bp2);
+        this.bp2.connect(this.solo);
+        this.solo.connect(this.gate);
+        this._probe = ctx.createBiquadFilter();
+        this._probe.type = 'bandpass';
+        // Long window, no smoothing, sampled every 200 ms (windows overlap),
+        // so short hits (kick, hats) count as much as sustained notes.
+        this.ltAn = ctx.createAnalyser();
+        this.ltAn.fftSize = 16384;
+        this.ltAn.smoothingTimeConstant = 0;
+        this.input.connect(this.ltAn);
         this.analyser = ctx.createAnalyser();
         this.analyser.fftSize = 2048;
         this.analyser.smoothingTimeConstant = 0.35;
@@ -263,7 +299,76 @@
         this.onStreamEnded = null;
         this.loopEnabled = true;
         this.onEnded = null;
+        this.lt = null;
+        this.ltFrames = 0;
+        var self = this;
+        this._ltTimer = setInterval(function () { self._sampleSpectrum(); }, 200);
     }
+
+    /* Long-term average power spectrum of what is playing (about a 4 s
+       window). Used to level-match soloed bands on any source, including
+       a captured tab where there is no buffer to render offline. */
+    RideEngine.prototype._resetSpectrum = function () {
+        this.lt = null;
+        this.ltFrames = 0;
+    };
+
+    RideEngine.prototype._sampleSpectrum = function () {
+        if (!this.playing || !this.ltAn) return;
+        var n = this.ltAn.frequencyBinCount;
+        if (!this._ltBuf || this._ltBuf.length !== n) this._ltBuf = new Float32Array(n);
+        this.ltAn.getFloatFrequencyData(this._ltBuf);
+        var peak = -200;
+        for (var j = 0; j < n; j++) if (this._ltBuf[j] > peak) peak = this._ltBuf[j];
+        if (!(peak > -110)) return; // silence teaches nothing about the spectrum
+        if (!this.lt || this.lt.length !== n) {
+            this.lt = new Float32Array(n);
+            this.ltFrames = 0;
+        }
+        var a = this.ltFrames < 25 ? 1 / (this.ltFrames + 1) : 0.04;
+        for (var i = 0; i < n; i++) {
+            var p = Math.pow(10, this._ltBuf[i] / 10);
+            if (!isFinite(p)) p = 0;
+            this.lt[i] += (p - this.lt[i]) * a;
+        }
+        this.ltFrames += 1;
+    };
+
+    /* Gain that brings a soloed band (cascaded bandpass at freq/q) to
+       SOLO_TARGET x the K-weighted loudness of the full mix. */
+    RideEngine.prototype.soloGainFor = function (freq, q) {
+        if (!this.lt || this.ltFrames < 2) this._sampleSpectrum();
+        var spec = this.lt;
+        if (!spec) return 4;
+        var n = spec.length;
+        var binHz = this.ctx.sampleRate / this.ltAn.fftSize;
+        if (!this._binF || this._binF.length !== n) {
+            this._binF = new Float32Array(n);
+            this._kw = new Float32Array(n);
+            for (var i = 0; i < n; i++) {
+                var f = Math.max(1, i * binHz);
+                this._binF[i] = f;
+                var k = kWeightMag(f);
+                this._kw[i] = f < 20 ? 0 : k * k;
+            }
+            this._mag = new Float32Array(n);
+            this._ph = new Float32Array(n);
+        }
+        this._probe.frequency.value = freq;
+        this._probe.Q.value = q;
+        this._probe.getFrequencyResponse(this._binF, this._mag, this._ph);
+        var tot = 0;
+        var band = 0;
+        for (var b = 1; b < n; b++) {
+            var pk = spec[b] * this._kw[b];
+            var m = this._mag[b];
+            tot += pk;
+            band += pk * m * m * m * m; // two stages -> |H|^4 in power
+        }
+        if (!(tot > 1e-14) || !(band > 1e-18)) return SOLO_MAX_GAIN / 4;
+        var g = SOLO_TARGET * Math.sqrt(tot / band);
+        return Math.max(SOLO_MIN_GAIN, Math.min(SOLO_MAX_GAIN, g));
+    };
 
     RideEngine.prototype.setBands = function (bands) {
         this.bandList = bands || [];
@@ -340,7 +445,37 @@
         }
     };
 
+    /* Files and the demo: refine the spectral estimate by rendering the
+       next 3 s offline, full mix vs soloed band, both K-weighted. */
+    RideEngine.prototype.calibrateSolo = function (spec) {
+        if (!spec || spec.kind !== 'solo' || this.kind !== 'buffer' || !this.buffer) return;
+        if (typeof OfflineAudioContext === 'undefined') return;
+        var buf = this.buffer;
+        var start = this.loopEnabled ? this.loopStart + this._nowOffset() : this._nowOffset();
+        var dur = Math.min(3, buf.duration);
+        var self = this;
+        Promise.all([
+            renderKWeighted(buf, start, dur, null),
+            renderKWeighted(buf, start, dur, spec)
+        ]).then(function (r) {
+            if (self.buffer !== buf || !(r[0] > 1e-6) || !(r[1] > 1e-9)) return;
+            var g = Math.max(SOLO_MIN_GAIN, Math.min(SOLO_MAX_GAIN, SOLO_TARGET * r[0] / r[1]));
+            spec.soloGain = g;
+            var p = self.problem;
+            if (p && p.kind === 'solo' && p.freq === spec.freq && Math.abs(p.q - spec.q) < 1e-6) {
+                p.soloGain = g;
+                if (!self.abClean) {
+                    var t = self.ctx.currentTime;
+                    self.solo.gain.cancelScheduledValues(t);
+                    self.solo.gain.setValueAtTime(self.solo.gain.value, t);
+                    self.solo.gain.setTargetAtTime(g, t, 0.03);
+                }
+            }
+        }).catch(function () { /* keep the spectral estimate */ });
+    };
+
     RideEngine.prototype.setBuffer = function (buffer, slice) {
+        if (buffer !== this.buffer) this._resetSpectrum();
         this.buffer = buffer;
         this.kind = 'buffer';
         if (slice) {
@@ -361,6 +496,7 @@
         this.buffer = null;
         this.kind = 'stream';
         this.stream = stream;
+        this._resetSpectrum();
         this.clearProblem();
         var t = this.ctx.currentTime;
         this.dry.gain.cancelScheduledValues(t);
@@ -415,9 +551,12 @@
 
     RideEngine.prototype.setProblem = function (problem) {
         this.problem = problem ? {
+            kind: problem.kind === 'solo' ? 'solo' : 'eq',
             index: problem.index,
             freq: problem.freq,
-            gain: problem.gain,
+            gain: problem.gain || 0,
+            soloGain: problem.soloGain || 1,
+            compGain: problem.compGain,
             q: problem.q || RIDE_Q
         } : null;
         this.abClean = false;
@@ -522,7 +661,17 @@
         if (!this.eq) return;
         var t = this.ctx.currentTime;
         var active = !!(this.problem && !this.abClean);
-        if (this.problem && typeof this.problem.freq === 'number') {
+        var solo = !!(this.problem && this.problem.kind === 'solo');
+        var soloT = 0;
+        if (solo) {
+            this.bp1.frequency.setValueAtTime(this.problem.freq, t);
+            this.bp2.frequency.setValueAtTime(this.problem.freq, t);
+            this.bp1.Q.setValueAtTime(this.problem.q, t);
+            this.bp2.Q.setValueAtTime(this.problem.q, t);
+            this.eq.gain.setValueAtTime(0, t);
+            this.comp.gain.setValueAtTime(1, t);
+            soloT = active ? this.problem.soloGain : 0;
+        } else if (this.problem && typeof this.problem.freq === 'number') {
             this.eq.frequency.setValueAtTime(this.problem.freq, t);
             this.eq.Q.setValueAtTime(this.problem.q || RIDE_Q, t);
             this.eq.gain.setValueAtTime(this.problem.gain, t);
@@ -539,18 +688,21 @@
         if (this.kind === 'stream') {
             this.dry.gain.cancelScheduledValues(t);
             this.wet.gain.cancelScheduledValues(t);
+            this.solo.gain.cancelScheduledValues(t);
             this.dry.gain.setValueAtTime(active ? 0 : 1, t);
-            this.wet.gain.setValueAtTime(active ? 1 : 0, t);
+            this.wet.gain.setValueAtTime(active && !solo ? 1 : 0, t);
+            this.solo.gain.setValueAtTime(soloT, t);
         } else {
             this._snap(this.dry.gain, active ? 0 : 1, t);
-            this._snap(this.wet.gain, active ? 1 : 0, t);
+            this._snap(this.wet.gain, active && !solo ? 1 : 0, t);
+            this._snap(this.solo.gain, soloT, t);
         }
     };
 
     function defaultStats() {
         return {
             version: STATS_VERSION,
-            skill: 'band',
+            skill: 'freq',
             bandStep: 1,
             bandAuto: false,
             amountLevel: 'easy',
@@ -562,7 +714,10 @@
             correct: 0,
             total: 0,
             perBand: {},
-            stair: {}
+            stair: {},
+            // Frequency ID keeps its own streak/accuracy (per-band rows are
+            // already separate: their key contains "freq:solo").
+            freq: { streak: 0, correct: 0, total: 0 }
         };
     }
 
@@ -570,7 +725,7 @@
         try {
             var raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
             var s = defaultStats();
-            if (raw.skill === 'amount' || raw.skill === 'band') s.skill = raw.skill;
+            if (SKILLS.indexOf(raw.skill) >= 0) s.skill = raw.skill;
             if (raw.skill === 'direction') s.skill = 'band';
             if (typeof raw.bandStep === 'number' && raw.bandStep >= 1 && raw.bandStep <= 6) {
                 s.bandStep = raw.bandStep;
@@ -590,6 +745,11 @@
             if (typeof raw.streak === 'number') s.streak = raw.streak;
             if (typeof raw.correct === 'number') s.correct = raw.correct;
             if (typeof raw.total === 'number') s.total = raw.total;
+            if (raw.freq && typeof raw.freq === 'object') {
+                ['streak', 'correct', 'total'].forEach(function (k) {
+                    if (typeof raw.freq[k] === 'number' && isFinite(raw.freq[k])) s.freq[k] = raw.freq[k];
+                });
+            }
             /* v1 per-band history mixed every layout and difficulty together,
                so it is dropped; overall streak/accuracy carry over. */
             if (raw.version === STATS_VERSION) {
@@ -609,11 +769,17 @@
         } catch (e) { /* quota */ }
     }
 
-    function loadSet() {
+    /* One daily set per game kind: Frequency ID and the EQ games. */
+    function setKey(kind) {
+        return kind === 'freq' ? SET_KEY + ':freq' : SET_KEY;
+    }
+
+    function loadSet(kind) {
         try {
-            var s = JSON.parse(localStorage.getItem(SET_KEY) || 'null');
+            var s = JSON.parse(localStorage.getItem(setKey(kind)) || 'null');
             if (!s || typeof s.date !== 'string' || typeof s.done !== 'number') return null;
             return {
+                kind: kind === 'freq' ? 'freq' : 'music',
                 date: s.date,
                 done: s.done,
                 hits: typeof s.hits === 'number' ? s.hits : 0,
@@ -629,7 +795,7 @@
     function saveSet(session) {
         if (!session) return;
         try {
-            localStorage.setItem(SET_KEY, JSON.stringify(session));
+            localStorage.setItem(setKey(session.kind), JSON.stringify(session));
         } catch (e) { /* quota */ }
     }
 
@@ -655,7 +821,8 @@
         this.decodeFails = 0;
         this.deck = [];
         this.lastBandIndex = -1;
-        this.watch = false;
+        this.free = false;      // Free play: band buttons audition, nothing is scored
+        this.freeSel = null;
         this.tourOn = false;
         this.tourIndex = 0;
         this.session = null;
@@ -698,7 +865,9 @@
         this._renderStats();
         this._renderWeakMap();
         this._renderSetBar();
-        this.setStatus('Choose a folder, then Start ride.');
+        this.setStatus(this._isFreq()
+            ? 'Frequency ID: press Start ride (demo, folder or tab) and name the soloed band.'
+            : 'Choose a folder, then Start ride.');
         this._tryRestoreFolder();
     };
 
@@ -778,6 +947,11 @@
         var levelChips = byId('ride-level-chips');
         if (levelChips) {
             levelChips.addEventListener('click', function (e) {
+                var lay = e.target.closest('[data-layout]');
+                if (lay) {
+                    self._setBandMode(lay.getAttribute('data-layout'));
+                    return;
+                }
                 var btn = e.target.closest('[data-level]');
                 if (!btn) return;
                 self._setBandLevel(btn.getAttribute('data-level'));
@@ -803,10 +977,12 @@
             this.els.ab.addEventListener('touchend', function () { self._holdClean(false); });
         }
 
-        byId('ride-skill-band').addEventListener('click', function () { self._setSkill('band'); });
-        byId('ride-skill-amount').addEventListener('click', function () { self._setSkill('amount'); });
-        var watchBtn = byId('ride-watch-btn');
-        if (watchBtn) watchBtn.addEventListener('click', function () { self.toggleWatch(); });
+        SKILLS.forEach(function (skill) {
+            var b = byId('ride-skill-' + skill);
+            if (b) b.addEventListener('click', function () { self._setSkill(skill); });
+        });
+        var freeBtn = byId('ride-free-btn');
+        if (freeBtn) freeBtn.addEventListener('click', function () { self.toggleFree(); });
         document.querySelectorAll('#ride-layout-row [data-layout]').forEach(function (btn) {
             btn.addEventListener('click', function () { self._setBandMode(btn.getAttribute('data-layout')); });
         });
@@ -861,37 +1037,55 @@
         }
     };
 
+    Ride.prototype._isFreq = function () {
+        return this.stats.skill === 'freq';
+    };
+
     Ride.prototype._setSkill = function (skill, silent) {
-        if (skill !== 'amount') skill = 'band';
+        if (SKILLS.indexOf(skill) < 0) skill = 'band';
+        var changed = skill !== this.stats.skill;
         this.stats.skill = skill;
         if (skill === 'amount' && this.stats.bandMode === 'thirds') {
             this._setBandMode('octaves', true);
         }
         this._syncLayoutUi();
-        ['band', 'amount'].forEach(function (s) {
+        SKILLS.forEach(function (s) {
             var btn = document.getElementById('ride-skill-' + s);
-            if (btn) btn.classList.toggle('is-active', s === skill);
+            if (btn) {
+                btn.classList.toggle('is-active', s === skill);
+                btn.setAttribute('aria-pressed', s === skill ? 'true' : 'false');
+            }
         });
+        if (this.els.panel) this.els.panel.classList.toggle('is-freq', skill === 'freq');
+        this.deck = [];
+        if (this.free) this._clearFreeSel();
         this._syncSkillUi();
         this._renderGuess();
+        if (this.els.streak) {
+            this._ensureSession(false);
+            this._renderStats();
+        }
         if (!silent) {
             saveStats(this.stats);
             if (this.gameOn) this._beginListen();
+            else if (this.free) this.setStatus(this._freeHint());
+            if (changed && this.hooks && this.hooks.onSkillChange) this.hooks.onSkillChange(skill);
         }
     };
 
     Ride.prototype._syncSkillUi = function () {
         var amount = this.stats.skill === 'amount';
+        var freq = this._isFreq();
         var host = document.getElementById('ride-level-chips');
         if (host) {
             host.innerHTML = '';
-            host.appendChild(amount ? this._amountDiffBoard() : this._bandDiffBoard());
+            host.appendChild(freq ? this._freqDiffBoard() : amount ? this._amountDiffBoard() : this._bandDiffBoard());
         }
-        var watchBtn = document.getElementById('ride-watch-btn');
-        if (watchBtn) watchBtn.classList.toggle('is-active', !!this.watch);
         if (!this.els.skillHint) return;
-        if (this.watch) {
-            this.els.skillHint.textContent = 'Watch mode — the answer lights up. Just listen.';
+        if (freq) {
+            var set = this._bandSet(this.stats.bandMode);
+            this.els.skillHint.textContent = 'Now: ' + set.label + ' · one band of the song soloed (bandpass Q ' + set.q +
+                '), every band at the same loudness';
         } else if (amount) {
             this.els.skillHint.textContent = this.stats.amountLevel === 'hard'
                 ? 'Now: Hard — boost +3 / +1.5, cut −3 / −6'
@@ -959,6 +1153,30 @@
         return board;
     };
 
+    /* Frequency ID has no gain to shrink: it gets harder by naming finer
+       bands, so the "difficulty" is the band layout. */
+    Ride.prototype._freqDiffBoard = function () {
+        var cur = this.stats.bandMode;
+        var board = document.createElement('div');
+        board.className = 'ride-diff-board is-amount is-freq';
+        var sets = this.hooks.getBandSets();
+        [
+            { id: 'starter', name: 'Easy', line: '4 bands, two octaves apart' },
+            { id: 'seven', name: 'Medium', line: '7 named ranges' },
+            { id: 'octaves', name: 'Hard', line: '9 octave bands' },
+            { id: 'thirds', name: 'Expert', line: '24 third-octave bands' }
+        ].forEach(function (item) {
+            if (!sets[item.id]) return;
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'ride-diff-card' + (cur === item.id ? ' is-active' : '');
+            btn.dataset.layout = item.id;
+            btn.innerHTML = '<b>' + item.name + '</b><span>' + item.line + '</span>';
+            board.appendChild(btn);
+        });
+        return board;
+    };
+
     Ride.prototype._amountDiffBoard = function () {
         var cur = this.stats.amountLevel || 'easy';
         var board = document.createElement('div');
@@ -989,6 +1207,7 @@
             this.stats.bandAuto = false;
         }
         this.deck = [];
+        if (this.free) this._clearFreeSel();
         this._renderWeakMap();
         this._renderStats();
         this._syncSkillUi();
@@ -1007,7 +1226,7 @@
             source: 'library',
             skill: 'band',
             title: 'What this is',
-            html: 'Ride trains your ear for <strong>EQ</strong> — making one part of the sound louder or quieter. Your music keeps playing. A change appears. You name it.'
+            html: 'Ride trains your ear on <strong>your own music</strong>. The song keeps playing. Either one band of it is soloed, or one part is made louder or quieter. You name it.'
         },
         {
             target: '#ride-source-tap',
@@ -1040,9 +1259,9 @@
         },
         {
             target: '.ride-setup-row',
-            skill: 'band',
-            title: 'Two games',
-            html: '<strong>Which band?</strong> Name the part that changed — bass, mids, air. <strong>Band + amount</strong>: one tap for both the band and how much. Start with <strong>4</strong> or <strong>7 bands</strong>, then move to <strong>Octaves</strong>, then <strong>Thirds</strong>. The bell gets narrower as the bands get closer.'
+            skill: 'freq',
+            title: 'Three games',
+            html: '<strong>Frequency ID</strong> (start here): one band of the song plays on its own, level-matched — name it. <strong>Which band?</strong> The full song with one band boosted or cut — name the band. <strong>Band + amount</strong>: band and how much in one tap. Start with <strong>4</strong> or <strong>7 bands</strong>, then <strong>Octaves</strong>, then <strong>Thirds</strong>. Filters get narrower as the bands get closer.'
         },
         {
             target: '#ride-level-row',
@@ -1057,10 +1276,10 @@
             html: 'Each column is a band. Pads <strong>above</strong> the name turn it up. Pads <strong>below</strong> turn it down. One tap is your whole answer.'
         },
         {
-            target: '#ride-watch-btn',
+            target: '#ride-free-btn',
             skill: 'band',
             title: 'Learn first',
-            html: '<strong>Watch</strong> lights the right answer as the filter hits. Nothing is scored. Turn it off when you want to guess for real.'
+            html: 'Turn on <strong>Free play</strong> and every band button plays at once on the music — in Frequency ID it solos that band, in the EQ games it applies that boost or cut. Tap it again to go back. Nothing is scored. Turn it off, then Start ride to be quizzed.'
         },
         {
             target: '#ride-progress',
@@ -1080,7 +1299,7 @@
         {
             target: '#ride-help-btn',
             title: 'You are ready',
-            html: '<strong>Help</strong> is always here. Two extra drills live in the tabs above. Pick music, Start ride, hold Space, tap what you heard.'
+            html: '<strong>Help</strong> is always here. <strong>Corrective EQ</strong> lives in the tab above. Pick music, Start ride, hold Space, tap what you heard.'
         }
     ];
 
@@ -1090,7 +1309,7 @@
         this.tourOn = true;
         this.tourIndex = 0;
         this._tourPrevSource = this.source || 'library';
-        this._tourPrevSkill = (this.stats && this.stats.skill) || 'band';
+        this._tourPrevSkill = (this.stats && this.stats.skill) || 'freq';
         if (el.parentNode !== document.body) document.body.appendChild(el);
         el.classList.remove('hidden');
         this._showTourStep();
@@ -1203,13 +1422,92 @@
         }
     };
 
-    Ride.prototype.toggleWatch = function () {
-        this.watch = !this.watch;
-        this._syncSkillUi();
-        if (this.gameOn) this._beginListen();
-        else this.setStatus(this.watch
-            ? 'Watch is on. Start ride and the answer will light as the filter hits.'
-            : 'Watch off. Start ride to play.');
+    /* ---- Free play: tap a band, hear it now. Replaces the old Watch mode
+       (which made you wait for each answer to come round). ---- */
+    Ride.prototype.toggleFree = function () {
+        this._setFree(!this.free);
+    };
+
+    Ride.prototype._freeHint = function () {
+        if (this._isFreq()) return 'Free play: tap any band to solo it on the music. Tap it again for the full mix.';
+        if (this.stats.skill === 'amount') return 'Free play: tap any pad to hear that boost or cut on the music. Tap it again for clean.';
+        return 'Free play: tap any band to hear this level\u2019s change on it. Tap it again for clean.';
+    };
+
+    Ride.prototype._setFree = function (on, quiet) {
+        this.free = !!on;
+        if (this.free && this.gameOn) this.stopGame();
+        this._clearFreeSel();
+        this._hideResult();
+        var btn = document.getElementById('ride-free-btn');
+        if (btn) {
+            btn.classList.toggle('is-active', this.free);
+            btn.setAttribute('aria-pressed', this.free ? 'true' : 'false');
+        }
+        if (this.els.panel) this.els.panel.classList.toggle('is-free', this.free);
+        if (quiet) return;
+        if (this.free) {
+            this._ensureMusic();
+            this.setStatus(this._freeHint());
+        } else {
+            this.setStatus('Free play off. Press Start ride to be quizzed.');
+        }
+    };
+
+    Ride.prototype._clearFreeSel = function () {
+        this.freeSel = null;
+        if (this.engine && !this.gameOn) this.engine.clearProblem();
+        this._clearHighlights();
+        this._updateABBadge();
+    };
+
+    /* Make sure something is playing: current source, else the library,
+       else the demo. */
+    Ride.prototype._ensureMusic = function () {
+        this._ensureEngine();
+        if (this.hooks && this.hooks.stopOtherAudio) this.hooks.stopOtherAudio();
+        if (this.engine.playing) return;
+        if (this.engine.kind === 'stream' || this.engine.buffer) {
+            this.engine.play();
+            this._syncPlayBtn();
+            return;
+        }
+        if (this.source === 'library' && this.library.length) {
+            this._playCurrent();
+            return;
+        }
+        this._setSource('demo');
+    };
+
+    Ride.prototype._freeBand = function (index, gain) {
+        var band = this.bands[index];
+        if (!band) return;
+        var key = index + '|' + (gain == null ? '' : gain);
+        if (this.freeSel === key) {
+            this._clearFreeSel();
+            this.setStatus(this._isFreq() ? 'Full mix. Tap a band to solo it.' : 'Clean. Tap a band to hear it.');
+            return;
+        }
+        this._ensureMusic();
+        this.freeSel = key;
+        var spec;
+        if (this._isFreq()) {
+            spec = this._specFor(index);
+        } else {
+            spec = this._specFor(index, gain != null ? gain : this._gainForBand(index, 1));
+        }
+        this.engine.setProblem(spec);
+        if (spec.kind !== 'solo') this.engine.calibrateCompensation(spec);
+        this._clearHighlights();
+        var wrap = this.els.guess;
+        var el = gain != null
+            ? wrap && wrap.querySelector('.ride-pad[data-index="' + index + '"][data-gain="' + gain + '"]')
+            : wrap && wrap.querySelector('button[data-index="' + index + '"]');
+        if (el) el.classList.add('is-lit');
+        this._updateABBadge();
+        this.setStatus(this._isFreq()
+            ? 'Free play: ' + this._labelEq(spec) + ' soloed. Tap again for the full mix · hold Space to compare.'
+            : 'Free play: ' + this._labelEq(spec) + '. Tap again for clean · hold Space to compare.');
     };
 
     Ride.prototype._bandSet = function (mode) {
@@ -1237,6 +1535,7 @@
         this.deck = [];
         this.lastBandIndex = -1;
         if (this.engine) this.engine.setBands(this.bands);
+        if (this.free) this._clearFreeSel();
         this._renderGuess();
         this._renderWeakMap();
         if (!silent) {
@@ -1309,15 +1608,25 @@
 
     /* The daily set lives in localStorage, keyed by date, so a refresh does
        not lose progress. The clock only counts time while a ride is on. */
+    Ride.prototype._setKind = function () {
+        return this._isFreq() ? 'freq' : 'music';
+    };
+
     Ride.prototype._ensureSession = function (forceNew) {
         var today = this._todayKey();
+        var kind = this._setKind();
+        if (this.session && this.session.kind !== kind) {
+            saveSet(this.session);
+            this.session = null;
+            this._hideSetReport();
+        }
         if (!forceNew && this.session && this.session.date === today) {
             this._renderSetBar();
             this._startSetClock();
             return;
         }
         if (!forceNew) {
-            var saved = loadSet();
+            var saved = loadSet(kind);
             if (saved && saved.date === today) {
                 this.session = saved;
                 this._startSetClock();
@@ -1326,6 +1635,7 @@
             }
         }
         this.session = {
+            kind: kind,
             date: today,
             done: 0,
             hits: 0,
@@ -1369,7 +1679,7 @@
         var prog = document.getElementById('ride-set-progress');
         var clock = document.getElementById('ride-set-clock');
         if (!ses) return;
-        if (prog) prog.textContent = 'Daily set ' + ses.done + ' / ' + SET_TARGET;
+        if (prog) prog.textContent = (ses.kind === 'freq' ? 'Daily ID set ' : 'Daily set ') + ses.done + ' / ' + SET_TARGET;
         if (clock) {
             clock.textContent = this._fmtClock(ses.activeMs || 0);
             clock.title = 'Time spent riding today';
@@ -1486,11 +1796,21 @@
         this.els.gameBtn.classList.toggle('is-active', this.gameOn);
     };
 
+    /* Streak/accuracy: Frequency ID and the EQ games are counted apart. */
+    Ride.prototype._totals = function () {
+        if (this._isFreq()) {
+            if (!this.stats.freq) this.stats.freq = { streak: 0, correct: 0, total: 0 };
+            return this.stats.freq;
+        }
+        return this.stats;
+    };
+
     Ride.prototype._renderStats = function () {
-        if (this.els.streak) this.els.streak.textContent = String(this.stats.streak);
+        var tot = this._totals();
+        if (this.els.streak) this.els.streak.textContent = String(tot.streak);
         if (this.els.accuracy) {
-            this.els.accuracy.textContent = this.stats.total
-                ? Math.round((this.stats.correct / this.stats.total) * 100) + '%'
+            this.els.accuracy.textContent = tot.total
+                ? Math.round((tot.correct / tot.total) * 100) + '%'
                 : '—';
         }
         if (this.els.weak) {
@@ -1504,6 +1824,7 @@
     /* Per-band stats are kept separately for each layout + game + difficulty,
        e.g. "octaves|band:3|1000", so a -3 dB miss never mixes with +6 dB hits. */
     Ride.prototype._levelKey = function () {
+        if (this._isFreq()) return 'freq:solo';
         if (this.stats.skill === 'amount') return 'amount:' + (this.stats.amountLevel || 'easy');
         return this.stats.bandAuto ? 'band:auto' : 'band:' + (this.stats.bandStep || 1);
     };
@@ -1599,17 +1920,20 @@
 
     Ride.prototype._updateABBadge = function () {
         if (!this.els.ab) return;
+        var freq = this._isFreq();
         if (!this.engine || !this.engine.problem) {
-            this.els.ab.textContent = 'Space = start · hold = clean';
+            this.els.ab.textContent = this.free
+                ? 'Free play · tap a band'
+                : (freq ? 'Space = start · hold = full mix' : 'Space = start · hold = clean');
             this.els.ab.classList.remove('is-clean', 'is-problem');
             return;
         }
         if (this.engine.abClean) {
-            this.els.ab.textContent = 'Hearing clean';
+            this.els.ab.textContent = freq ? 'Hearing full mix' : 'Hearing clean';
             this.els.ab.classList.add('is-clean');
             this.els.ab.classList.remove('is-problem');
         } else {
-            this.els.ab.textContent = 'Hearing problem';
+            this.els.ab.textContent = freq ? 'Hearing one band' : 'Hearing problem';
             this.els.ab.classList.add('is-problem');
             this.els.ab.classList.remove('is-clean');
         }
@@ -1797,6 +2121,7 @@
     /* Another drill took over (tab switch): stop the game and the music. */
     Ride.prototype.deactivate = function () {
         if (this.gameOn) this.stopGame();
+        if (this.free) this._clearFreeSel();
         if (this.engine && this.engine.playing) {
             this.engine.pause();
             this._syncPlayBtn();
@@ -1829,6 +2154,7 @@
     };
 
     Ride.prototype.startGame = function () {
+        if (this.free) this._setFree(false, true);
         this._ensureEngine();
         if (this.hooks && this.hooks.stopOtherAudio) this.hooks.stopOtherAudio();
         if (!this.engine.buffer && this.engine.kind !== 'stream') {
@@ -1865,7 +2191,9 @@
         this._updateABBadge();
         this._syncGameBtn();
         this._hideResult();
-        this.setStatus('Ride stopped. Music can keep playing.');
+        this.setStatus(this._isFreq()
+            ? 'Stopped. Music keeps playing — try Free play to hear each band.'
+            : 'Ride stopped. Music can keep playing.');
     };
 
     Ride.prototype._beginListen = function () {
@@ -1884,9 +2212,9 @@
         this._hideResult();
         this._showChoices();
         this._updateABBadge();
-        this.setStatus('Listen…');
+        this.setStatus(this._isFreq() ? 'Full mix…' : 'Listen…');
         var self = this;
-        this.after(LISTEN_MS, function () { self._applyNewProblem(); });
+        this.after(this._isFreq() ? FREQ_LISTEN_MS : LISTEN_MS, function () { self._applyNewProblem(); });
     };
 
     Ride.prototype._weakestIndex = function () {
@@ -1974,6 +2302,28 @@
         return scaleDetectability(this._bandLevelGain(), band.freq);
     };
 
+    /* What a band sounds like in the current game: a level-matched solo
+       (Frequency ID) or a bell at the given gain (EQ games). */
+    Ride.prototype._specFor = function (index, gain) {
+        var band = this.bands[index];
+        if (!band) return null;
+        var q = this._shapeForFreq().q;
+        if (this._isFreq()) {
+            this._ensureEngine();
+            var spec = {
+                kind: 'solo',
+                index: index,
+                freq: band.freq,
+                gain: 0,
+                q: q,
+                soloGain: this.engine.soloGainFor(band.freq, q)
+            };
+            this.engine.calibrateSolo(spec); // async; updates spec + live gain
+            return spec;
+        }
+        return { kind: 'eq', index: index, freq: band.freq, gain: gain, q: q };
+    };
+
     Ride.prototype._bandLevelGain = function () {
         var rung = BAND_LADDER[(this.stats.bandStep || 1) - 1] || BAND_LADDER[0];
         return rung.gain;
@@ -1995,6 +2345,16 @@
         var skill = this.stats.skill;
         var q = this._shapeForFreq().q;
         var gain;
+        if (skill === 'freq') {
+            this._clearHighlights();
+            this._hideResult();
+            this.currentProblem = this._specFor(idx);
+            this.engine.setProblem(this.currentProblem);
+            this.phase = 'problem';
+            this._updateABBadge();
+            this.setStatus('Which band is playing on its own? Hold Space for the full mix.');
+            return;
+        }
         if (skill === 'amount') {
             var choices = this._amountGains();
             gain = choices[Math.floor(Math.random() * choices.length)];
@@ -2015,21 +2375,12 @@
         this.engine.calibrateCompensation(this.currentProblem);
         this.phase = 'problem';
         this._updateABBadge();
-        if (this.watch) {
-            this._lightAnswer();
-            this.setStatus('Watch: ' + this._fmtGain(gain) + ' at ' + band.name + '. Hold Space for clean.');
-            var self = this;
-            this.after(3200, function () {
-                if (self.gameOn && self.watch) self._beginListen();
-            });
-        } else {
-            this.setStatus('What changed?  Hold Space to hear clean.');
-        }
+        this.setStatus('What changed?  Hold Space to hear clean.');
     };
 
     Ride.prototype.guessBand = function (index) {
-        if (this.watch) {
-            this._beginListen();
+        if (this.free) {
+            this._freeBand(index);
             return;
         }
         if (!this.gameOn || this.phase !== 'problem' || !this.currentProblem) return;
@@ -2043,6 +2394,10 @@
             if (right) right.classList.add('is-target');
         }
         var p = this.currentProblem;
+        if (this._isFreq()) {
+            this._finishRound(correct, 'freq', this._specFor(index));
+            return;
+        }
         // Demo the guess the way it would really have been played on that band.
         var guessGain = this.stats.bandAuto ? p.gain : this._gainForBand(index, p.gain >= 0 ? 1 : -1);
         this._finishRound(correct, 'band', {
@@ -2053,8 +2408,8 @@
     };
 
     Ride.prototype.guessPad = function (index, gain) {
-        if (this.watch) {
-            this._beginListen();
+        if (this.free) {
+            this._freeBand(index, gain);
             return;
         }
         if (!this.gameOn || this.phase !== 'problem' || !this.currentProblem) return;
@@ -2079,12 +2434,13 @@
     };
 
     Ride.prototype._record = function (ok) {
-        this.stats.total += 1;
+        var tot = this._totals();
+        tot.total += 1;
         if (ok) {
-            this.stats.correct += 1;
-            this.stats.streak += 1;
+            tot.correct += 1;
+            tot.streak += 1;
         } else {
-            this.stats.streak = 0;
+            tot.streak = 0;
         }
         if (this.currentProblem) {
             var freq = this.bands[this.currentProblem.index].freq;
@@ -2097,7 +2453,7 @@
         saveStats(this.stats);
         this._renderStats();
         this._renderWeakMap();
-        if (!this.watch && this.session && !this.session.finished) {
+        if (this.session && !this.session.finished) {
             this.session.done += 1;
             if (ok) this.session.hits += 1;
             this.session.log.push({
@@ -2115,12 +2471,18 @@
     Ride.prototype._labelEq = function (spec) {
         if (!spec || spec.index == null || !this.bands[spec.index]) return '';
         var band = this.bands[spec.index];
+        if (spec.kind === 'solo') return band.name + (band.range && band.range !== band.name ? ' (' + band.range + ')' : '');
         return this._fmtGain(spec.gain) + ' dB at ' + band.name;
     };
 
     Ride.prototype._applyLiveEq = function (spec) {
         if (!this.engine || !spec || !this.bands[spec.index]) return;
         var band = this.bands[spec.index];
+        if (spec.kind === 'solo') {
+            this.engine.setProblem(spec);
+            this._updateABBadge();
+            return;
+        }
         this.engine.setProblem({
             index: spec.index,
             freq: band.freq,
@@ -2144,11 +2506,11 @@
         var p = this.currentProblem;
         var truthLabel = this._labelEq(p);
         var title = ok ? 'Yes' : 'No';
-        if (!ok && stage === 'band') title = 'Wrong band';
+        if (!ok && (stage === 'band' || stage === 'freq')) title = 'Wrong band';
         if (!ok && stage === 'amount') title = 'Wrong amount';
         this.clearTimers();
 
-        if (ok || this.watch || !guess || !p) {
+        if (ok || !guess || !p) {
             this.phase = 'reveal';
             if (this.engine) this.engine.setABClean(false);
             this._updateABBadge();
@@ -2179,7 +2541,7 @@
             self.phase = 'compare-truth';
             self._applyLiveEq(p);
             self._showResult(false, title, 'Truth: ' + truthLabel);
-            self.setStatus('Hearing the truth — ' + truthLabel + '. Hold Space for clean.');
+            self.setStatus('Hearing the truth — ' + truthLabel + '. Hold Space for ' + (self._isFreq() ? 'the full mix.' : 'clean.'));
         });
         if (gap) {
             this.after(COMPARE_GUESS_MS + gap, function () {
@@ -2201,6 +2563,7 @@
 
     Ride.prototype._holdClean = function (on) {
         if (!this.engine || !this.engine.problem) {
+            if (this.free) return; // free play: nothing to compare yet
             // No problem yet: start a ride (with its clean listening period);
             // never skip straight to a problem.
             if (on && !this.gameOn) this.startGame();
@@ -2231,6 +2594,8 @@
             if (e.repeat) return true;
             if (this.engine && this.engine.problem) {
                 this._holdClean(true);       // hold = hear clean
+            } else if (this.free) {
+                this.setStatus('Free play: tap a band (or 1–9). Turn Free play off, then Start ride to be quizzed.');
             } else if (!this.gameOn) {
                 this.startGame();            // starts with the clean listen
             }
@@ -2245,8 +2610,10 @@
         var num = parseInt(e.key, 10);
         if (!isNaN(num) && num >= 1 && num <= 9) {
             e.preventDefault();
-            if (num <= this.bands.length && this.gameOn && this.phase === 'problem' && this.stats.skill === 'band') {
-                this.guessBand(num - 1);
+            var bandKeys = this.stats.skill !== 'amount';
+            if (num <= this.bands.length && bandKeys) {
+                if (this.free) this._freeBand(num - 1);
+                else if (this.gameOn && this.phase === 'problem') this.guessBand(num - 1);
             }
             return true;
         }
@@ -2411,7 +2778,7 @@
             self.engine.play();
             self._setNowPlaying(self._displayTitle(entry));
             self._syncPlayBtn();
-            self.setStatus(self.stats.loopSlice ? 'Looping an 8s slice.' : 'Playing. Start ride when you want problems.');
+            self.setStatus(self.free ? self._freeHint() : (self.stats.loopSlice ? 'Looping an 8s slice.' : 'Playing. Start ride when you want problems.'));
             if (self.gameOn) self._beginListen();
         }).catch(function () {
             if (gen !== self.loadGen) return;
@@ -2434,7 +2801,7 @@
         this.engine.play();
         this._setNowPlaying('Demo bed — C minor pad');
         this._syncPlayBtn();
-        this.setStatus('Demo is a stand-in so you can try Ride without a library.');
+        this.setStatus(this.free ? this._freeHint() : 'Demo is a stand-in so you can try Ride without a library.');
         if (this.gameOn) this._beginListen();
     };
 
@@ -2566,6 +2933,10 @@
         handleKeyUp: function (e) { return ride.handleKeyUp(e); },
         suspendForOtherGame: function () { ride.suspendForOtherGame(); },
         deactivate: function () { ride.deactivate(); },
-        isActive: function () { return ride.isActive(); }
+        isActive: function () { return ride.isActive(); },
+        setSkill: function (skill) { ride._setSkill(skill); },
+        getSkill: function () { return ride.stats.skill; },
+        setFree: function (on) { ride._setFree(on); },
+        _ride: ride // read-only handle for automated checks
     };
 })(window);

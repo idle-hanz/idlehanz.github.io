@@ -37,8 +37,7 @@
     <!-- Drill tabs: one drill owns the audio and keyboard at a time -->
     <div class="max-w-5xl mx-auto px-6 pb-6">
         <div class="et-tabs" role="tablist" aria-label="Training drills">
-            <button type="button" role="tab" id="tab-ride" data-drill="ride" aria-controls="drill-ride" aria-selected="true" class="et-tab is-active">Ride <span class="et-tab-sub">on your music</span></button>
-            <button type="button" role="tab" id="tab-id" data-drill="id" aria-controls="drill-id" aria-selected="false" class="et-tab">Frequency ID <span class="et-tab-sub">noise bands</span></button>
+            <button type="button" role="tab" id="tab-ride" data-drill="ride" aria-controls="drill-ride" aria-selected="true" class="et-tab is-active">Ride <span class="et-tab-sub">Frequency ID + EQ on your music</span></button>
             <button type="button" role="tab" id="tab-corrective" data-drill="corrective" aria-controls="drill-corrective" aria-selected="false" class="et-tab">Corrective EQ <span class="et-tab-sub">fix a stem</span></button>
         </div>
     </div>
@@ -84,7 +83,7 @@
                     <button type="button" id="ride-gap-btn" class="ride-chip">Gap A/B</button>
                 </div>
                 <span class="ride-transport-gap"></span>
-                <button type="button" id="ride-watch-btn" class="ride-chip">Watch</button>
+                <button type="button" id="ride-free-btn" class="ride-chip ride-free-chip" aria-pressed="false" title="Tap any band to hear it now on the music. Nothing is scored.">Free play</button>
                 <button type="button" id="ride-game-btn" class="px-5 py-2.5 bg-white text-zinc-950 font-semibold rounded-3xl text-sm">Start ride</button>
             </div>
 
@@ -120,21 +119,22 @@
                 <div class="ride-setup-row">
                     <span class="ride-kicker">Game</span>
                     <div class="ride-seg">
-                        <button type="button" id="ride-skill-band" class="ride-chip is-active">Which band?</button>
-                        <button type="button" id="ride-skill-amount" class="ride-chip">Band + amount</button>
+                        <button type="button" id="ride-skill-freq" class="ride-chip is-active" aria-pressed="true" title="One band of the song plays on its own, level-matched. Name the band.">Frequency ID</button>
+                        <button type="button" id="ride-skill-band" class="ride-chip" aria-pressed="false" title="The full song with one band boosted or cut. Name the band.">Which band?</button>
+                        <button type="button" id="ride-skill-amount" class="ride-chip" aria-pressed="false" title="Name the band and how much, in one tap.">Band + amount</button>
                     </div>
                     <span class="ride-kicker">Bands</span>
                     <div class="ride-seg" id="ride-layout-row">
                         <button type="button" data-layout="starter" class="ride-chip" title="4 far-apart bands, two octaves apart">4 bands</button>
                         <button type="button" data-layout="seven" class="ride-chip is-active" title="7 named ranges">7 bands</button>
                         <button type="button" data-layout="octaves" class="ride-chip" title="Standard octave bands, 63 Hz to 16 kHz">Octaves</button>
-                        <button type="button" data-layout="thirds" class="ride-chip" title="Third-octave bands, 63 Hz to 12.5 kHz (Which band? only)">Thirds</button>
+                        <button type="button" data-layout="thirds" class="ride-chip" title="Third-octave bands, 63 Hz to 12.5 kHz (not in Band + amount)">Thirds</button>
                     </div>
                 </div>
                 <div id="ride-level-row" class="ride-diff">
                     <div class="ride-diff-head">
                         <span class="ride-kicker">Difficulty</span>
-                        <p id="ride-skill-hint" class="ride-now-line">Now: Easy boost · +6 dB</p>
+                        <p id="ride-skill-hint" class="ride-now-line"></p>
                     </div>
                     <div id="ride-level-chips"></div>
                 </div>
@@ -164,62 +164,6 @@
             </div>
         </div>
     </div>
-    <!-- Frequency ID -->
-    <div id="drill-id" class="et-drill hidden max-w-5xl mx-auto px-6 pb-16" role="tabpanel" aria-labelledby="tab-id">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 sm:p-8 et-game-panel">
-            <div class="et-panel-head">
-                <div class="min-w-0">
-                    <div class="et-section-label">Frequency Identification</div>
-                    <div class="text-3xl font-semibold">Which band is playing?</div>
-                    <div class="text-xs text-zinc-400 mt-1">A slice of pink noise is filtered to one band. Every band is loudness-matched, so you judge pitch, not volume.</div>
-                </div>
-                <div class="et-panel-controls">
-                    <div class="et-seg" role="group" aria-label="Mode">
-                        <button type="button" id="id-mode-practice" class="et-seg-btn is-active">Practice</button>
-                        <button type="button" id="id-mode-test" class="et-seg-btn">Test (10 rounds)</button>
-                    </div>
-                    <div class="et-seg" role="group" aria-label="Bands" id="id-set-row">
-                        <button type="button" data-set="starter" class="et-seg-btn">4</button>
-                        <button type="button" data-set="seven" class="et-seg-btn is-active">7</button>
-                        <button type="button" data-set="octaves" class="et-seg-btn">Octaves</button>
-                        <button type="button" data-set="thirds" class="et-seg-btn">Thirds</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-3 mb-5">
-                <button type="button" id="id-play-btn" class="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-3xl flex items-center gap-x-2">
-                    <i class="fa-solid fa-play"></i> <span id="id-play-text">PLAY RANDOM</span>
-                </button>
-                <button type="button" id="id-replay-btn" class="hidden px-4 py-3 border border-zinc-700 hover:bg-zinc-800 rounded-3xl text-sm flex items-center gap-x-2">
-                    <i class="fa-solid fa-rotate-right"></i> <span>Replay</span>
-                </button>
-                <div class="flex items-center gap-x-2 text-sm ml-1">
-                    <span class="text-emerald-400 font-mono text-xl" id="id-streak">0</span>
-                    <span class="text-xs text-zinc-500">streak</span>
-                </div>
-                <div class="flex items-center gap-x-2 text-sm">
-                    <span class="font-semibold" id="id-accuracy">--</span>
-                    <span class="text-xs text-zinc-500">accuracy</span>
-                </div>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mb-5 text-xs">
-                <label for="id-masking" class="text-zinc-400">Background noise</label>
-                <input type="range" id="id-masking" min="0" max="1" step="0.05" value="0.2" class="w-32 accent-emerald-500">
-                <div class="font-mono w-12 text-emerald-400" id="id-masking-val">20%</div>
-                <div class="text-[10px] text-zinc-500 max-w-[260px]">Broadband noise around the band. 0% = band alone (easiest). 100% = noise as loud as the band (hard).</div>
-            </div>
-
-            <div id="id-prompt" class="text-sm text-zinc-400 mb-3" aria-live="polite">Press <b>Play random</b> (or Space), then click the band you heard. With nothing playing, click a band to audition it.</div>
-            <div id="id-test-progress" class="hidden text-sm text-violet-400 mb-3 font-medium"></div>
-
-            <div id="guess-buttons" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-3 mb-6"></div>
-
-            <div id="id-feedback" class="hidden p-4 rounded-2xl text-sm" aria-live="polite"></div>
-        </div>
-    </div>
-
     <!-- Corrective EQ - Production Focused -->
     <div id="drill-corrective" class="et-drill hidden max-w-5xl mx-auto px-6 pb-20" role="tabpanel" aria-labelledby="tab-corrective">
         <div id="corrective-panel" class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 sm:p-8 et-game-panel">
@@ -286,6 +230,17 @@
                         <button type="button" id="corr-stop" class="w-full py-2 border border-zinc-700 hover:bg-zinc-800 rounded-3xl flex items-center justify-center gap-x-2 text-sm">
                             <i class="fa-solid fa-stop"></i> <span>STOP</span>
                         </button>
+                        <div class="corr-free-row">
+                            <button type="button" id="corr-free-btn" class="ride-chip ride-free-chip" aria-pressed="false" title="Tap a band to hear this level's bell on the clean track. Not scored.">Free play</button>
+                            <div id="corr-free-sign" class="et-seg et-seg-sm" style="display:none" role="group" aria-label="Free play boost or cut">
+                                <button type="button" data-sign="1" class="et-seg-btn is-active">Boost</button>
+                                <button type="button" data-sign="-1" class="et-seg-btn">Cut</button>
+                            </div>
+                        </div>
+                        <div id="corr-free-panel" class="hidden">
+                            <div id="corr-free-bands" class="corr-free-bands"></div>
+                            <div id="corr-free-hint" class="text-[10px] text-zinc-500 mt-1">Tap a band to hear this level&rsquo;s bell on the clean track (width = that band&rsquo;s wide/narrow setting). Tap again to stop. The hidden problem is not touched.</div>
+                        </div>
                         <div class="flex items-center gap-x-2 pt-1">
                             <div class="text-xs text-zinc-400">Mode:</div>
                             <label class="relative inline-flex items-center cursor-pointer">
@@ -369,10 +324,10 @@
         /* Graded band sets. q = bell width used for EQ problems, matched to the
            spacing between neighbouring bands so adjacent answers stay
            distinguishable (octave spacing ~ Q 1.4, third-octave ~ Q 4.3).
-           idQ = bandpass width for the noise drill. */
+           Frequency ID (in Ride) solos a band with two bandpasses at the same Q. */
         var BAND_SETS = {
             starter: {
-                id: 'starter', label: '4 bands', q: 1.0, idQ: 2.9,
+                id: 'starter', label: '4 bands', q: 1.0,
                 bands: mkBands([
                     { name: 'Bass', freq: 125, range: '60–250 Hz' },
                     { name: 'Low Mids', freq: 500, range: '250 Hz–1 kHz' },
@@ -381,7 +336,7 @@
                 ])
             },
             seven: {
-                id: 'seven', label: '7 bands', q: 1.2, idQ: 2.9,
+                id: 'seven', label: '7 bands', q: 1.2,
                 bands: mkBands([
                     { name: 'Sub Bass', freq: 40, range: '20–60 Hz' },
                     { name: 'Bass', freq: 120, range: '60–200 Hz' },
@@ -393,11 +348,11 @@
                 ])
             },
             octaves: {
-                id: 'octaves', label: 'Octaves', q: 1.41, idQ: 2.9,
+                id: 'octaves', label: 'Octaves', q: 1.41,
                 bands: mkBands([63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000], 1)
             },
             thirds: {
-                id: 'thirds', label: 'Thirds', q: 4.32, idQ: 4.32,
+                id: 'thirds', label: 'Thirds', q: 4.32,
                 bands: mkBands([63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800,
                     1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500], 1 / 3)
             }
@@ -481,7 +436,7 @@
             try { n.disconnect(); } catch (e2) { /* already gone */ }
         }
 
-        /* ==================== STATS (Frequency ID + Corrective) ==================== */
+        /* ==================== STATS (Corrective; old ID counters kept) ==================== */
         var STATS_KEY = 'eqEarTrainerStats';
         var stats = { idStreak: 0, idCorrect: 0, idTotal: 0, bestMatchAccuracy: 0, corrLevel: 1, corrUnlocked: 1 };
         function loadStats() {
@@ -496,361 +451,6 @@
         }
         function saveStats() {
             try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (e) { /* quota */ }
-        }
-
-        /* ==================== FREQUENCY ID ==================== */
-        var ID_TARGET_K_RMS = 0.15;   // ~ -16.5 dBFS K-weighted, before the -6 dB bus
-        var ID_PEAK_CAP = 0.8;
-        var ID_PLAY_SEC = 3;
-        var TEST_ROUNDS = 10;
-        var idBufferCache = {};       // "freq|q" -> loudness-normalized AudioBuffer
-        var idNoiseBed = null;        // pink noise normalized to the same loudness
-        var id = {
-            setId: 'seven',
-            mode: 'practice',         // practice | test
-            target: -1,               // band index awaiting an answer
-            locked: false,            // true between an answer and the next round
-            round: 0,                 // test: current round 1..10, 0 = not running
-            correct: 0,
-            lastTarget: -1,
-            nodes: null,
-            pending: null,
-            timer: null
-        };
-
-        function idBands() { return BAND_SETS[id.setId].bands; }
-
-        function normalizeBuffer(buf) {
-            return kWeightedRms(buf, 0, buf.duration).then(function (k) {
-                var d = buf.getChannelData(0), peak = 0, i;
-                for (i = 0; i < d.length; i++) { var a = Math.abs(d[i]); if (a > peak) peak = a; }
-                var g = k > 1e-9 ? ID_TARGET_K_RMS / k : 1;
-                if (peak * g > ID_PEAK_CAP) g = ID_PEAK_CAP / peak;
-                for (i = 0; i < d.length; i++) d[i] *= g;
-                buf._kRms = k * g;
-                buf._peak = peak * g;
-                return buf;
-            });
-        }
-
-        function renderIdBand(freq, q) {
-            var key = freq + '|' + q;
-            if (idBufferCache[key]) return Promise.resolve(idBufferCache[key]);
-            var sr = audioContext.sampleRate;
-            var off = new OfflineAudioContext(1, Math.floor(sr * (ID_PLAY_SEC + 0.5)), sr);
-            var src = off.createBufferSource();
-            src.buffer = pinkBuffer;
-            src.loop = true;
-            /* Two cascaded bandpasses: steeper skirts, so the band is a clear
-               pitch region rather than a smeared tilt. */
-            var bp1 = off.createBiquadFilter(); bp1.type = 'bandpass'; bp1.frequency.value = freq; bp1.Q.value = q;
-            var bp2 = off.createBiquadFilter(); bp2.type = 'bandpass'; bp2.frequency.value = freq; bp2.Q.value = q;
-            src.connect(bp1); bp1.connect(bp2); bp2.connect(off.destination);
-            src.start(0, Math.random() * 2);
-            return off.startRendering().then(function (raw) {
-                var skip = Math.floor(sr * 0.5); // drop filter ring-up
-                var buf = audioContext.createBuffer(1, raw.length - skip, sr);
-                buf.getChannelData(0).set(raw.getChannelData(0).subarray(skip));
-                return normalizeBuffer(buf);
-            }).then(function (b) { idBufferCache[key] = b; return b; });
-        }
-
-        function ensureIdBuffers(setId) {
-            initAudio();
-            var set = BAND_SETS[setId];
-            var jobs = set.bands.map(function (b) { return renderIdBand(b.freq, set.idQ); });
-            if (!idNoiseBed) {
-                var copy = audioContext.createBuffer(1, pinkBuffer.length, pinkBuffer.sampleRate);
-                copy.getChannelData(0).set(pinkBuffer.getChannelData(0));
-                jobs.push(normalizeBuffer(copy).then(function (b) { idNoiseBed = b; return b; }));
-            }
-            return Promise.all(jobs);
-        }
-
-        function stopIdAudio() {
-            id.pending = null;
-            if (id.nodes) {
-                stopNode(id.nodes.band);
-                stopNode(id.nodes.noise);
-                id.nodes = null;
-            }
-        }
-
-        function playIdBand(index) {
-            initAudio();
-            resumeAudio();
-            if (window.EQRide) window.EQRide.deactivate();
-            var set = BAND_SETS[id.setId];
-            var band = set.bands[index];
-            if (!band) return;
-            var token = {};
-            id.pending = token;
-            ensureIdBuffers(id.setId).then(function () {
-                if (id.pending !== token) return;
-                if (id.nodes) { stopNode(id.nodes.band); stopNode(id.nodes.noise); }
-                var buf = idBufferCache[band.freq + '|' + set.idQ];
-                var t = audioContext.currentTime + 0.02;
-                var env = audioContext.createGain();
-                env.gain.setValueAtTime(0, t);
-                env.gain.linearRampToValueAtTime(1, t + 0.03);
-                env.gain.setValueAtTime(1, t + ID_PLAY_SEC - 0.06);
-                env.gain.linearRampToValueAtTime(0, t + ID_PLAY_SEC);
-                env.connect(masterBus);
-                var bandSrc = audioContext.createBufferSource();
-                bandSrc.buffer = buf;
-                bandSrc.connect(env);
-                bandSrc.start(t);
-                bandSrc.stop(t + ID_PLAY_SEC + 0.02);
-                var noiseSrc = null;
-                var masking = parseFloat(document.getElementById('id-masking').value) || 0;
-                if (masking > 0.001 && idNoiseBed) {
-                    var ng = audioContext.createGain();
-                    ng.gain.value = masking; // 1.0 = same K-weighted loudness as the band
-                    noiseSrc = audioContext.createBufferSource();
-                    noiseSrc.buffer = idNoiseBed;
-                    noiseSrc.loop = true;
-                    noiseSrc.connect(ng);
-                    ng.connect(env);
-                    noiseSrc.start(t, Math.random() * 3);
-                    noiseSrc.stop(t + ID_PLAY_SEC + 0.02);
-                }
-                id.nodes = { band: bandSrc, noise: noiseSrc };
-            });
-        }
-
-        function pickIdTarget() {
-            var n = idBands().length;
-            var i = Math.floor(Math.random() * n);
-            if (n > 1 && i === id.lastTarget) i = (i + 1 + Math.floor(Math.random() * (n - 1))) % n;
-            id.lastTarget = i;
-            return i;
-        }
-
-        function setIdPrompt(html) { document.getElementById('id-prompt').innerHTML = html; }
-        function hideIdFeedback() { document.getElementById('id-feedback').classList.add('hidden'); }
-        function showIdFeedback(kind, html) {
-            var fb = document.getElementById('id-feedback');
-            var st = {
-                ok: ['rgba(16,185,129,0.1)', '1px solid #22c55e'],
-                bad: ['rgba(244,63,94,0.1)', '1px solid #f43f5e'],
-                warn: ['rgba(245,158,11,0.1)', '1px solid #f59e0b'],
-                neutral: ['rgba(39,39,42,0.6)', '1px solid #3f3f46']
-            }[kind];
-            fb.style.background = st[0];
-            fb.style.border = st[1];
-            fb.innerHTML = html;
-            fb.classList.remove('hidden');
-        }
-
-        function syncIdControls() {
-            document.getElementById('id-play-text').textContent = id.mode === 'practice'
-                ? 'PLAY RANDOM' : (id.round ? 'RESTART TEST' : 'START 10-ROUND TEST');
-            document.getElementById('id-replay-btn').classList.toggle('hidden', id.target < 0);
-            document.getElementById('id-mode-practice').classList.toggle('is-active', id.mode === 'practice');
-            document.getElementById('id-mode-test').classList.toggle('is-active', id.mode === 'test');
-            var prog = document.getElementById('id-test-progress');
-            if (id.mode === 'test' && id.round) {
-                prog.classList.remove('hidden');
-                prog.textContent = 'Test • Round ' + id.round + ' / ' + TEST_ROUNDS + ' • ' + id.correct + ' correct';
-            } else {
-                prog.classList.add('hidden');
-            }
-        }
-
-        function renderIdStats() {
-            document.getElementById('id-streak').textContent = stats.idStreak;
-            document.getElementById('id-accuracy').textContent = stats.idTotal
-                ? Math.round((stats.idCorrect / stats.idTotal) * 100) + '%' : '--';
-        }
-
-        function clearIdMarks() {
-            document.querySelectorAll('#guess-buttons button').forEach(function (b) {
-                b.classList.remove('is-correct', 'is-wrong', 'is-target');
-            });
-        }
-
-        function newIdRound() {
-            clearTimeout(id.timer);
-            hideIdFeedback();
-            clearIdMarks();
-            id.locked = false;
-            id.target = pickIdTarget();
-            playIdBand(id.target);
-            setIdPrompt('Which band? Click it (or press 1–' + Math.min(9, idBands().length) + '). <b>Replay</b> (or Space) to hear it again.');
-            syncIdControls();
-        }
-
-        function idPlayPressed() {
-            if (id.mode === 'test') { id.round = 1; id.correct = 0; }
-            newIdRound();
-        }
-
-        function idReplay() { if (id.target >= 0) playIdBand(id.target); }
-
-        function idBandClicked(index, btn) {
-            if (id.locked) return; // already answered; next round is coming
-            if (id.target >= 0) { answerId(index); return; }
-            if (id.mode === 'test') {
-                showIdFeedback('warn', '<div class="text-amber-400 font-semibold">Press Start 10-round test first.</div>');
-                return;
-            }
-            // Practice with nothing pending: audition this band (not scored).
-            playIdBand(index);
-            if (btn) {
-                btn.classList.add('is-audition');
-                setTimeout(function () { btn.classList.remove('is-audition'); }, 350);
-            }
-            setIdPrompt('Auditioning <b>' + escapeHtml(idBands()[index].name) + '</b>. Press <b>Play random</b> to be quizzed.');
-        }
-
-        function answerId(index) {
-            var bands = idBands();
-            var target = bands[id.target];
-            var ok = index === id.target;
-            id.locked = true;
-            stats.idTotal++;
-            if (ok) { stats.idCorrect++; stats.idStreak++; } else { stats.idStreak = 0; }
-            saveStats();
-            renderIdStats();
-            var buttons = document.querySelectorAll('#guess-buttons button');
-            if (buttons[index]) buttons[index].classList.add(ok ? 'is-correct' : 'is-wrong');
-            if (!ok && buttons[id.target]) buttons[id.target].classList.add('is-target');
-            var label = escapeHtml(target.name) + ' (' + escapeHtml(target.range) + ')';
-            if (ok) showIdFeedback('ok', '<div class="text-emerald-400 font-semibold">Correct! It was ' + label + '</div>');
-            else showIdFeedback('bad', '<div class="text-rose-400 font-semibold">Not quite — it was ' + label + '. You picked ' + escapeHtml(bands[index].name) + '.</div>');
-            if (id.mode === 'test') {
-                if (ok) id.correct++;
-                syncIdControls();
-                id.timer = setTimeout(function () {
-                    clearIdMarks();
-                    if (id.round < TEST_ROUNDS) { id.round++; newIdRound(); }
-                    else showIdTestResults();
-                }, 1400);
-            } else {
-                id.timer = setTimeout(function () {
-                    clearIdMarks();
-                    id.target = -1;
-                    id.locked = false;
-                    syncIdControls();
-                    setIdPrompt('Press <b>Play random</b> (or Space) for the next one, or click a band to audition it.');
-                }, 1400);
-            }
-        }
-
-        function showIdTestResults() {
-            var score = id.correct;
-            var pct = Math.round((score / TEST_ROUNDS) * 100);
-            var msg = pct === 100 ? 'Perfect! Excellent ear training.' : pct >= 80 ? 'Great work!' : pct >= 60 ? 'Solid progress.' : 'Keep practicing — the ranges will get more familiar.';
-            id.target = -1;
-            id.locked = false;
-            id.round = 0;
-            syncIdControls();
-            showIdFeedback('neutral',
-                '<div class="text-center">' +
-                '<div class="text-5xl font-display font-semibold text-emerald-400">' + score + ' / ' + TEST_ROUNDS + '</div>' +
-                '<div class="text-2xl mt-1">' + pct + '%</div>' +
-                '<div class="text-sm text-zinc-400 mt-1">' + msg + '</div>' +
-                '<div class="mt-4 flex gap-x-3 justify-center">' +
-                '<button type="button" data-id-action="again" class="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-2xl">Play Again</button>' +
-                '<button type="button" data-id-action="practice" class="px-5 py-2 border border-zinc-700 hover:bg-zinc-800 text-sm rounded-2xl">Back to Practice</button>' +
-                '</div></div>');
-            setIdPrompt('Test finished.');
-        }
-
-        function resetIdRound() {
-            clearTimeout(id.timer);
-            stopIdAudio();
-            id.target = -1;
-            id.locked = false;
-            id.round = 0;
-            id.correct = 0;
-            clearIdMarks();
-            hideIdFeedback();
-        }
-
-        function setIdMode(mode) {
-            if (id.mode === mode) return;
-            resetIdRound();
-            id.mode = mode;
-            setIdPrompt(mode === 'test'
-                ? 'Press <b>Start 10-round test</b>. Each band plays once (Replay is allowed); click what you heard.'
-                : 'Press <b>Play random</b> (or Space), then click the band you heard. With nothing playing, click a band to audition it.');
-            syncIdControls();
-        }
-
-        function setIdSet(setId) {
-            if (!BAND_SETS[setId]) return;
-            resetIdRound();
-            id.setId = setId;
-            id.lastTarget = -1;
-            document.querySelectorAll('#id-set-row [data-set]').forEach(function (b) {
-                b.classList.toggle('is-active', b.getAttribute('data-set') === setId);
-            });
-            createGuessButtons();
-            syncIdControls();
-            if (audioContext) ensureIdBuffers(setId);
-        }
-
-        function createGuessButtons() {
-            var container = document.getElementById('guess-buttons');
-            container.innerHTML = '';
-            var bands = idBands();
-            var compact = bands.length > 9;
-            container.className = compact
-                ? 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 mb-6'
-                : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-3 mb-6';
-            bands.forEach(function (band, i) {
-                var btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'id-band-btn ' + (compact ? 'p-2' : 'p-4') + ' bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl text-left transition-all';
-                btn.setAttribute('aria-label', band.name + ', ' + band.range + (i < 9 ? ', key ' + (i + 1) : ''));
-                btn.innerHTML = compact
-                    ? '<div class="font-mono text-sm" style="color:' + band.color + '">' + escapeHtml(badgeHz(band.freq)) + '</div>'
-                    : '<div class="flex items-center gap-x-3">' +
-                        '<div class="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-mono" style="background:' + band.color + '22; color:' + band.color + '">' + escapeHtml(badgeHz(band.freq)) + '</div>' +
-                        '<div><div class="font-semibold">' + escapeHtml(band.name) + '</div>' +
-                        '<div class="text-[10px] text-zinc-500">' + escapeHtml(band.range) + '</div></div></div>';
-                btn.addEventListener('click', function () { idBandClicked(i, btn); });
-                container.appendChild(btn);
-            });
-        }
-
-        function idHandleKey(e) {
-            if (e.key === ' ' || e.key === 'Spacebar') {
-                e.preventDefault();
-                if (e.repeat || id.locked) return;
-                if (id.target >= 0) idReplay();
-                else idPlayPressed();
-                return;
-            }
-            var num = parseInt(e.key, 10);
-            if (!isNaN(num) && num >= 1 && num <= Math.min(9, idBands().length)) {
-                e.preventDefault();
-                idBandClicked(num - 1, document.querySelectorAll('#guess-buttons button')[num - 1]);
-            }
-        }
-
-        function initIdDrill() {
-            document.getElementById('id-play-btn').addEventListener('click', idPlayPressed);
-            document.getElementById('id-replay-btn').addEventListener('click', idReplay);
-            document.getElementById('id-mode-practice').addEventListener('click', function () { setIdMode('practice'); });
-            document.getElementById('id-mode-test').addEventListener('click', function () { setIdMode('test'); });
-            document.querySelectorAll('#id-set-row [data-set]').forEach(function (b) {
-                b.addEventListener('click', function () { setIdSet(b.getAttribute('data-set')); });
-            });
-            var mask = document.getElementById('id-masking');
-            mask.addEventListener('input', function () {
-                document.getElementById('id-masking-val').textContent = Math.round(parseFloat(mask.value) * 100) + '%';
-            });
-            document.getElementById('id-feedback').addEventListener('click', function (e) {
-                var b = e.target.closest('[data-id-action]');
-                if (!b) return;
-                if (b.getAttribute('data-id-action') === 'again') idPlayPressed();
-                else setIdMode('practice');
-            });
-            createGuessButtons();
-            renderIdStats();
-            syncIdControls();
         }
 
         /* ==================== CORRECTIVE EQ ==================== */
@@ -875,7 +475,10 @@
             userGains: [],
             userQs: [],
             mode: 'correct',      // correct | match
-            listen: 'user',       // problem | user | clean
+            listen: 'user',       // problem | user | clean | audition (free play)
+            free: false,
+            freeIdx: -1,
+            freeSign: 1,
             g: null,              // live graph
             matchToken: 0,
             matchTimer: null
@@ -907,6 +510,13 @@
         function stageGains() {
             var n = corrBands().length;
             var prob = new Array(n).fill(0), probQ = new Array(n).fill(WIDE_Q), user = new Array(n).fill(0);
+            if (corr.listen === 'audition') {
+                // Free play: the clean track plus one audition bell, played on
+                // the problem stage. The real problem stays hidden.
+                var a = auditionSpec();
+                if (a) { prob[a.idx] = a.gain; probQ[a.idx] = a.q; }
+                return { prob: prob, probQ: probQ, user: user, userQ: corr.userQs.slice() };
+            }
             var p = corr.problem;
             if (p) {
                 probQ[p.idx] = p.q;
@@ -1082,6 +692,72 @@
                 b.classList.toggle('is-listening', on);
                 b.setAttribute('aria-pressed', on ? 'true' : 'false');
             });
+            document.querySelectorAll('#corr-free-bands [data-band]').forEach(function (b) {
+                var on = !!corr.g && corr.listen === 'audition' && parseInt(b.getAttribute('data-band'), 10) === corr.freeIdx;
+                b.classList.toggle('is-active', on);
+                b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+        }
+
+        /* ---- Corrective free play ---- */
+        function auditionSpec() {
+            var bands = corrBands();
+            if (corr.freeIdx < 0 || corr.freeIdx >= bands.length) return null;
+            var rules = corrRules();
+            var allowed = allowedValues();
+            var mag = Math.max.apply(null, rules.mags);
+            var sign = rules.signs.indexOf('cut') >= 0 ? corr.freeSign : 1;
+            var q = allowed.qs.length === 1 ? allowed.qs[0] : (corr.userQs[corr.freeIdx] || WIDE_Q);
+            return { idx: corr.freeIdx, gain: sign * mag, q: q };
+        }
+
+        function renderCorrFree() {
+            var host = document.getElementById('corr-free-bands');
+            var signRow = document.getElementById('corr-free-sign');
+            if (!host) return;
+            var canCut = corrRules().signs.indexOf('cut') >= 0;
+            if (!canCut) corr.freeSign = 1;
+            signRow.style.display = corr.free && canCut ? '' : 'none'; // .et-seg's display beats .hidden
+            signRow.querySelectorAll('[data-sign]').forEach(function (b) {
+                b.classList.toggle('is-active', parseInt(b.getAttribute('data-sign'), 10) === corr.freeSign);
+            });
+            document.getElementById('corr-free-panel').classList.toggle('hidden', !corr.free);
+            var btn = document.getElementById('corr-free-btn');
+            btn.classList.toggle('is-active', corr.free);
+            btn.setAttribute('aria-pressed', corr.free ? 'true' : 'false');
+            host.innerHTML = '';
+            corrBands().forEach(function (band, i) {
+                var b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'ride-chip';
+                b.setAttribute('data-band', String(i));
+                b.style.color = band.color;
+                b.textContent = band.name;
+                b.addEventListener('click', function () { corrAudition(i); });
+                host.appendChild(b);
+            });
+            syncListenButtons();
+        }
+
+        function setCorrFree(on) {
+            corr.free = !!on;
+            if (!corr.free && corr.listen === 'audition') {
+                corr.listen = 'user';
+                corr.freeIdx = -1;
+                if (corr.g) applyCorrState(false);
+            }
+            renderCorrFree();
+        }
+
+        function corrAudition(i) {
+            if (!currentBuffer()) { corrMessage('Load an audio file first.'); return; }
+            if (corr.listen === 'audition' && corr.freeIdx === i && corr.g) {
+                corr.freeIdx = -1;
+                setListen('clean');
+                return;
+            }
+            corr.freeIdx = i;
+            setListen('audition');
         }
 
         function corrMessage(text) {
@@ -1337,6 +1013,7 @@
                 container.appendChild(row);
             });
             drawEQCurve();
+            renderCorrFree();
         }
 
         /* Exact RBJ peaking magnitude (the maths BiquadFilterNode uses). */
@@ -1402,6 +1079,14 @@
                 b.addEventListener('click', function () { setListen(b.getAttribute('data-listen')); });
             });
             document.getElementById('corr-stop').addEventListener('click', stopCorrective);
+            document.getElementById('corr-free-btn').addEventListener('click', function () { setCorrFree(!corr.free); });
+            document.querySelectorAll('#corr-free-sign [data-sign]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    corr.freeSign = parseInt(b.getAttribute('data-sign'), 10) < 0 ? -1 : 1;
+                    renderCorrFree();
+                    if (corr.listen === 'audition' && corr.g) applyCorrState(false);
+                });
+            });
             document.getElementById('corr-submit').addEventListener('click', submitCorrection);
             document.getElementById('mode-toggle').addEventListener('change', function (e) {
                 setCorrMode(e.target.checked ? 'match' : 'correct');
@@ -1429,13 +1114,13 @@
 
         /* ==================== TABS + KEYBOARD ==================== */
         /* Only the visible drill owns the audio and the keyboard. */
-        var DRILLS = ['ride', 'id', 'corrective'];
-        var HASH = { ride: '#ride', id: '#frequency-id', corrective: '#corrective' };
+        var DRILLS = ['ride', 'corrective'];
+        var HASH = { ride: '#ride', corrective: '#corrective' };
+        var FREQ_HASH = '#frequency-id';   // old tab: now Ride with the Frequency ID chip
         var activeDrill = 'ride';
 
         function stopDrillAudio(drill) {
             if (drill === 'ride') { if (window.EQRide) window.EQRide.deactivate(); }
-            else if (drill === 'id') { resetIdRound(); syncIdControls(); }
             else if (drill === 'corrective') { stopCorrective(); }
         }
 
@@ -1450,14 +1135,25 @@
                 tab.setAttribute('aria-selected', d === drill ? 'true' : 'false');
                 tab.tabIndex = d === drill ? 0 : -1;
             });
-            if (!(opts && opts.fromHash) && history.replaceState) history.replaceState(null, '', HASH[drill]);
-            if (drill === 'id' && audioContext) ensureIdBuffers(id.setId);
+            if (!(opts && opts.fromHash) && history.replaceState) history.replaceState(null, '', rideHash(drill));
+        }
+
+        function rideHash(drill) {
+            if (drill === 'ride' && window.EQRide && window.EQRide.getSkill() === 'freq') return FREQ_HASH;
+            return HASH[drill];
         }
 
         function drillFromHash() {
             var h = (location.hash || '').toLowerCase();
+            if (h === FREQ_HASH) return 'ride';
             for (var k in HASH) { if (HASH[k] === h) return k; }
             return 'ride';
+        }
+
+        function routeHash() {
+            var h = (location.hash || '').toLowerCase();
+            switchDrill(drillFromHash(), { fromHash: true });
+            if (h === FREQ_HASH && window.EQRide && window.EQRide.getSkill() !== 'freq') window.EQRide.setSkill('freq');
         }
 
         function isTyping(e) {
@@ -1475,11 +1171,10 @@
                 if (e.metaKey || e.ctrlKey || e.altKey) return;
                 if (tourOpen() || isTyping(e)) return;
                 if (activeDrill === 'ride') { if (window.EQRide) window.EQRide.handleKey(e); }
-                else if (activeDrill === 'id') idHandleKey(e);
             });
             document.addEventListener('keyup', function (e) {
                 if (isTyping(e)) return;
-                // Space is a drill shortcut on Ride / Frequency ID: stop a focused
+                // Space is a drill shortcut on Ride: stop a focused
                 // button from also "clicking" when Space is released.
                 if ((e.key === ' ' || e.key === 'Spacebar') && activeDrill !== 'corrective') e.preventDefault();
                 if (activeDrill === 'ride' && window.EQRide) window.EQRide.handleKeyUp(e);
@@ -1498,13 +1193,12 @@
                 switchDrill(next);
                 document.getElementById('tab-' + next).focus();
             });
-            window.addEventListener('hashchange', function () { switchDrill(drillFromHash(), { fromHash: true }); });
+            window.addEventListener('hashchange', routeHash);
         }
 
         /* ==================== BOOT ==================== */
         function initializeApp() {
             loadStats();
-            initIdDrill();
             initCorrectiveDrill();
             setupTabs();
             setupKeyboard();
@@ -1512,11 +1206,14 @@
                 window.EQRide.init({
                     getContext: function () { return initAudio(); },
                     getOutput: function () { initAudio(); return masterBus; },
-                    stopOtherAudio: function () { stopIdAudio(); stopCorrective(); },
-                    getBandSets: function () { return BAND_SETS; }
+                    stopOtherAudio: function () { stopCorrective(); },
+                    getBandSets: function () { return BAND_SETS; },
+                    onSkillChange: function () {
+                        if (activeDrill === 'ride' && history.replaceState) history.replaceState(null, '', rideHash('ride'));
+                    }
                 });
             }
-            switchDrill(drillFromHash(), { fromHash: true });
+            routeHash();
         }
 
         window.addEventListener('DOMContentLoaded', initializeApp);
@@ -1524,12 +1221,8 @@
         /* Read-only hooks for automated checks. */
         window.EQTrainerDebug = {
             initAudio: initAudio,
-            ensureIdBuffers: ensureIdBuffers,
-            idBufferCache: idBufferCache,
-            getIdNoiseBed: function () { return idNoiseBed; },
             bandSets: BAND_SETS,
             corr: corr,
-            id: id,
             getActiveDrill: function () { return activeDrill; },
             getStageGains: stageGains
         };
