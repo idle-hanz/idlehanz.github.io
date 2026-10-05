@@ -13,6 +13,7 @@ Do not link them from the live meditation pages.
 | File | Thread | Notes |
 |---|---|---|
 | [dump-brainstorm.md](./dump-brainstorm.md) | Original mega-thread (**retired**) | May 2026 Chapter 2 tone revision is Grok-drafted, not author-typed, not locked. |
+| [dump-chapter3.md](./dump-chapter3.md) | Chapter 3 : Eternal serpent rewrite (Grok chat) | Author-typed Ch3 opening, verbatim, through “Stay here and savour this. See it.” Date inferred 28 Feb 2026. |
 
 ## Not in this repo yet
 
