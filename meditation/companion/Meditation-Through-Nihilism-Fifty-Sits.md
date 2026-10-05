@@ -1,3 +1,13 @@
+> **STATUS (5 Oct 2026). Read before using.**
+>
+> - Companion to read after *Temporary Truths for Our Honest Lies*. Not a course, not a replacement for the book.
+> - Sits 1–13 rest on locked text (Intro, Chapter 1 v3).
+> - Sits 14–30 are provisional: Chapter 2 and Chapter 3 are not locked.
+> - Sits 31–50 are PROVISIONAL. They were written on 2 Oct 2026 against the author's pin, which said the sits wait on the chapters. Their chapter labels are off by one against the locked 8-chapter map: 31–36 are Ch4 (35 is really Ch5), 37–40 are really Ch6, 41–45 are really Ch7, 46–50 are really Ch8.
+> - Do not record any sits until their chapters exist in the author's sentences.
+> - "Coil" is retired by the author (5 Oct 2026).
+> - The PDF of this file was taken offline on 5 Oct 2026. Restore it with: `git checkout de9fc24 -- meditation/Meditation-Through-Nihilism-Fifty-Sits.pdf`
+
 # Meditation Through Nihilism
 
 ## Fifty Sits
