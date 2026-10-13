@@ -75,7 +75,7 @@
                 </form>
                 <p class="rr-lock-msg" id="rr-rob-msg" role="status"></p>
                 <audio controls preload="none" id="rr-rob-audio" hidden></audio>
-                <p style="margin: 0.7rem 0 0;" id="rr-rob-dl" hidden><a download="RobExecutioner.mp3">Download MP3</a></p>
+                <p style="margin: 0.7rem 0 0;" id="rr-rob-dl" hidden><a download="RobExecutioner.wav">Download WAV</a></p>
             </div>
         </div>
     </div>
@@ -92,17 +92,18 @@
         form.addEventListener('submit', async function (e) {
             e.preventDefault();
             if (!window.crypto || !crypto.subtle) { msg.textContent = 'This browser cannot unlock the file (needs HTTPS and a modern browser).'; return; }
-            btn.disabled = true; msg.textContent = 'Unlocking…';
+            btn.disabled = true; msg.textContent = 'Downloading…';
             try {
                 if (!blobPromise) blobPromise = fetch('audio/RobExecutioner.enc').then(function (r) { if (!r.ok) throw new Error('fetch'); return r.arrayBuffer(); });
                 var buf; try { buf = await blobPromise; } catch (err) { blobPromise = null; throw err; }
+                msg.textContent = 'Decrypting…';
                 var salt = buf.slice(0, 16), iv = buf.slice(16, 28), data = buf.slice(28);
                 var base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw.value), 'PBKDF2', false, ['deriveKey']);
                 var key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: salt, iterations: 250000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
                 var plain;
                 try { plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, data); }
                 catch (err) { msg.textContent = 'Wrong password'; pw.value = ''; pw.focus(); return; }
-                var url = URL.createObjectURL(new Blob([plain], { type: 'audio/mpeg' }));
+                var url = URL.createObjectURL(new Blob([plain], { type: 'audio/wav' }));
                 audio.src = url; audio.hidden = false; dl.querySelector('a').href = url; dl.hidden = false;
                 form.hidden = true; pw.value = ''; msg.textContent = '';
             } catch (err) {
