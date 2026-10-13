@@ -29,6 +29,10 @@
         .rr-card p { color: #a89f8f; margin: 0 0 0.85rem; font-size: 0.95em; }
         .rr-card audio { width: 100%; display: block; }
         .rr-card a { color: #c9a36e; font-size: 0.9em; }
+        .rr-lock { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        .rr-lock input { flex: 1; min-width: 10rem; padding: 0.45rem 0.6rem; background: #1a1510; color: #e8d9b8; border: 1px solid #3a2f22; border-radius: 6px; }
+        .rr-lock button { padding: 0.45rem 1rem; background: #3a2f22; color: #e8d9b8; border: 1px solid #5a4a35; border-radius: 6px; cursor: pointer; }
+        .rr-lock-msg { color: #d08a6a; margin: 0.5rem 0 0; font-size: 0.9em; min-height: 1.2em; }
     </style>
 </head>
 <body class="art-bg">
@@ -62,11 +66,50 @@
                 <audio controls preload="metadata" src="audio/stereo.wav"></audio>
                 <p style="margin: 0.7rem 0 0;"><a href="audio/stereo.wav" download>Download WAV</a></p>
             </div>
+            <div class="rr-card" id="rr-rob">
+                <h2>Rob Executioner</h2>
+                <p>Password protected.</p>
+                <form class="rr-lock" id="rr-rob-form" autocomplete="off">
+                    <input type="password" id="rr-rob-pw" placeholder="Password" aria-label="Password">
+                    <button type="submit" id="rr-rob-btn">Unlock</button>
+                </form>
+                <p class="rr-lock-msg" id="rr-rob-msg" role="status"></p>
+                <audio controls preload="none" id="rr-rob-audio" hidden></audio>
+                <p style="margin: 0.7rem 0 0;" id="rr-rob-dl" hidden><a download="RobExecutioner.mp3">Download MP3</a></p>
+            </div>
         </div>
     </div>
 
     <footer class="site-footer">
         <p>© Idle Hanz • <a href="../index.html">Studio Tools</a> • <a href="../../index.html">Home</a></p>
     </footer>
+    <script>
+    (function () {
+        var form = document.getElementById('rr-rob-form'), pw = document.getElementById('rr-rob-pw'),
+            btn = document.getElementById('rr-rob-btn'), msg = document.getElementById('rr-rob-msg'),
+            audio = document.getElementById('rr-rob-audio'), dl = document.getElementById('rr-rob-dl');
+        var blobPromise = null;
+        form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            if (!window.crypto || !crypto.subtle) { msg.textContent = 'This browser cannot unlock the file (needs HTTPS and a modern browser).'; return; }
+            btn.disabled = true; msg.textContent = 'Unlocking…';
+            try {
+                if (!blobPromise) blobPromise = fetch('audio/RobExecutioner.enc').then(function (r) { if (!r.ok) throw new Error('fetch'); return r.arrayBuffer(); });
+                var buf; try { buf = await blobPromise; } catch (err) { blobPromise = null; throw err; }
+                var salt = buf.slice(0, 16), iv = buf.slice(16, 28), data = buf.slice(28);
+                var base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw.value), 'PBKDF2', false, ['deriveKey']);
+                var key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: salt, iterations: 250000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+                var plain;
+                try { plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, data); }
+                catch (err) { msg.textContent = 'Wrong password'; pw.value = ''; pw.focus(); return; }
+                var url = URL.createObjectURL(new Blob([plain], { type: 'audio/mpeg' }));
+                audio.src = url; audio.hidden = false; dl.querySelector('a').href = url; dl.hidden = false;
+                form.hidden = true; pw.value = ''; msg.textContent = '';
+            } catch (err) {
+                msg.textContent = 'Could not load the file. Please try again.';
+            } finally { btn.disabled = false; }
+        });
+    })();
+    </script>
 </body>
 </html>
