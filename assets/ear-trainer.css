@@ -1419,3 +1419,85 @@ body.ear-trainer-page {
         margin-left: 0;
     }
 }
+
+/* ==================== Reference ==================== */
+.ear-trainer-page .ref-slots {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 0.8rem;
+    margin: 1.1rem 0 0.9rem;
+}
+
+.ear-trainer-page .ref-slot {
+    border: 1px solid var(--et-border);
+    border-radius: 10px;
+    padding: 0.75rem 0.9rem 0.2rem;
+    background: rgba(8, 6, 4, 0.4);
+    min-width: 0;
+}
+
+.ear-trainer-page .ref-name {
+    margin: 0.3rem 0 0.6rem;
+    color: var(--et-text);
+    overflow-wrap: anywhere;
+}
+
+.ear-trainer-page .ref-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.8rem;
+    margin-bottom: 0.4rem;
+}
+
+.ear-trainer-page .ref-bands {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.9rem 0 0.6rem;
+}
+
+.ear-trainer-page .ref-band {
+    min-width: 3.2rem;
+    padding: 0.35rem 0.6rem;
+}
+
+.ear-trainer-page .ref-band.is-ok {
+    border-color: var(--et-success);
+    background: rgba(80, 110, 50, 0.55);
+    color: #e8f0d8;
+}
+
+.ear-trainer-page .ref-band.is-bad {
+    border-color: var(--et-danger);
+    background: rgba(140, 50, 50, 0.5);
+    color: #f3d0d0;
+}
+
+.ear-trainer-page .ref-quiz {
+    margin-top: 0.9rem;
+}
+
+.ear-trainer-page .ref-quiz-result {
+    margin: 0.55rem 0 0;
+    color: var(--et-text);
+    font-size: 0.95rem;
+}
+
+.ear-trainer-page .ref-ok { color: var(--et-success); }
+.ear-trainer-page .ref-bad { color: var(--et-danger); }
+
+.ear-trainer-page .ref-chart {
+    display: block;
+    width: 100%;
+    height: 190px;
+    border: 1px solid var(--et-border);
+    border-radius: 8px;
+    background: rgba(8, 6, 4, 0.55);
+}
+
+.ear-trainer-page .ride-where-row.hidden,
+.ear-trainer-page .ride-x-panel.hidden,
+.ear-trainer-page .ride-hp-card.hidden {
+    display: none;
+}

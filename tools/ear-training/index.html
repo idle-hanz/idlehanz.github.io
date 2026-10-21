@@ -39,6 +39,7 @@
         <div class="et-tabs" role="tablist" aria-label="Training drills">
             <button type="button" role="tab" id="tab-ride" data-drill="ride" aria-controls="drill-ride" aria-selected="true" class="et-tab is-active">Ride <span class="et-tab-sub">Frequency ID + EQ on your music</span></button>
             <button type="button" role="tab" id="tab-corrective" data-drill="corrective" aria-controls="drill-corrective" aria-selected="false" class="et-tab">Corrective EQ <span class="et-tab-sub">fix a stem</span></button>
+            <button type="button" role="tab" id="tab-reference" data-drill="reference" aria-controls="drill-reference" aria-selected="false" class="et-tab">Reference <span class="et-tab-sub">your mix vs a pro mix</span></button>
         </div>
     </div>
 
@@ -312,6 +313,75 @@
         </div>
     </div>
 
+
+    <!-- Reference: your mix against a reference track -->
+    <div id="drill-reference" class="et-drill hidden max-w-5xl mx-auto px-6 pb-20" role="tabpanel" aria-labelledby="tab-reference">
+        <div id="reference-panel" class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 sm:p-8 et-game-panel">
+            <div class="et-section-label">Reference</div>
+            <div class="text-3xl font-semibold break-words">Compare your mix with a reference</div>
+            <p class="text-sm text-zinc-400 mt-1">Both tracks play in sync at the same loudness. Switch instantly and learn to hear where your tonal balance differs. Files are analysed in this browser and never uploaded.</p>
+
+            <div class="ref-slots">
+                <div class="ref-slot">
+                    <div class="ride-kicker">A · Your mix</div>
+                    <div id="ref-name-a" class="ref-name">Nothing loaded</div>
+                    <div class="ride-inline-row">
+                        <button type="button" id="ref-load-a" class="ride-chip">Load file</button>
+                        <button type="button" id="ref-use-ride" class="ride-chip" title="Use the track that is loaded in Ride">Use Ride’s track</button>
+                    </div>
+                    <input type="file" id="ref-file-a" class="hidden" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg,.aiff">
+                </div>
+                <div class="ref-slot">
+                    <div class="ride-kicker">B · Reference</div>
+                    <div id="ref-name-b" class="ref-name">Nothing loaded</div>
+                    <div class="ride-inline-row">
+                        <button type="button" id="ref-load-b" class="ride-chip">Load file</button>
+                    </div>
+                    <input type="file" id="ref-file-b" class="hidden" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg,.aiff">
+                </div>
+            </div>
+
+            <div class="ref-controls">
+                <button type="button" id="ref-play" class="px-5 py-2.5 bg-white text-zinc-950 font-semibold rounded-3xl text-sm">Play</button>
+                <div class="ride-seg" role="group" aria-label="Listen">
+                    <button type="button" id="ref-listen-a" class="ride-chip is-active" aria-pressed="true">A · Your mix</button>
+                    <button type="button" id="ref-listen-b" class="ride-chip" aria-pressed="false">B · Reference</button>
+                </div>
+                <span class="text-xs text-zinc-500">Space switches A / B</span>
+            </div>
+            <div id="ref-match" class="text-xs text-zinc-400"></div>
+            <div id="ref-status" class="ride-status mt-2"></div>
+
+            <div class="ride-setup-row mt-4">
+                <span class="ride-kicker">View</span>
+                <div class="ride-seg" id="ref-mode-row">
+                    <button type="button" data-mode="compare" class="ride-chip is-active">Just compare</button>
+                    <button type="button" data-mode="quiz" class="ride-chip">Quiz me</button>
+                </div>
+                <span class="ride-kicker">Bands</span>
+                <div class="ride-seg" id="ref-set-row">
+                    <button type="button" data-set="seven" class="ride-chip">7 bands</button>
+                    <button type="button" data-set="octaves" class="ride-chip is-active">Octaves</button>
+                    <button type="button" data-set="thirds" class="ride-chip">Thirds</button>
+                </div>
+            </div>
+
+            <div id="ref-quiz" class="ref-quiz hidden">
+                <div id="ref-dir-row" class="ride-seg">
+                    <button type="button" data-dir="1" class="ride-chip">My mix has more</button>
+                    <button type="button" data-dir="-1" class="ride-chip">My mix has less</button>
+                    <button type="button" id="ref-next" class="ride-chip hidden">Next difference</button>
+                </div>
+                <p id="ref-quiz-result" class="ref-quiz-result"></p>
+            </div>
+            <div id="ref-bands" class="ref-bands"></div>
+            <div id="ref-chart-wrap" class="hidden">
+                <canvas id="ref-chart" class="ref-chart" width="640" height="180"></canvas>
+                <p class="text-[11px] text-zinc-500 mt-1">Long-term average spectrum of each whole track, loudness-normalised, per band: your mix minus the reference. In Just compare, tap a band to solo it on both tracks.</p>
+            </div>
+        </div>
+    </div>
+
     <script>
     (function () {
         'use strict';
@@ -579,6 +649,7 @@
             initAudio();
             resumeAudio();
             if (window.EQRide) window.EQRide.deactivate();
+            if (window.EQReference) window.EQReference.stop();
             var ctx = audioContext;
             var bands = corrBands();
             var src = ctx.createBufferSource();
@@ -1151,14 +1222,15 @@
 
         /* ==================== TABS + KEYBOARD ==================== */
         /* Only the visible drill owns the audio and the keyboard. */
-        var DRILLS = ['ride', 'corrective'];
-        var HASH = { ride: '#ride', corrective: '#corrective' };
+        var DRILLS = ['ride', 'corrective', 'reference'];
+        var HASH = { ride: '#ride', corrective: '#corrective', reference: '#reference' };
         var FREQ_HASH = '#frequency-id';   // old tab: now Ride with the Frequency ID chip
         var activeDrill = 'ride';
 
         function stopDrillAudio(drill) {
             if (drill === 'ride') { if (window.EQRide) window.EQRide.deactivate(); }
             else if (drill === 'corrective') { stopCorrective(); }
+            else if (drill === 'reference') { if (window.EQReference) window.EQReference.stop(); }
         }
 
         function switchDrill(drill, opts) {
@@ -1208,6 +1280,7 @@
                 if (e.metaKey || e.ctrlKey || e.altKey) return;
                 if (tourOpen() || isTyping(e)) return;
                 if (activeDrill === 'ride') { if (window.EQRide) window.EQRide.handleKey(e); }
+                else if (activeDrill === 'reference') { if (window.EQReference) window.EQReference.handleKey(e); }
             });
             document.addEventListener('keyup', function (e) {
                 if (isTyping(e)) return;
@@ -1243,11 +1316,21 @@
                 window.EQRide.init({
                     getContext: function () { return initAudio(); },
                     getOutput: function () { initAudio(); return masterBus; },
-                    stopOtherAudio: function () { stopCorrective(); },
+                    stopOtherAudio: function () { stopCorrective(); if (window.EQReference) window.EQReference.stop(); },
                     getBandSets: function () { return BAND_SETS; },
                     onSkillChange: function () {
                         if (activeDrill === 'ride' && history.replaceState) history.replaceState(null, '', rideHash('ride'));
                     }
+                });
+            }
+            if (window.EQReference) {
+                window.EQReference.init({
+                    initAudio: initAudio,
+                    getOutput: function () { initAudio(); return masterBus; },
+                    bandSets: BAND_SETS,
+                    stopOthers: function () { stopCorrective(); if (window.EQRide) window.EQRide.deactivate(); },
+                    getRideBuffer: function () { return window.EQRide ? window.EQRide.getBuffer() : null; },
+                    rideIsStream: function () { return !!(window.EQRide && window.EQRide.isStream()); }
                 });
             }
             routeHash();
@@ -1266,6 +1349,7 @@
     })();
     </script>
     <script src="ride.js"></script>
+    <script src="reference.js"></script>
 
     <footer class="site-footer">
         <p>© Idle Hanz • <a href="../../index.html">Return Home</a> • <a href="../index.html">Studio Tools</a></p>

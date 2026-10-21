@@ -4602,9 +4602,9 @@
             var hp = this._curve(this.currentProblem.filters);
             var comb = new Float32Array(hp.length);
             for (var i = 0; i < hp.length; i++) comb[i] = hp[i] + hu[i];
+            sets.push({ db: comb, color: 'rgba(143,173,110,0.9)', label: 'Result', width: 4 });
             sets.push({ db: hp, color: '#c45c5c', label: 'Problem' });
             sets.push({ db: hu, color: '#c9a36e', label: 'Your EQ' });
-            sets.push({ db: comb, color: '#8fad6e', label: 'Result', width: 2.5 });
         } else {
             sets.push({ db: hu, color: '#c9a36e', label: 'Your EQ' });
         }
@@ -4707,6 +4707,12 @@
         setSkill: function (skill) { ride._setSkill(skill); },
         getSkill: function () { return ride.stats.skill; },
         setFree: function (on) { ride._setFree(on); },
+        getBuffer: function () {
+            var e = ride.engine;
+            if (!e || e.kind !== 'buffer' || !e.buffer) return null;
+            return { name: ride.source === 'demo' ? 'Ride demo bed' : (ride.els.nowPlaying ? ride.els.nowPlaying.textContent : 'Ride track'), buffer: e.buffer };
+        },
+        isStream: function () { return !!(ride.engine && ride.engine.kind === 'stream'); },
         _ride: ride // read-only handle for automated checks
     };
 })(window);
