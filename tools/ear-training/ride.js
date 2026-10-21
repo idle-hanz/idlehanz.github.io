@@ -29,7 +29,7 @@
     /* Frequency ID solos one band of the music: two cascaded bandpasses at
        the layout's Q, then a gain that puts every band at the same
        K-weighted loudness (half the full mix, i.e. -6 dB). */
-    var SKILLS = ['freq', 'band', 'amount'];
+    var SKILLS = ['freq', 'band', 'amount', 'level', 'shape', 'filter', 'hunt', 'fix'];
     var SOLO_TARGET = 0.5;
     var SOLO_MIN_GAIN = 0.25;   // -12 dB
     var SOLO_MAX_GAIN = 40;     // +32 dB, for bands the song barely uses
@@ -251,9 +251,79 @@
 
         this.input.connect(this.dry);
         this.dry.connect(this.gate);
+        /* Wet path: up to two problem filters plus a user filter (sweep /
+           fix), on the full stereo signal ("all") or on one component
+           (Mid, Side, Left or Right) via a matrix:
+             out = x + u * (H(c) - c),  c = cL*L + cR*R,  u = (uL, uR). */
+        var mkPeak = function () {
+            var f = ctx.createBiquadFilter();
+            f.type = 'peaking';
+            f.frequency.value = 1000;
+            f.Q.value = RIDE_Q;
+            f.gain.value = 0;
+            return f;
+        };
+        this.eq2 = mkPeak();
+        this.eqU = mkPeak();
+        this.lvl = ctx.createGain();
+        this.allG = ctx.createGain();
+        this.regG = ctx.createGain();
+        this.regG.gain.value = 0;
         this.input.connect(this.eq);
-        this.eq.connect(this.comp);
+        this.eq.connect(this.eq2);
+        this.eq2.connect(this.eqU);
+        this.eqU.connect(this.allG);
+        this.allG.connect(this.lvl);
+        this.up = ctx.createGain();
+        this.up.channelCount = 2;
+        this.up.channelCountMode = 'explicit';
+        this.up.channelInterpretation = 'speakers'; // mono -> L = R
+        this.input.connect(this.up);
+        this.split = ctx.createChannelSplitter(2);
+        this.up.connect(this.split);
+        this.cL = ctx.createGain();
+        this.cR = ctx.createGain();
+        this.split.connect(this.cL, 0);
+        this.split.connect(this.cR, 1);
+        this.cSum = ctx.createGain();
+        this.cSum.channelCount = 1;
+        this.cSum.channelCountMode = 'explicit';
+        this.cL.connect(this.cSum);
+        this.cR.connect(this.cSum);
+        this.rEq = [mkPeak(), mkPeak(), mkPeak()];
+        this.cSum.connect(this.rEq[0]);
+        this.rEq[0].connect(this.rEq[1]);
+        this.rEq[1].connect(this.rEq[2]);
+        this.dU = ctx.createGain();
+        this.dU.channelCount = 1;
+        this.dU.channelCountMode = 'explicit';
+        this.rEq[2].connect(this.dU);
+        this.neg = ctx.createGain();
+        this.neg.gain.value = -1;
+        this.cSum.connect(this.neg);
+        this.neg.connect(this.dU);
+        this.uL = ctx.createGain();
+        this.uR = ctx.createGain();
+        this.dU.connect(this.uL);
+        this.dU.connect(this.uR);
+        this.merge = ctx.createChannelMerger(2);
+        this.uL.connect(this.merge, 0, 0);
+        this.uR.connect(this.merge, 0, 1);
+        this.merge.connect(this.regG);
+        this.up.connect(this.regG);
+        this.regG.connect(this.lvl);
+        this.lvl.connect(this.comp);
         this.comp.connect(this.wet);
+        // Stereo meters for mono / near-mono detection.
+        this.anL = ctx.createAnalyser();
+        this.anR = ctx.createAnalyser();
+        this.anL.fftSize = 2048;
+        this.anR.fftSize = 2048;
+        this.split.connect(this.anL, 0);
+        this.split.connect(this.anR, 1);
+        this.msMid = 0;
+        this.msSide = 0;
+        this._probes = [0, 1, 2].map(function () { return ctx.createBiquadFilter(); });
         this.wet.connect(this.gate);
         this.gate.connect(output || ctx.destination);
         // Solo path for Frequency ID: input -> bandpass -> bandpass -> solo.
@@ -311,10 +381,45 @@
     RideEngine.prototype._resetSpectrum = function () {
         this.lt = null;
         this.ltFrames = 0;
+        this.msMid = 0;
+        this.msSide = 0;
+        this._msFrames = 0;
+    };
+
+    RideEngine.prototype._sampleStereo = function () {
+        if (!this.anL) return;
+        var n = this.anL.fftSize;
+        if (!this._tdL) { this._tdL = new Float32Array(n); this._tdR = new Float32Array(n); }
+        this.anL.getFloatTimeDomainData(this._tdL);
+        this.anR.getFloatTimeDomainData(this._tdR);
+        var m = 0, sd = 0;
+        for (var i = 0; i < n; i++) {
+            var a = this._tdL[i], b = this._tdR[i];
+            m += (a + b) * (a + b);
+            sd += (a - b) * (a - b);
+        }
+        if (m < 1e-6) return; // silence says nothing about width
+        var k = this._msFrames < 10 ? 1 / ((this._msFrames || 0) + 1) : 0.08;
+        this.msMid += (m - this.msMid) * k;
+        this.msSide += (sd - this.msSide) * k;
+        this._msFrames = (this._msFrames || 0) + 1;
+    };
+
+    /* Side more than ~25 dB below Mid: treat as mono (Side has nothing
+       audible to change). Unknown until a few frames have been heard. */
+    RideEngine.prototype.isNearMono = function () {
+        if (!this._msFrames || this._msFrames < 3) return false;
+        return this.msSide < this.msMid * 0.0032;
+    };
+
+    RideEngine.prototype.sideShare = function () {
+        var t = this.msMid + this.msSide;
+        return t > 0 ? this.msSide / t : 0.2;
     };
 
     RideEngine.prototype._sampleSpectrum = function () {
         if (!this.playing || !this.ltAn) return;
+        this._sampleStereo();
         var n = this.ltAn.frequencyBinCount;
         if (!this._ltBuf || this._ltBuf.length !== n) this._ltBuf = new Float32Array(n);
         this.ltAn.getFloatFrequencyData(this._ltBuf);
@@ -341,19 +446,7 @@
         var spec = this.lt;
         if (!spec) return 4;
         var n = spec.length;
-        var binHz = this.ctx.sampleRate / this.ltAn.fftSize;
-        if (!this._binF || this._binF.length !== n) {
-            this._binF = new Float32Array(n);
-            this._kw = new Float32Array(n);
-            for (var i = 0; i < n; i++) {
-                var f = Math.max(1, i * binHz);
-                this._binF[i] = f;
-                var k = kWeightMag(f);
-                this._kw[i] = f < 20 ? 0 : k * k;
-            }
-            this._mag = new Float32Array(n);
-            this._ph = new Float32Array(n);
-        }
+        this._ensureBins(n);
         this._probe.frequency.value = freq;
         this._probe.Q.value = q;
         this._probe.getFrequencyResponse(this._binF, this._mag, this._ph);
@@ -368,6 +461,83 @@
         if (!(tot > 1e-14) || !(band > 1e-18)) return SOLO_MAX_GAIN / 4;
         var g = SOLO_TARGET * Math.sqrt(tot / band);
         return Math.max(SOLO_MIN_GAIN, Math.min(SOLO_MAX_GAIN, g));
+    };
+
+    RideEngine.prototype._ensureBins = function (n) {
+        var binHz = this.ctx.sampleRate / this.ltAn.fftSize;
+        if (!this._binF || this._binF.length !== n) {
+            this._binF = new Float32Array(n);
+            this._kw = new Float32Array(n);
+            for (var i = 0; i < n; i++) {
+                var f = Math.max(1, i * binHz);
+                this._binF[i] = f;
+                var k = kWeightMag(f);
+                this._kw[i] = f < 20 ? 0 : k * k;
+            }
+            this._mag = new Float32Array(n);
+            this._ph = new Float32Array(n);
+            this._h2 = new Float32Array(n);
+            this._mag2 = new Float32Array(n);
+        }
+    };
+
+    function setFilterNode(node, spec) {
+        node.type = spec.type || 'peaking';
+        node.frequency.value = Math.max(10, Math.min(22000, spec.freq || 1000));
+        node.Q.value = spec.q != null ? spec.q : RIDE_Q;
+        node.gain.value = spec.gain || 0;
+    }
+
+    /* |H|^2 of a list of filters at the given frequencies (Float32Array). */
+    RideEngine.prototype.powerResponse = function (filters, freqs, out) {
+        var n = freqs.length;
+        for (var i = 0; i < n; i++) out[i] = 1;
+        if (!this._rm || this._rm.length !== n) {
+            this._rm = new Float32Array(n);
+            this._rp = new Float32Array(n);
+        }
+        var self = this;
+        (filters || []).forEach(function (f, k) {
+            if (!f) return;
+            var probe = self._probes[k % self._probes.length];
+            setFilterNode(probe, f);
+            probe.getFrequencyResponse(freqs, self._rm, self._rp);
+            for (var j = 0; j < n; j++) out[j] *= self._rm[j] * self._rm[j];
+        });
+        return out;
+    };
+
+    /* Response in dB of a filter list on any frequency grid. */
+    RideEngine.prototype.responseDb = function (filters, freqs) {
+        var out = new Float32Array(freqs.length);
+        this.powerResponse(filters, freqs, out);
+        for (var i = 0; i < out.length; i++) out[i] = 10 * Math.log10(Math.max(1e-12, out[i]));
+        return out;
+    };
+
+    /* Loudness trim from the long-term K-weighted spectrum: works on any
+       source, including a captured tab. Region problems only change one
+       component's share of the power. */
+    RideEngine.prototype.spectralComp = function (filters, region) {
+        if (!this.lt || this.ltFrames < 2) this._sampleSpectrum();
+        var spec = this.lt;
+        var list = (filters || []).filter(Boolean);
+        if (!spec || !list.length) return 1;
+        var n = spec.length;
+        this._ensureBins(n);
+        this.powerResponse(list, this._binF, this._h2);
+        var w = 1;
+        if (region === 'mid') w = 1 - this.sideShare();
+        else if (region === 'side') w = this.sideShare();
+        else if (region === 'left' || region === 'right') w = 0.5;
+        var tot = 0, now = 0;
+        for (var b = 1; b < n; b++) {
+            var pk = spec[b] * this._kw[b];
+            tot += pk;
+            now += pk * (1 + w * (this._h2[b] - 1));
+        }
+        if (!(tot > 1e-14) || !(now > 1e-14)) return 1;
+        return Math.max(0.3, Math.min(3, Math.sqrt(tot / now)));
     };
 
     RideEngine.prototype.setBands = function (bands) {
@@ -550,15 +720,18 @@
     };
 
     RideEngine.prototype.setProblem = function (problem) {
-        this.problem = problem ? {
-            kind: problem.kind === 'solo' ? 'solo' : 'eq',
-            index: problem.index,
-            freq: problem.freq,
-            gain: problem.gain || 0,
-            soloGain: problem.soloGain || 1,
-            compGain: problem.compGain,
-            q: problem.q || RIDE_Q
-        } : null;
+        var c = null;
+        if (problem) {
+            c = {};
+            Object.keys(problem).forEach(function (k) { c[k] = problem[k]; });
+            c.kind = problem.kind === 'solo' ? 'solo' : problem.kind === 'level' ? 'level' : 'eq';
+            c.gain = problem.gain || 0;
+            c.soloGain = problem.soloGain || 1;
+            c.q = problem.q || RIDE_Q;
+            c.filters = problem.filters ? problem.filters.map(function (f) { return f ? Object.assign({}, f) : null; }) : null;
+            c.user = problem.user ? Object.assign({}, problem.user) : null;
+        }
+        this.problem = c;
         this.abClean = false;
         this._applyProblemGains();
     };
@@ -629,8 +802,47 @@
         return peak < 0.0015; // about -56 dBFS
     };
 
+    /* Filters the wet path is playing for a problem (legacy problems are a
+       single peaking bell). */
+    function problemFilters(p) {
+        if (!p || p.kind === 'solo' || p.kind === 'level') return [];
+        if (p.filters) return p.filters.filter(Boolean);
+        if (typeof p.freq === 'number') return [{ type: 'peaking', freq: p.freq, gain: p.gain || 0, q: p.q || RIDE_Q }];
+        return [];
+    }
+
+    RideEngine.prototype.activeFilters = function (p) {
+        p = p || this.problem;
+        var list = problemFilters(p).slice();
+        if (p && p.user && p.userOn !== false) list.push(p.user);
+        return list;
+    };
+
+    /* Update only the user filter (sweep / fix) without a new problem. */
+    RideEngine.prototype.setUser = function (user, on) {
+        if (!this.problem) return;
+        this.problem.user = user ? Object.assign({}, user) : null;
+        this.problem.userOn = on !== false;
+        this.problem.compGain = this.spectralComp(this.activeFilters(), this.problem.region);
+        this._applyProblemGains(true);
+    };
+
     RideEngine.prototype.calibrateCompensation = function (problem) {
         if (!problem) return;
+        var simple = !problem.filters && !problem.user && (!problem.region || problem.region === 'all') && problem.kind !== 'level';
+        if (problem.kind === 'level') {
+            problem.compGain = 1;
+            if (this.problem) this.problem.compGain = 1;
+            this.comp.gain.setValueAtTime(1, this.ctx.currentTime);
+            return;
+        }
+        if (!simple) {
+            var sg = this.spectralComp(this.activeFilters(problem), problem.region);
+            problem.compGain = sg;
+            if (this.problem) this.problem.compGain = sg;
+            this.comp.gain.setTargetAtTime(sg, this.ctx.currentTime, 0.02);
+            return;
+        }
         var fallback = dbToGain(compensationDb(problem.gain, problem.q, problem.freq));
         problem.compGain = fallback;
         this.comp.gain.setValueAtTime(fallback, this.ctx.currentTime);
@@ -657,32 +869,69 @@
         param.linearRampToValueAtTime(value, t + 0.02);
     };
 
-    RideEngine.prototype._applyProblemGains = function () {
+    RideEngine.prototype._applyProblemGains = function (smooth) {
         if (!this.eq) return;
         var t = this.ctx.currentTime;
-        var active = !!(this.problem && !this.abClean);
-        var solo = !!(this.problem && this.problem.kind === 'solo');
+        var p = this.problem;
+        var active = !!(p && !this.abClean);
+        var solo = !!(p && p.kind === 'solo');
         var soloT = 0;
+        var self = this;
+        var setSlot = function (node, spec) {
+            spec = spec || { type: 'peaking', freq: 1000, gain: 0, q: RIDE_Q };
+            var type = spec.type || 'peaking';
+            if (node.type !== type) node.type = type;
+            var f = Math.max(10, Math.min(22000, spec.freq || 1000));
+            if (smooth) {
+                node.frequency.setTargetAtTime(f, t, 0.012);
+                node.gain.setTargetAtTime(spec.gain || 0, t, 0.012);
+                node.Q.setTargetAtTime(spec.q != null ? spec.q : RIDE_Q, t, 0.012);
+            } else {
+                node.frequency.cancelScheduledValues(t);
+                node.gain.cancelScheduledValues(t);
+                node.Q.cancelScheduledValues(t);
+                node.frequency.setValueAtTime(f, t);
+                node.gain.setValueAtTime(spec.gain || 0, t);
+                node.Q.setValueAtTime(spec.q != null ? spec.q : RIDE_Q, t);
+            }
+        };
+        var filt = problemFilters(p);
+        var user = p && p.user && p.userOn !== false ? p.user : null;
+        var specs = [filt[0], filt[1], user];
+        [this.eq, this.eq2, this.eqU].forEach(function (node, i) { setSlot(node, specs[i]); });
+        this.rEq.forEach(function (node, i) { setSlot(node, specs[i]); });
+        var region = p && p.region && p.region !== 'all' ? p.region : 'all';
+        var co = {
+            all: [0, 0, 0, 0], mid: [0.5, 0.5, 1, 1], side: [0.5, -0.5, 1, -1],
+            left: [1, 0, 1, 0], right: [0, 1, 0, 1]
+        }[region] || [0, 0, 0, 0];
+        this.cL.gain.setValueAtTime(co[0], t);
+        this.cR.gain.setValueAtTime(co[1], t);
+        this.uL.gain.setValueAtTime(co[2], t);
+        this.uR.gain.setValueAtTime(co[3], t);
+        this.allG.gain.setValueAtTime(region === 'all' ? 1 : 0, t);
+        this.regG.gain.setValueAtTime(region === 'all' ? 0 : 1, t);
+        var lvl = p && p.kind === 'level' ? dbToGain(p.levelDb || 0) : 1;
+        if (smooth) this.lvl.gain.setTargetAtTime(lvl, t, 0.012);
+        else this.lvl.gain.setValueAtTime(lvl, t);
         if (solo) {
-            this.bp1.frequency.setValueAtTime(this.problem.freq, t);
-            this.bp2.frequency.setValueAtTime(this.problem.freq, t);
-            this.bp1.Q.setValueAtTime(this.problem.q, t);
-            this.bp2.Q.setValueAtTime(this.problem.q, t);
-            this.eq.gain.setValueAtTime(0, t);
+            this.bp1.frequency.setValueAtTime(p.freq, t);
+            this.bp2.frequency.setValueAtTime(p.freq, t);
+            this.bp1.Q.setValueAtTime(p.q, t);
+            this.bp2.Q.setValueAtTime(p.q, t);
             this.comp.gain.setValueAtTime(1, t);
-            soloT = active ? this.problem.soloGain : 0;
-        } else if (this.problem && typeof this.problem.freq === 'number') {
-            this.eq.frequency.setValueAtTime(this.problem.freq, t);
-            this.eq.Q.setValueAtTime(this.problem.q || RIDE_Q, t);
-            this.eq.gain.setValueAtTime(this.problem.gain, t);
-            this.comp.gain.setValueAtTime(
-                this.problem.compGain != null
-                    ? this.problem.compGain
-                    : dbToGain(compensationDb(this.problem.gain, this.problem.q, this.problem.freq)),
-                t
-            );
+            soloT = active ? p.soloGain : 0;
+        } else if (p && p.kind === 'level') {
+            this.comp.gain.setValueAtTime(1, t);
+        } else if (filt.length || user) {
+            var cg = p.compGain != null
+                ? p.compGain
+                : (filt.length === 1 && !user && region === 'all' && filt[0].type === 'peaking'
+                    ? dbToGain(compensationDb(filt[0].gain, filt[0].q, filt[0].freq))
+                    : 1);
+            if (smooth) this.comp.gain.setTargetAtTime(cg, t, 0.03);
+            else this.comp.gain.setValueAtTime(cg, t);
         } else {
-            this.eq.gain.setValueAtTime(0, t);
             this.comp.gain.setValueAtTime(1, t);
         }
         if (this.kind === 'stream') {
@@ -717,7 +966,10 @@
             stair: {},
             // Frequency ID keeps its own streak/accuracy (per-band rows are
             // already separate: their key contains "freq:solo").
-            freq: { streak: 0, correct: 0, total: 0 }
+            freq: { streak: 0, correct: 0, total: 0 },
+            // New drills (Level, Width, Filters, Resonance, Fix it, options,
+            // speaker check) keep everything under x.
+            x: {}
         };
     }
 
@@ -745,6 +997,7 @@
             if (typeof raw.streak === 'number') s.streak = raw.streak;
             if (typeof raw.correct === 'number') s.correct = raw.correct;
             if (typeof raw.total === 'number') s.total = raw.total;
+            if (raw.x && typeof raw.x === 'object') s.x = raw.x;
             if (raw.freq && typeof raw.freq === 'object') {
                 ['streak', 'correct', 'total'].forEach(function (k) {
                     if (typeof raw.freq[k] === 'number' && isFinite(raw.freq[k])) s.freq[k] = raw.freq[k];
@@ -865,6 +1118,7 @@
         this._renderStats();
         this._renderWeakMap();
         this._renderSetBar();
+        this._hpRender();
         this.setStatus(this._isFreq()
             ? 'Frequency ID: press Start ride (demo, folder or tab) and name the soloed band.'
             : 'Choose a folder, then Start ride.');
@@ -952,12 +1206,32 @@
                     self._setBandMode(lay.getAttribute('data-layout'));
                     return;
                 }
+                var xl = e.target.closest('[data-xlevel]');
+                if (xl) {
+                    self._setXLevel(xl.getAttribute('data-xlevel'));
+                    return;
+                }
+                var opt = e.target.closest('[data-opt]');
+                if (opt) {
+                    self._setBandOpt(opt.getAttribute('data-opt'));
+                    return;
+                }
                 var btn = e.target.closest('[data-level]');
                 if (!btn) return;
                 self._setBandLevel(btn.getAttribute('data-level'));
             });
         }
         this.els.gameBtn.addEventListener('click', function () { self.toggleGame(); });
+        var hpBind = function (id, fn) {
+            var el = byId(id);
+            if (el) el.addEventListener('click', fn);
+        };
+        hpBind('ride-hp-btn', function () { self.openHpCheck(); });
+        hpBind('ride-hp-yes', function () { self._hpAnswer(true); });
+        hpBind('ride-hp-no', function () { self._hpAnswer(false); });
+        hpBind('ride-hp-again', function () { self._hpPlay(); });
+        hpBind('ride-hp-cancel', function () { self._hpClose(); });
+        hpBind('ride-hp-reset', function () { self._hpReset(); });
         if (this.els.result) {
             this.els.result.style.cursor = 'pointer';
             this.els.result.title = 'Click to skip';
@@ -1056,7 +1330,12 @@
                 btn.setAttribute('aria-pressed', s === skill ? 'true' : 'false');
             }
         });
-        if (this.els.panel) this.els.panel.classList.toggle('is-freq', skill === 'freq');
+        if (this.els.panel) {
+            this.els.panel.classList.toggle('is-freq', skill === 'freq');
+            this.els.panel.classList.toggle('is-x', XSKILLS.indexOf(skill) >= 0);
+            this.els.panel.classList.toggle('is-nobands', NOBANDS.indexOf(skill) >= 0);
+            this.els.panel.setAttribute('data-skill', skill);
+        }
         this.deck = [];
         if (this.free) this._clearFreeSel();
         this._syncSkillUi();
@@ -1079,10 +1358,13 @@
         var host = document.getElementById('ride-level-chips');
         if (host) {
             host.innerHTML = '';
-            host.appendChild(freq ? this._freqDiffBoard() : amount ? this._amountDiffBoard() : this._bandDiffBoard());
+            host.appendChild(this._isX() ? this._xDiffBoard() : freq ? this._freqDiffBoard() : amount ? this._amountDiffBoard() : this._bandDiffBoard());
+            if (this.stats.skill === 'band') host.appendChild(this._bandOptsBoard());
         }
         if (!this.els.skillHint) return;
-        if (freq) {
+        if (this._isX()) {
+            this.els.skillHint.textContent = this._xHint();
+        } else if (freq) {
             var set = this._bandSet(this.stats.bandMode);
             this.els.skillHint.textContent = 'Now: ' + set.label + ' · one band of the song soloed (bandpass Q ' + set.q +
                 '), every band at the same loudness';
@@ -1260,8 +1542,8 @@
         {
             target: '.ride-setup-row',
             skill: 'freq',
-            title: 'Three games',
-            html: '<strong>Frequency ID</strong> (start here): one band of the song plays on its own, level-matched — name it. <strong>Which band?</strong> The full song with one band boosted or cut — name the band. <strong>Band + amount</strong>: band and how much in one tap. Start with <strong>4</strong> or <strong>7 bands</strong>, then <strong>Octaves</strong>, then <strong>Thirds</strong>. Filters get narrower as the bands get closer.'
+            title: 'The games',
+            html: '<strong>Frequency ID</strong> (start here): one band of the song plays on its own — name it. <strong>Which band?</strong> The full song with one band boosted or cut (options: two bands at once, or Mid/Side and Left/Right). <strong>Band + amount</strong>: band and how much. <strong>Level</strong>: louder, quieter or the same. <strong>Width</strong>: wide or narrow bell. <strong>Filters</strong>: cutoffs and shelves. <strong>Resonance</strong>: boost and sweep to find a ringing peak. <strong>Fix it</strong>: cancel a hidden bell with a real parametric EQ — works on a live tab too.'
         },
         {
             target: '#ride-level-row',
@@ -1429,6 +1711,13 @@
     };
 
     Ride.prototype._freeHint = function () {
+        var sk = this.stats.skill;
+        if (sk === 'level') return 'Free play: tap Quieter, Same or Louder to hear that change on the whole song. Tap again for the original.';
+        if (sk === 'shape') return 'Free play: pick a frequency, then tap a width to hear that bell. Tap again for clean.';
+        if (sk === 'filter') return this._filterCutoff() ? 'Free play: tap any band to hear the filter with its cutoff there. Tap again for clean.' : 'Free play: tap Low shelf, Bell or High shelf to hear each shape. Tap again for clean.';
+        if (sk === 'hunt') return 'Free play: move the slider to hear a resonance anywhere. Hold Space for clean.';
+        if (sk === 'fix') return 'Free play: a parametric bell on the music. Move the sliders; Clean to compare.';
+        if (this._bandWhere() !== 'off') return 'Free play: tap a band to hear its boost; pick ' + (this._bandWhere() === 'ms' ? 'Mid or Side' : 'Left or Right') + ' first to put it there.';
         if (this._isFreq()) return 'Free play: tap any band to solo it on the music. Tap it again for the full mix.';
         if (this.stats.skill === 'amount') return 'Free play: tap any pad to hear that boost or cut on the music. Tap it again for clean.';
         return 'Free play: tap any band to hear this level\u2019s change on it. Tap it again for clean.';
@@ -1445,6 +1734,10 @@
             btn.setAttribute('aria-pressed', this.free ? 'true' : 'false');
         }
         if (this.els.panel) this.els.panel.classList.toggle('is-free', this.free);
+        this._lastFreeChoice = null;
+        this._lastFree = null;
+        this._fixListen = this.free ? 'fix' : 'problem';
+        if (this._isX()) this._renderXPanel();
         if (quiet) return;
         if (this.free) {
             this._ensureMusic();
@@ -1490,11 +1783,17 @@
         }
         this._ensureMusic();
         this.freeSel = key;
+        this._lastFree = index;
         var spec;
         if (this._isFreq()) {
             spec = this._specFor(index);
         } else {
             spec = this._specFor(index, gain != null ? gain : this._gainForBand(index, 1));
+        }
+        if (spec.kind !== 'solo' && this._bandWhere() !== 'off' && this._freeRegion) {
+            spec.region = this._freeRegion;
+            spec.filters = [{ type: 'peaking', freq: spec.freq, gain: Math.abs(spec.gain), q: spec.q }];
+            spec.gain = Math.abs(spec.gain);
         }
         this.engine.setProblem(spec);
         if (spec.kind !== 'solo') this.engine.calibrateCompensation(spec);
@@ -1505,9 +1804,10 @@
             : wrap && wrap.querySelector('button[data-index="' + index + '"]');
         if (el) el.classList.add('is-lit');
         this._updateABBadge();
-        this.setStatus(this._isFreq()
-            ? 'Free play: ' + this._labelEq(spec) + ' soloed. Tap again for the full mix · hold Space to compare.'
-            : 'Free play: ' + this._labelEq(spec) + '. Tap again for clean · hold Space to compare.');
+        var where = spec.region ? ' in the ' + REGION_NAME[spec.region] : '';
+        this.setStatus((this._isFreq()
+            ? 'Free play: ' + this._labelEq(spec) + ' soloed. '
+            : 'Free play: ' + this._labelEq(spec) + where + '. ') + bandDesc(band.freq));
     };
 
     Ride.prototype._bandSet = function (mode) {
@@ -1538,6 +1838,7 @@
         if (this.free) this._clearFreeSel();
         this._renderGuess();
         this._renderWeakMap();
+        this._hpRender();
         if (!silent) {
             saveStats(this.stats);
             if (this.gameOn) this._beginListen();
@@ -1798,6 +2099,7 @@
 
     /* Streak/accuracy: Frequency ID and the EQ games are counted apart. */
     Ride.prototype._totals = function () {
+        if (this._isX()) return this._xTotals(this.stats.skill);
         if (this._isFreq()) {
             if (!this.stats.freq) this.stats.freq = { streak: 0, correct: 0, total: 0 };
             return this.stats.freq;
@@ -1814,8 +2116,12 @@
                 : '—';
         }
         if (this.els.weak) {
-            var worst = this._weakestLabel();
-            this.els.weak.textContent = worst ? ('weak: ' + worst) : 'weak: —';
+            if (this._isX() && !this._filterCutoff()) {
+                this.els.weak.textContent = this._xSummary();
+            } else {
+                var worst = this._weakestLabel();
+                this.els.weak.textContent = worst ? ('weak: ' + worst) : 'weak: —';
+            }
         }
         this._updateABBadge();
         this._renderWeakMap();
@@ -1824,7 +2130,12 @@
     /* Per-band stats are kept separately for each layout + game + difficulty,
        e.g. "octaves|band:3|1000", so a -3 dB miss never mixes with +6 dB hits. */
     Ride.prototype._levelKey = function () {
+        if (this._isX()) return this.stats.skill + ':' + this._xLevel();
         if (this._isFreq()) return 'freq:solo';
+        if (this.stats.skill === 'band' && this._bandXActive()) {
+            var base = this.stats.bandAuto ? 'band:auto' : 'band:' + (this.stats.bandStep || 1);
+            return base + (this._bandTwo() ? ':two' : ':' + this._bandWhere());
+        }
         if (this.stats.skill === 'amount') return 'amount:' + (this.stats.amountLevel || 'easy');
         return this.stats.bandAuto ? 'band:auto' : 'band:' + (this.stats.bandStep || 1);
     };
@@ -1894,6 +2205,7 @@
         var host = document.getElementById('ride-weak-map');
         if (!host) return;
         host.innerHTML = '';
+        if (this._isX() && !this._filterCutoff()) return;
         var self = this;
         var auto = this.stats.skill === 'band' && this.stats.bandAuto;
         this.bands.forEach(function (band) {
@@ -1978,6 +2290,13 @@
         var wrap = this.els.guess;
         if (!wrap) return;
         wrap.innerHTML = '';
+        this._renderWhereRow();
+        if (this._isX()) {
+            this._renderX(wrap);
+            return;
+        }
+        var xp = document.getElementById('ride-x-panel');
+        if (xp) xp.classList.add('hidden');
         if (this.stats.skill === 'amount') this._renderAmountCols(wrap);
         else this._renderBandButtons(wrap);
     };
@@ -1989,6 +2308,11 @@
             var btn = document.createElement('button');
             btn.type = 'button';
             btn.dataset.index = String(i);
+            btn.title = bandDesc(band.freq);
+            if (self._excluded(band.freq)) {
+                btn.classList.add('is-excluded');
+                btn.title = 'Your speakers can’t reproduce this band (speaker check), so it is never the answer. ' + btn.title;
+            }
             btn.innerHTML =
                 '<div class="flex items-center gap-x-3">' +
                     '<div class="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-mono" style="background:' + band.color + '22;color:' + band.color + '">' +
@@ -2080,6 +2404,7 @@
         if (!this.els.result) return;
         this.els.result.classList.add('hidden');
         this.els.result.classList.remove('is-ok', 'is-bad');
+        this._showDesc(null);
     };
 
     Ride.prototype._showResult = function (ok, title, detail) {
@@ -2089,6 +2414,7 @@
         this.els.result.classList.toggle('is-bad', !ok);
         if (this.els.resultMark) this.els.resultMark.textContent = title;
         if (this.els.resultDetail) this.els.resultDetail.textContent = detail || '';
+        this._showDesc(null);
     };
 
     Ride.prototype.clearTimers = function () {
@@ -2191,6 +2517,7 @@
         this._updateABBadge();
         this._syncGameBtn();
         this._hideResult();
+        if (this._isX()) this._renderXPanel();
         this.setStatus(this._isFreq()
             ? 'Stopped. Music keeps playing — try Free play to hear each band.'
             : 'Ride stopped. Music can keep playing.');
@@ -2198,7 +2525,7 @@
 
     Ride.prototype._beginListen = function () {
         if (!this.gameOn) return;
-        if (this.session && !this.session.finished && this.session.done >= SET_TARGET) {
+        if (!this._isX() && this.session && !this.session.finished && this.session.done >= SET_TARGET) {
             this._endDailySet();
             return;
         }
@@ -2213,6 +2540,7 @@
         this._showChoices();
         this._updateABBadge();
         this.setStatus(this._isFreq() ? 'Full mix…' : 'Listen…');
+        if (this.stats.skill === 'hunt' || this.stats.skill === 'fix') this._renderXPanel();
         var self = this;
         this.after(this._isFreq() ? FREQ_LISTEN_MS : LISTEN_MS, function () { self._applyNewProblem(); });
     };
@@ -2274,8 +2602,9 @@
                 this.deck.push(idx);
                 idx = this.deck.shift();
             }
-            fallback = idx;
             var freq = this.bands[idx] && this.bands[idx].freq;
+            if (this._excluded(freq)) continue; // speaker check: never the answer
+            fallback = idx;
             if (!this.engine || this.engine.bandHasEnergy(freq)) {
                 this.lastBandIndex = idx;
                 return idx;
@@ -2339,10 +2668,18 @@
             this.after(700, function () { selfWait._applyNewProblem(); });
             return;
         }
+        if (this._isX()) {
+            this._xNew();
+            return;
+        }
         var idx = this._pickBandIndex();
         var band = this.bands[idx];
         if (!band) return;
         var skill = this.stats.skill;
+        if (skill === 'band' && this._bandXActive()) {
+            this._bandXNew(idx);
+            return;
+        }
         var q = this._shapeForFreq().q;
         var gain;
         if (skill === 'freq') {
@@ -2379,8 +2716,16 @@
     };
 
     Ride.prototype.guessBand = function (index) {
+        if (this._isX()) {
+            this._xBand(index);
+            return;
+        }
         if (this.free) {
             this._freeBand(index);
+            return;
+        }
+        if (this.stats.skill === 'band' && this._bandXActive()) {
+            this._bandXGuess(index);
             return;
         }
         if (!this.gameOn || this.phase !== 'problem' || !this.currentProblem) return;
@@ -2515,6 +2860,7 @@
             if (this.engine) this.engine.setABClean(false);
             this._updateABBadge();
             this._showResult(ok, title, truthLabel);
+            this._showDesc(p && p.freq);
             this.setStatus(ok ? 'Yes — ' + truthLabel : truthLabel);
             var selfOk = this;
             this.after(REVEAL_MS, function () {
@@ -2541,6 +2887,7 @@
             self.phase = 'compare-truth';
             self._applyLiveEq(p);
             self._showResult(false, title, 'Truth: ' + truthLabel);
+            self._showDesc(p.freq);
             self.setStatus('Hearing the truth — ' + truthLabel + '. Hold Space for ' + (self._isFreq() ? 'the full mix.' : 'clean.'));
         });
         if (gap) {
@@ -2550,6 +2897,7 @@
                 if (self.engine) self.engine.setGate(0.88);
                 self._applyLiveEq(p);
                 self._showResult(false, title, 'Truth: ' + truthLabel);
+                self._showDesc(p.freq);
                 self.setStatus('Hearing the truth — ' + truthLabel + '. Hold Space for clean.');
             });
         }
@@ -2607,12 +2955,31 @@
             this.nextTrack();
             return true;
         }
+        if (this.stats.skill === 'hunt' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+            e.preventDefault();
+            this._huntNudge(e.key === 'ArrowRight' ? 1 : -1);
+            return true;
+        }
+        if (this.stats.skill === 'hunt' && e.key === 'Enter') {
+            e.preventDefault();
+            if (this.phase === 'xreveal') { if (this.gameOn) this._beginListen(); } else this._huntLock();
+            return true;
+        }
         var num = parseInt(e.key, 10);
+        if (this._isX() && !this._filterCutoff()) {
+            if (!isNaN(num) && num >= 1 && num <= 9) {
+                e.preventDefault();
+                var ch = this._xChoices();
+                if (ch && num <= ch.length) this._xChoice(num - 1);
+                return true;
+            }
+            return false;
+        }
         if (!isNaN(num) && num >= 1 && num <= 9) {
             e.preventDefault();
             var bandKeys = this.stats.skill !== 'amount';
             if (num <= this.bands.length && bandKeys) {
-                if (this.free) this._freeBand(num - 1);
+                if (this.free || this._isX()) this.guessBand(num - 1);
                 else if (this.gameOn && this.phase === 'problem') this.guessBand(num - 1);
             }
             return true;
@@ -2925,6 +3292,1409 @@
         return out;
     }
 
+    /* ==================== NEW DRILLS ====================
+       Level, Width (Q), Filters, Resonance hunt and Fix it run on the same
+       engine and source as the band games. Each keeps its own totals and
+       staircase under stats.x, keyed by game and difficulty. */
+    var XSKILLS = ['level', 'shape', 'filter', 'hunt', 'fix'];
+    var NOBANDS = ['level', 'hunt', 'fix'];
+    var XSTAIR = {
+        level: { start: 3, min: 0.25, max: 3, step: 1.26 },
+        shape: { start: 8, min: 1.4, max: 12, step: 1.26 }
+    };
+    var HUNT_Q = 8;
+    var SWEEP_GAIN = 10;
+    var SWEEP_Q = 6;
+    var HP_TONES = [40, 60, 100, 12000, 14000, 16000];
+
+    /* One plain sentence per band, standard mixing vocabulary. */
+    var BAND_DESC = [
+        [40, 'Sub bass: felt more than heard; the weight under kick and bass, and rumble.'],
+        [63, 'Low bass: power and weight of kick and bass; too much is boomy.'],
+        [80, 'Low bass: kick thump and the body of the bass.'],
+        [100, 'Bass: fullness of kick and bass; too much sounds boomy.'],
+        [125, 'Bass: warmth and punch; too much is boomy, too little sounds thin.'],
+        [160, 'Upper bass: body of bass, low guitars and male vocals; can get boomy.'],
+        [200, 'Low mids: warmth and body; too much starts to sound muddy.'],
+        [250, 'Low mids: fullness; too much sounds muddy and thick.'],
+        [315, 'Low mids: body of guitars, snare and vocals; too much is muddy and cloudy.'],
+        [400, 'Low mids: too much sounds boxy, like cardboard.'],
+        [500, 'Mids: body of most instruments; too much sounds boxy and hollow.'],
+        [630, 'Mids: too much sounds honky.'],
+        [700, 'Mids: nasal, honky tone; too much sounds like a cheap speaker.'],
+        [800, 'Mids: honk and nasal tone; too much sounds like talking through a tube.'],
+        [1000, 'Mids: the core of most sounds; too much is honky and tinny.'],
+        [1250, 'Upper mids: snap and bite; too much sounds nasal and hard.'],
+        [1500, 'Upper mids: attack and definition; too much sounds hard, like a telephone.'],
+        [2000, 'Upper mids: bite and edge; too much sounds harsh and tinny.'],
+        [2500, 'Upper mids: clarity and attack; the ear is most sensitive here, so too much is harsh.'],
+        [3150, 'Presence: vocal intelligibility and pick attack; too much is harsh and tiring.'],
+        [3500, 'Presence: clarity and forwardness; too much is harsh and tiring.'],
+        [4000, 'Presence: edge and closeness; too much is piercing.'],
+        [5000, 'Presence: consonants and cymbal attack; too much is harsh.'],
+        [6300, 'Sibilance: “s” sounds and cymbal crack; too much is spitty.'],
+        [8000, 'Highs: brightness and sizzle; too much is sizzly, too little sounds dull.'],
+        [10000, 'Highs: sparkle and cymbal shimmer; too much is brittle.'],
+        [12500, 'Air: openness and shimmer; too much is hissy.'],
+        [16000, 'Air: the very top, a sense of space; many speakers and ears barely reach it.']
+    ];
+
+    function bandDesc(freq) {
+        if (!freq) return '';
+        var best = BAND_DESC[0];
+        var bd = Infinity;
+        BAND_DESC.forEach(function (row) {
+            var d = Math.abs(Math.log(row[0] / freq));
+            if (d < bd) { bd = d; best = row; }
+        });
+        return best[1];
+    }
+
+    function fmtHzX(f) {
+        if (f < 1000) return Math.round(f) + ' Hz';
+        var k = f / 1000;
+        return (k < 10 ? Math.round(k * 100) / 100 : Math.round(k * 10) / 10) + ' kHz';
+    }
+
+    function fmtDbX(g) {
+        var r = Math.round(g * 100) / 100;
+        return (r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r) + ' dB';
+    }
+
+    function logUniform(lo, hi) {
+        return Math.exp(Math.log(lo) + Math.random() * (Math.log(hi) - Math.log(lo)));
+    }
+
+    function median(a) {
+        if (!a.length) return null;
+        var b = a.slice().sort(function (x, y) { return x - y; });
+        var m = b.length >> 1;
+        return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2;
+    }
+
+    function posToHz(pos) { return 20 * Math.pow(1000, pos / 1000); }
+    function hzToPos(f) { return Math.round(1000 * Math.log(f / 20) / Math.log(1000)); }
+    function posToQ(pos) { return 0.3 * Math.pow(10 / 0.3, pos / 100); }
+    function qToPos(q) { return Math.round(100 * Math.log(q / 0.3) / Math.log(10 / 0.3)); }
+
+    function octFrac(oct) {
+        if (oct < 0.02) return 'spot on';
+        var d = Math.round(1 / oct);
+        return d >= 2 ? '≈ 1/' + d + ' octave' : (Math.round(oct * 100) / 100) + ' octave';
+    }
+
+    Ride.prototype._isX = function () {
+        return XSKILLS.indexOf(this.stats.skill) >= 0;
+    };
+
+    Ride.prototype._x = function () {
+        var x = this.stats.x;
+        if (!x || typeof x !== 'object') x = this.stats.x = {};
+        ['totals', 'stair', 'opts', 'hunt', 'fix'].forEach(function (k) {
+            if (!x[k] || typeof x[k] !== 'object') x[k] = {};
+        });
+        return x;
+    };
+
+    Ride.prototype._opt = function (k, def) {
+        var o = this._x().opts;
+        return o[k] != null ? o[k] : def;
+    };
+
+    Ride.prototype._setOpt = function (k, v) {
+        this._x().opts[k] = v;
+        saveStats(this.stats);
+    };
+
+    Ride.prototype._xTotals = function (skill) {
+        var t = this._x().totals;
+        if (!t[skill]) t[skill] = { streak: 0, correct: 0, total: 0 };
+        return t[skill];
+    };
+
+    Ride.prototype._xLevel = function () {
+        var def = { level: 'auto', shape: 'auto', filter: 'hpf', hunt: '9', fix: 'easy' };
+        return String(this._opt(this.stats.skill + 'Level', def[this.stats.skill] || 'auto'));
+    };
+
+    /* Generic 2-down/1-up staircase (same rule as the band Auto mode). */
+    Ride.prototype._xStair = function (key, kind) {
+        var cfg = XSTAIR[kind];
+        var all = this._x().stair;
+        var st = all[key];
+        if (!st || typeof st.m !== 'number' || !isFinite(st.m)) st = all[key] = { m: cfg.start, run: 0, dir: 0, rev: [], n: 0 };
+        if (!Array.isArray(st.rev)) st.rev = [];
+        return st;
+    };
+
+    Ride.prototype._xStairUpdate = function (key, kind, ok) {
+        var cfg = XSTAIR[kind];
+        var st = this._xStair(key, kind);
+        st.n = (st.n || 0) + 1;
+        if (ok) {
+            st.run = (st.run || 0) + 1;
+            if (st.run >= 2) {
+                st.run = 0;
+                if (st.dir === 1) st.rev.push(st.m);
+                st.dir = -1;
+                st.m = Math.max(cfg.min, st.m / cfg.step);
+            }
+        } else {
+            st.run = 0;
+            if (st.dir === -1) st.rev.push(st.m);
+            st.dir = 1;
+            st.m = Math.min(cfg.max, st.m * cfg.step);
+        }
+        if (st.rev.length > 12) st.rev = st.rev.slice(-12);
+    };
+
+    Ride.prototype._xStairThr = function (key, kind) {
+        var st = this._xStair(key, kind);
+        if (st.rev.length < 2) return null;
+        var last = st.rev.slice(-6);
+        return last.reduce(function (a, b) { return a + b; }, 0) / last.length;
+    };
+
+    /* ---- Speaker / headphone check ---- */
+    Ride.prototype._excluded = function (freq) {
+        var hp = this._x().hp;
+        if (!hp || !freq) return false;
+        return freq < hp.low / 1.3 || freq > hp.high * 1.1;
+    };
+
+    Ride.prototype._freqRange = function (lo, hi) {
+        var hp = this._x().hp;
+        if (hp) {
+            lo = Math.max(lo, hp.low);
+            hi = Math.min(hi, hp.high * 0.8);
+        }
+        return [lo, Math.max(lo * 2, hi)];
+    };
+
+    Ride.prototype._hpRender = function () {
+        var el = document.getElementById('ride-hp-status');
+        if (!el) return;
+        var hp = this._x().hp;
+        var reset = document.getElementById('ride-hp-reset');
+        if (reset) reset.classList.toggle('hidden', !hp);
+        if (!hp) {
+            el.textContent = 'Speakers not checked.';
+            return;
+        }
+        var skipped = [];
+        var self = this;
+        (this.bands || []).forEach(function (b) {
+            if (self._excluded(b.freq)) skipped.push(b.freq < 1000 ? b.freq + ' Hz' : (b.freq / 1000) + ' kHz');
+        });
+        el.textContent = 'Your speakers: bass to ' + (hp.low > 100 ? 'about 150 Hz' : hp.low + ' Hz') + ', highs to ' +
+            (hp.high < 12000 ? 'below 12 kHz' : (hp.high / 1000) + ' kHz') + '.' +
+            (skipped.length ? ' Not used as answers: ' + skipped.join(', ') + '.' : '');
+    };
+
+    Ride.prototype.openHpCheck = function () {
+        var card = document.getElementById('ride-hp-card');
+        if (!card) return;
+        this._ensureEngine();
+        if (this.gameOn) this.stopGame();
+        this._hp = { i: 0, heard: {} };
+        if (this.engine.playing) this.engine.setGate(0, 0.08);
+        card.classList.remove('hidden');
+        this._hpStep();
+    };
+
+    Ride.prototype._hpStep = function () {
+        var st = this._hp;
+        if (!st) return;
+        var f = HP_TONES[st.i];
+        var q = document.getElementById('ride-hp-q');
+        var n = document.getElementById('ride-hp-n');
+        if (n) n.textContent = (st.i + 1) + ' / ' + HP_TONES.length;
+        if (q) q.textContent = 'Can you hear this ' + (f < 1000 ? f + ' Hz' : (f / 1000) + ' kHz') + ' tone?' +
+            (f < 1000 ? ' (a low hum)' : ' (a faint high whistle)');
+        this._hpPlay(f);
+    };
+
+    Ride.prototype._hpPlay = function (f) {
+        if (!this._hp) return;
+        if (f == null) f = HP_TONES[this._hp.i];
+        var ctx = this._ctx();
+        if (ctx.state === 'suspended') ctx.resume();
+        if (this._hpOsc) { try { this._hpOsc.stop(); } catch (e) { /* done */ } }
+        var osc = ctx.createOscillator();
+        var g = ctx.createGain();
+        osc.frequency.value = f;
+        var a = f < 1000 ? 0.25 : 0.07; // about -18 / -29 dBFS after the -6 dB bus
+        var t = ctx.currentTime;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(a, t + 0.12);
+        g.gain.setValueAtTime(a, t + 1.6);
+        g.gain.linearRampToValueAtTime(0, t + 1.8);
+        osc.connect(g);
+        g.connect(this.hooks.getOutput ? this.hooks.getOutput() : ctx.destination);
+        osc.start(t);
+        osc.stop(t + 1.85);
+        this._hpOsc = osc;
+    };
+
+    Ride.prototype._hpAnswer = function (heard) {
+        var st = this._hp;
+        if (!st) return;
+        st.heard[HP_TONES[st.i]] = !!heard;
+        st.i += 1;
+        if (st.i < HP_TONES.length) {
+            this._hpStep();
+            return;
+        }
+        var low = 150, high = 10000;
+        [100, 60, 40].forEach(function (f) { if (st.heard[f]) low = f; });
+        [12000, 14000, 16000].forEach(function (f) { if (st.heard[f]) high = f; });
+        this._x().hp = { low: low, high: high };
+        saveStats(this.stats);
+        this._hpClose();
+        this.deck = [];
+        this._renderGuess();
+        this._hpRender();
+        this.setStatus('Speaker check saved. Bands your speakers can’t play are no longer used as answers.');
+    };
+
+    Ride.prototype._hpClose = function () {
+        var card = document.getElementById('ride-hp-card');
+        if (card) card.classList.add('hidden');
+        if (this._hpOsc) { try { this._hpOsc.stop(); } catch (e) { /* done */ } }
+        if (this._hp && this.engine) this.engine.setGate(0.88, 0.08);
+        this._hp = null;
+    };
+
+    Ride.prototype._hpReset = function () {
+        delete this._x().hp;
+        saveStats(this.stats);
+        this.deck = [];
+        this._renderGuess();
+        this._hpRender();
+        this.setStatus('Speaker check cleared: every band is back in play.');
+    };
+
+    /* ---- Band descriptions ---- */
+    Ride.prototype._showDesc = function (freq) {
+        var el = document.getElementById('ride-result-desc');
+        if (el) el.textContent = freq ? bandDesc(freq) : '';
+    };
+
+    /* ---- Which band? options: two bands at once, or where in the image ---- */
+    Ride.prototype._bandTwo = function () {
+        return this.stats.skill === 'band' && !!this._opt('two', false);
+    };
+
+    Ride.prototype._bandWhere = function () {
+        if (this.stats.skill !== 'band') return 'off';
+        var w = this._opt('where', 'off');
+        return w === 'ms' || w === 'lr' ? w : 'off';
+    };
+
+    Ride.prototype._bandXActive = function () {
+        return this._bandTwo() || this._bandWhere() !== 'off';
+    };
+
+    Ride.prototype._bandOptsBoard = function () {
+        var row = document.createElement('div');
+        row.className = 'ride-opt-row';
+        var two = this._bandTwo();
+        var where = this._bandWhere();
+        var mono = this.engine && this.engine.isNearMono();
+        row.innerHTML =
+            '<span class="ride-kicker">Options</span>' +
+            '<button type="button" class="ride-chip' + (two ? ' is-active' : '') + '" data-opt="two" aria-pressed="' + two + '" title="Two bands change at once; name both">Two bands</button>' +
+            '<span class="ride-kicker ride-opt-gap">Where</span>' +
+            '<div class="ride-seg">' +
+            '<button type="button" class="ride-chip' + (where === 'off' ? ' is-active' : '') + '" data-opt="where:off">Whole mix</button>' +
+            '<button type="button" class="ride-chip' + (where === 'ms' ? ' is-active' : '') + '" data-opt="where:ms" title="' + (mono ? 'This source is (nearly) mono, so Side has nothing to change: rounds use Left/Right' : 'The change is in the Mid or the Side only') + '">Mid / Side</button>' +
+            '<button type="button" class="ride-chip' + (where === 'lr' ? ' is-active' : '') + '" data-opt="where:lr" title="The change is in the left or right channel only">Left / Right</button>' +
+            '</div>';
+        return row;
+    };
+
+    Ride.prototype._setBandOpt = function (opt) {
+        if (opt === 'two') {
+            var on = !this._bandTwo();
+            this._setOpt('two', on);
+            if (on) this._setOpt('where', 'off');
+        } else if (opt.indexOf('where:') === 0) {
+            var w = opt.slice(6);
+            this._setOpt('where', w);
+            if (w !== 'off') this._setOpt('two', false);
+        }
+        this._freeRegion = null;
+        this.deck = [];
+        if (this.free) this._clearFreeSel();
+        this._syncSkillUi();
+        this._renderGuess();
+        this._renderStats();
+        if (this.gameOn) this._beginListen();
+    };
+
+    Ride.prototype._whereOpts = function () {
+        var where = this._bandWhere();
+        var mono = this.engine && this.engine.isNearMono();
+        if (where === 'ms' && !mono) {
+            return [['mid', 'Mid', 'the centre: what both speakers share'], ['side', 'Side', 'the difference between left and right']];
+        }
+        return [['left', 'Left', 'left channel only'], ['right', 'Right', 'right channel only']];
+    };
+
+    Ride.prototype._renderWhereRow = function () {
+        var row = document.getElementById('ride-where-row');
+        var host = document.getElementById('ride-where-btns');
+        if (!row || !host) return;
+        var where = this._bandWhere();
+        row.classList.toggle('hidden', where === 'off');
+        host.innerHTML = '';
+        var note = document.getElementById('ride-where-note');
+        if (where === 'off') return;
+        var mono = this.engine && this.engine.isNearMono();
+        var self = this;
+        this._whereOpts().forEach(function (o) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'ride-chip ride-where-btn';
+            b.dataset.region = o[0];
+            b.title = o[2];
+            b.textContent = o[1];
+            b.addEventListener('click', function () { self._whereTap(o[0]); });
+            host.appendChild(b);
+        });
+        if (note) note.textContent = where === 'ms' && mono ? 'This source is (nearly) mono, so there is no Side to change: using Left / Right.' : '';
+    };
+
+    Ride.prototype._lightRegion = function (region, cls) {
+        document.querySelectorAll('#ride-where-btns [data-region]').forEach(function (b) {
+            if (!cls) b.classList.remove('is-active', 'is-correct', 'is-wrong', 'is-target');
+            if (cls && b.dataset.region === region) b.classList.add(cls);
+        });
+    };
+
+    Ride.prototype._whereTap = function (region) {
+        if (this.free) {
+            this._freeRegion = this._freeRegion === region ? null : region;
+            this._lightRegion(null);
+            if (this._freeRegion) this._lightRegion(this._freeRegion, 'is-active');
+            if (this._lastFree != null && this.freeSel != null) {
+                var keep = this._lastFree;
+                this.freeSel = null;
+                this._freeBand(keep);
+            }
+            return;
+        }
+        if (!this.gameOn || this.phase !== 'problem' || !this.currentProblem || !this.currentProblem.region) return;
+        this._pickRegion = region;
+        this._lightRegion(null);
+        this._lightRegion(region, 'is-active');
+        if (this._pickBand != null) this._evalWhere();
+        else this.setStatus('Now pick the band.');
+    };
+
+    Ride.prototype._bandXNew = function (idx) {
+        var band = this.bands[idx];
+        var q = this._shapeForFreq().q;
+        var p;
+        this._pickBand = null;
+        this._pickRegion = null;
+        this._picks = [];
+        if (this._bandTwo()) {
+            var cands = [];
+            for (var j = 0; j < this.bands.length; j++) {
+                if (j === idx || this._excluded(this.bands[j].freq)) continue;
+                if (this.bands.length >= 5 && Math.abs(j - idx) < 2) continue;
+                cands.push(j);
+            }
+            if (!cands.length) for (var k = 0; k < this.bands.length; k++) if (k !== idx) cands.push(k);
+            var j2 = cands[Math.floor(Math.random() * cands.length)];
+            var g1 = this._gainForBand(idx, Math.random() < 0.5 ? 1 : -1);
+            var g2 = this._gainForBand(j2, Math.random() < 0.5 ? 1 : -1);
+            p = {
+                kind: 'eq', two: true, index: idx, index2: j2, freq: band.freq, gain: g1, q: q,
+                gains: [g1, g2],
+                filters: [
+                    { type: 'peaking', freq: band.freq, gain: g1, q: q },
+                    { type: 'peaking', freq: this.bands[j2].freq, gain: g2, q: q }
+                ]
+            };
+            this.setStatus('Two bands changed. Tap both. Hold Space to hear clean.');
+        } else {
+            this._renderWhereRow(); // re-checks mono on every round
+            var opts = this._whereOpts();
+            var region = opts[Math.random() < 0.5 ? 0 : 1][0];
+            // Boosts only: the question is where, and a boost is the clearer cue.
+            var g = Math.abs(this._gainForBand(idx, 1));
+            p = {
+                kind: 'eq', index: idx, freq: band.freq, gain: g, q: q, region: region,
+                filters: [{ type: 'peaking', freq: band.freq, gain: g, q: q }]
+            };
+            this.setStatus('Which band, and where? Pick the band and ' + opts[0][1] + ' or ' + opts[1][1] + '. Hold Space for clean.');
+        }
+        this._clearHighlights();
+        this._lightRegion(null);
+        this._hideResult();
+        this.currentProblem = p;
+        this.engine.setProblem(p);
+        this.engine.calibrateCompensation(this.currentProblem);
+        this.phase = 'problem';
+        this._updateABBadge();
+    };
+
+    var REGION_NAME = { mid: 'Mid', side: 'Side', left: 'Left', right: 'Right' };
+
+    Ride.prototype._bandXLabel = function (p) {
+        var self = this;
+        if (p.two) {
+            return [p.index, p.index2].map(function (i, n) {
+                return self._fmtGain(p.gains[n]) + ' dB at ' + self.bands[i].name;
+            }).join(' and ');
+        }
+        return this._fmtGain(p.gain) + ' dB at ' + this.bands[p.index].name + ' in the ' + REGION_NAME[p.region];
+    };
+
+    Ride.prototype._bandXGuess = function (index) {
+        var p = this.currentProblem;
+        if (!this.gameOn || this.phase !== 'problem' || !p) return;
+        var btn = this.els.guess.querySelector('button[data-index="' + index + '"]');
+        if (p.two) {
+            var at = this._picks.indexOf(index);
+            if (at >= 0) {
+                this._picks.splice(at, 1);
+                if (btn) btn.classList.remove('is-lit');
+                return;
+            }
+            this._picks.push(index);
+            if (btn) btn.classList.add('is-lit');
+            if (this._picks.length < 2) {
+                this.setStatus('One more band.');
+                return;
+            }
+            this._evalTwo();
+            return;
+        }
+        this._pickBand = index;
+        this.els.guess.querySelectorAll('button[data-index]').forEach(function (b) { b.classList.remove('is-lit'); });
+        if (btn) btn.classList.add('is-lit');
+        if (this._pickRegion) this._evalWhere();
+        else this.setStatus('Now pick where.');
+    };
+
+    Ride.prototype._recordBandX = function (ok, rows) {
+        var tot = this._totals();
+        tot.total += 1;
+        if (ok) { tot.correct += 1; tot.streak += 1; } else { tot.streak = 0; }
+        var self = this;
+        rows.forEach(function (r) {
+            var key = self._statKey(r.freq);
+            if (!self.stats.perBand[key]) self.stats.perBand[key] = { hit: 0, miss: 0 };
+            if (r.ok) self.stats.perBand[key].hit += 1;
+            else self.stats.perBand[key].miss += 1;
+            if (self.stats.bandAuto) self._stairUpdate(r.freq, r.ok);
+        });
+        saveStats(this.stats);
+        this._renderStats();
+        if (this.session && !this.session.finished) {
+            this.session.done += 1;
+            if (ok) this.session.hits += 1;
+            this.session.log.push({ freq: rows[0].freq, name: '', ok: ok });
+            saveSet(this.session);
+            this._renderSetBar();
+        }
+    };
+
+    Ride.prototype._evalTwo = function () {
+        var p = this.currentProblem;
+        var truth = [p.index, p.index2];
+        var picks = this._picks.slice();
+        var self = this;
+        this._clearHighlights();
+        var hits = 0;
+        picks.forEach(function (i) {
+            var b = self.els.guess.querySelector('button[data-index="' + i + '"]');
+            var good = truth.indexOf(i) >= 0;
+            if (good) hits += 1;
+            if (b) b.classList.add(good ? 'is-correct' : 'is-wrong');
+        });
+        truth.forEach(function (i) {
+            if (picks.indexOf(i) >= 0) return;
+            var b = self.els.guess.querySelector('button[data-index="' + i + '"]');
+            if (b) b.classList.add('is-target');
+        });
+        var ok = hits === 2;
+        this._recordBandX(ok, truth.map(function (i) { return { freq: self.bands[i].freq, ok: picks.indexOf(i) >= 0 }; }));
+        var sorted = picks.slice().sort(function (a, b) { return a - b; });
+        var tSorted = truth.slice().sort(function (a, b) { return a - b; });
+        var gainOf = function (i) { return p.gains[truth.indexOf(i)]; };
+        var guessSpec = {
+            kind: 'eq', two: true,
+            filters: sorted.map(function (i, n) {
+                var g = truth.indexOf(i) >= 0 ? gainOf(i) : gainOf(tSorted[n]);
+                return { type: 'peaking', freq: self.bands[i].freq, gain: g, q: p.q };
+            })
+        };
+        var guessLabel = guessSpec.filters.map(function (f, n) { return self._fmtGain(f.gain) + ' dB at ' + self.bands[sorted[n]].name; }).join(' and ');
+        this._xCompare(ok, ok ? 'Yes, both' : hits === 1 ? '1 of 2' : 'Neither', this._bandXLabel(p), guessSpec, guessLabel,
+            this.bands[p.index].freq, this.bands[p.index2].freq);
+    };
+
+    Ride.prototype._evalWhere = function () {
+        var p = this.currentProblem;
+        var okBand = this._pickBand === p.index;
+        var okReg = this._pickRegion === p.region;
+        var ok = okBand && okReg;
+        this._clearHighlights();
+        var b = this.els.guess.querySelector('button[data-index="' + this._pickBand + '"]');
+        if (b) b.classList.add(okBand ? 'is-correct' : 'is-wrong');
+        if (!okBand) {
+            var t = this.els.guess.querySelector('button[data-index="' + p.index + '"]');
+            if (t) t.classList.add('is-target');
+        }
+        this._lightRegion(null);
+        this._lightRegion(this._pickRegion, okReg ? 'is-correct' : 'is-wrong');
+        if (!okReg) this._lightRegion(p.region, 'is-target');
+        this._recordBandX(ok, [{ freq: p.freq, ok: ok }]);
+        var gBand = this.bands[this._pickBand];
+        var guessSpec = {
+            kind: 'eq', region: this._pickRegion,
+            filters: [{ type: 'peaking', freq: gBand.freq, gain: p.gain, q: p.q }]
+        };
+        var title = ok ? 'Yes' : (!okBand && !okReg ? 'Wrong band and place' : !okBand ? 'Wrong band' : 'Wrong place');
+        this._xCompare(ok, title, this._bandXLabel(p), guessSpec,
+            this._fmtGain(p.gain) + ' dB at ' + gBand.name + ' in the ' + REGION_NAME[this._pickRegion], p.freq);
+    };
+
+    /* ---- Shared reveal: right -> short reveal; wrong -> your guess, then
+       the truth, on the music (same as the band games). ---- */
+    Ride.prototype._xCompare = function (ok, title, truthLabel, guessSpec, guessLabel, descFreq, descFreq2) {
+        var p = this.currentProblem;
+        this.clearTimers();
+        var self = this;
+        var showDesc = function () {
+            var el = document.getElementById('ride-result-desc');
+            if (!el) return;
+            var parts = [];
+            if (descFreq) parts.push(bandDesc(descFreq));
+            if (descFreq2) parts.push(bandDesc(descFreq2));
+            el.textContent = parts.join(' ');
+        };
+        if (ok || !guessSpec) {
+            this.phase = 'reveal';
+            if (this.engine) this.engine.setABClean(false);
+            this._updateABBadge();
+            this._showResult(ok, title, truthLabel);
+            showDesc();
+            this.setStatus((ok ? 'Yes — ' : '') + truthLabel);
+            this.after(REVEAL_MS + 600, function () { if (self.gameOn) self._beginListen(); });
+            return;
+        }
+        this.phase = 'compare-guess';
+        this.engine.setProblem(guessSpec);
+        this.engine.calibrateCompensation(this.engine.problem);
+        this._showResult(false, title, 'Your guess: ' + guessLabel);
+        this._showDesc(null);
+        this.setStatus('Hearing your guess — ' + guessLabel + '. Then the truth. Click to skip.');
+        this.after(COMPARE_GUESS_MS, function () {
+            if (!self.gameOn || self.phase !== 'compare-guess') return;
+            self.phase = 'compare-truth';
+            self.engine.setProblem(p);
+            self.engine.calibrateCompensation(self.engine.problem);
+            self._showResult(false, title, 'Truth: ' + truthLabel);
+            showDesc();
+            self.setStatus('Hearing the truth — ' + truthLabel + '. Hold Space for clean.');
+            self._updateABBadge();
+        });
+        this.after(COMPARE_GUESS_MS + COMPARE_TRUTH_MS + 400, function () {
+            if (self.gameOn && (self.phase === 'compare-truth' || self.phase === 'compare-guess')) self._beginListen();
+        });
+    };
+
+    /* ---- New games: setup UI ---- */
+    Ride.prototype._xDiffBoard = function () {
+        var skill = this.stats.skill;
+        var cur = this._xLevel();
+        var items = {
+            level: [
+                ['auto', 'Auto', 'Starts at 3 dB and homes in on your threshold (down to 0.25 dB)'],
+                ['3', '3 dB', 'Clearly audible'],
+                ['1.5', '1.5 dB', 'Subtle'],
+                ['1', '1 dB', 'About the textbook just-noticeable difference'],
+                ['0.5', '0.5 dB', 'Expert']
+            ],
+            shape: [
+                ['auto', 'Auto', 'Wide vs narrow; the contrast shrinks as you improve'],
+                ['two', '2 widths', 'Wide (Q 0.7) or narrow (Q 5)'],
+                ['three', '3 widths', 'Wide (Q 0.7), medium (Q 2) or narrow (Q 6)']
+            ],
+            filter: [
+                ['hpf', 'High-pass', 'Where is the low cut? (24 dB/oct)'],
+                ['lpf', 'Low-pass', 'Where is the high cut? (24 dB/oct)'],
+                ['shelf', 'Shelf or bell', 'Low shelf, bell or high shelf?']
+            ],
+            hunt: [
+                ['12', 'Easy', '+12 dB ringing peak'],
+                ['9', 'Medium', '+9 dB peak'],
+                ['6', 'Hard', '+6 dB peak']
+            ],
+            fix: [
+                ['easy', 'Easy', '8–10 dB, wide bell'],
+                ['medium', 'Medium', '5–8 dB, wide to medium'],
+                ['hard', 'Hard', '3–6 dB, any width up to Q 8']
+            ]
+        }[skill] || [];
+        var board = document.createElement('div');
+        board.className = 'ride-diff-board is-x';
+        items.forEach(function (it) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'ride-diff-card' + (cur === it[0] ? ' is-active' : '');
+            btn.dataset.xlevel = it[0];
+            btn.innerHTML = '<b>' + it[1] + '</b><span>' + it[2] + '</span>';
+            board.appendChild(btn);
+        });
+        return board;
+    };
+
+    Ride.prototype._xHint = function () {
+        var skill = this.stats.skill;
+        var lv = this._xLevel();
+        if (skill === 'level') {
+            return 'Now: the whole song gets louder or quieter by ' + (Math.round(this._levelM() * 100) / 100) +
+                ' dB, or stays the same. No EQ and no loudness matching: level only.';
+        }
+        if (skill === 'shape') {
+            var ch = this._xChoices();
+            return 'Now: ' + ch.map(function (c) { return c.label.toLowerCase() + ' (Q ' + c.q + ')'; }).join(' vs ') +
+                ', +8 dB bell, loudness-matched. The frequency is shown; judge the width.';
+        }
+        if (skill === 'filter') {
+            if (lv === 'shelf') return 'Now: a +6 dB (or −8 dB) low shelf, bell or high shelf. Name the shape.';
+            return 'Now: a 24 dB/oct ' + (lv === 'hpf' ? 'high-pass (low cut)' : 'low-pass (high cut)') + ' at one of the bands. Name the cutoff (−6 dB point). Loudness-matched.';
+        }
+        if (skill === 'hunt') return 'Now: a narrow +' + lv + ' dB resonance (Q ' + HUNT_Q + ') somewhere from 80 Hz to 10 kHz. Sweep until it rings, then lock in.';
+        if (skill === 'fix') return 'Now: one hidden bell at any frequency. Set frequency, gain and Q until “Your fix” sounds like Clean, then submit.';
+        return '';
+    };
+
+    Ride.prototype._setXLevel = function (v) {
+        this._setOpt(this.stats.skill + 'Level', v);
+        if (this.free) this._clearFreeSel();
+        this.deck = [];
+        this._syncSkillUi();
+        this._renderGuess();
+        this._renderStats();
+        if (this.gameOn) this._beginListen();
+    };
+
+    Ride.prototype._xChoices = function () {
+        var skill = this.stats.skill;
+        var lv = this._xLevel();
+        if (skill === 'level') {
+            return [
+                { label: 'Quieter', sub: 'level went down', v: -1 },
+                { label: 'Same', sub: 'no change', v: 0 },
+                { label: 'Louder', sub: 'level went up', v: 1 }
+            ];
+        }
+        if (skill === 'shape') {
+            if (lv === 'three') {
+                return [{ label: 'Wide', sub: 'Q 0.7', q: 0.7 }, { label: 'Medium', sub: 'Q 2', q: 2 }, { label: 'Narrow', sub: 'Q 6', q: 6 }];
+            }
+            if (lv === 'two') return [{ label: 'Wide', sub: 'Q 0.7', q: 0.7 }, { label: 'Narrow', sub: 'Q 5', q: 5 }];
+            var r = this._xStair('shape:auto', 'shape').m;
+            var qw = Math.round(200 / Math.sqrt(r)) / 100;
+            var qn = Math.round(200 * Math.sqrt(r)) / 100;
+            return [{ label: 'Wide', sub: 'Q ' + qw, q: qw }, { label: 'Narrow', sub: 'Q ' + qn, q: qn }];
+        }
+        if (skill === 'filter' && lv === 'shelf') {
+            return [
+                { label: 'Low shelf', sub: 'everything below moves', type: 'lowshelf' },
+                { label: 'Bell', sub: 'one region moves', type: 'peaking' },
+                { label: 'High shelf', sub: 'everything above moves', type: 'highshelf' }
+            ];
+        }
+        return null;
+    };
+
+    Ride.prototype._filterCutoff = function () {
+        return this.stats.skill === 'filter' && this._xLevel() !== 'shelf';
+    };
+
+    Ride.prototype._cutoffAllowed = function (freq) {
+        if (this._excluded(freq)) return false;
+        return this._xLevel() === 'hpf' ? freq <= 2000 : freq >= 500;
+    };
+
+    Ride.prototype._renderX = function (wrap) {
+        var self = this;
+        if (this._filterCutoff()) {
+            this._renderBandButtons(wrap);
+            wrap.querySelectorAll('button[data-index]').forEach(function (b) {
+                var band = self.bands[parseInt(b.dataset.index, 10)];
+                if (!self._cutoffAllowed(band.freq)) b.classList.add('is-off');
+            });
+        } else {
+            var choices = this._xChoices();
+            wrap.className = 'ride-x-grid mb-4';
+            (choices || []).forEach(function (c, i) {
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.dataset.choice = String(i);
+                btn.innerHTML = '<div class="font-semibold">' + c.label + '</div><div class="text-[10px] text-zinc-500">' + (i + 1) + ' · ' + c.sub + '</div>';
+                btn.addEventListener('click', function () { self._xChoice(i); });
+                wrap.appendChild(btn);
+            });
+        }
+        this._renderXPanel();
+    };
+
+    /* Slider panel for Resonance, Fix it and Width free play. */
+    Ride.prototype._renderXPanel = function () {
+        var host = document.getElementById('ride-x-panel');
+        if (!host) return;
+        var skill = this.stats.skill;
+        var show = skill === 'hunt' || skill === 'fix' || (skill === 'shape' && this.free);
+        host.classList.toggle('hidden', !show);
+        host.innerHTML = '';
+        if (!show) return;
+        var self = this;
+        var fRow = function (id, label, min, max, step, val) {
+            return '<label class="ride-x-row" for="' + id + '"><span class="ride-x-lab">' + label + '</span>' +
+                '<input type="range" id="' + id + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + val + '">' +
+                '<output id="' + id + '-v" class="ride-x-val"></output></label>';
+        };
+        var revealed = this.phase === 'xreveal';
+        if (skill === 'shape') {
+            host.innerHTML = fRow('ride-x-f', 'Frequency', 0, 1000, 1, hzToPos(this._shapeFreeF || 1000)) +
+                '<p class="ride-x-note">Free play: pick a frequency, then tap a width to hear that bell.</p>';
+        } else if (skill === 'hunt') {
+            var sweepOn = this._opt('sweep', true);
+            host.innerHTML = fRow('ride-x-f', 'Frequency', 0, 1000, 1, hzToPos(this._huntF || 1000)) +
+                '<div class="ride-x-actions">' +
+                (this.free ? '' : '<button type="button" id="ride-x-sweep" class="ride-chip' + (sweepOn ? ' is-active' : '') + '" aria-pressed="' + sweepOn + '" title="A narrow +' + SWEEP_GAIN + ' dB boost on your frequency, like boost-and-sweep in a DAW">Sweep boost</button>') +
+                '<span class="ride-transport-gap"></span>' +
+                (this.free ? '' : '<button type="button" id="ride-x-lock" class="ride-x-main' + (revealed ? ' hidden' : '') + '">Lock in</button>' +
+                '<button type="button" id="ride-x-next" class="ride-chip' + (revealed ? '' : ' hidden') + '">Next</button>') +
+                '</div>' +
+                '<canvas id="ride-x-canvas" class="ride-x-canvas' + (revealed ? '' : ' hidden') + '" width="640" height="120"></canvas>' +
+                '<p class="ride-x-note" id="ride-x-note">' + (this.free
+                    ? 'Free play: the slider moves a ringing resonance so you can learn how each frequency rings.'
+                    : '← → nudge · Enter locks in. With Sweep boost on, the ring jumps out when you land on it.') + '</p>';
+        } else if (skill === 'fix') {
+            var u = this._fixUser();
+            host.innerHTML =
+                '<div class="ride-seg ride-x-listen" role="group" aria-label="Listen">' +
+                (this.free ? '' : '<button type="button" class="ride-chip" data-xlisten="problem">Problem</button>') +
+                '<button type="button" class="ride-chip" data-xlisten="fix">' + (this.free ? 'Your EQ' : 'Your fix') + '</button>' +
+                '<button type="button" class="ride-chip" data-xlisten="clean">Clean</button>' +
+                '</div>' +
+                fRow('ride-x-f', 'Frequency', 0, 1000, 1, hzToPos(u.freq)) +
+                fRow('ride-x-g', 'Gain', -12, 12, 0.5, u.gain) +
+                fRow('ride-x-q', 'Q', 0, 100, 1, qToPos(u.q)) +
+                '<div class="ride-x-actions">' +
+                '<button type="button" id="ride-x-reset" class="ride-chip">Reset</button>' +
+                '<span class="ride-transport-gap"></span>' +
+                (this.free ? '' : '<button type="button" id="ride-x-submit" class="ride-x-main' + (revealed ? ' hidden' : '') + '">Submit</button>' +
+                '<button type="button" id="ride-x-next" class="ride-chip' + (revealed ? '' : ' hidden') + '">Next</button>') +
+                '</div>' +
+                '<canvas id="ride-x-canvas" class="ride-x-canvas" width="640" height="140"></canvas>' +
+                '<p class="ride-x-note" id="ride-x-note">' + (this.free
+                    ? 'Free play: a plain parametric bell on the music. Nothing hidden, nothing scored.'
+                    : 'Start ride, then cancel the hidden bell. Problem / Your fix / Clean switch instantly without restarting the music; hold Space for clean.') + '</p>';
+        }
+        var bindRange = function (id, which, map) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('input', function () { self._xSlider(which, map(parseFloat(el.value))); });
+            self._xSliderLabel(which, map(parseFloat(el.value)));
+        };
+        bindRange('ride-x-f', 'f', posToHz);
+        bindRange('ride-x-g', 'g', function (v) { return v; });
+        bindRange('ride-x-q', 'q', posToQ);
+        var on = function (id, fn) {
+            var el = document.getElementById(id);
+            if (el) el.addEventListener('click', fn);
+        };
+        on('ride-x-sweep', function () { self._toggleSweep(); });
+        on('ride-x-lock', function () { self._huntLock(); });
+        on('ride-x-next', function () { if (self.gameOn) self._beginListen(); });
+        on('ride-x-submit', function () { self._fixSubmit(); });
+        on('ride-x-reset', function () { self._fixReset(); });
+        host.querySelectorAll('[data-xlisten]').forEach(function (b) {
+            b.addEventListener('click', function () { self._fixListenSet(b.dataset.xlisten); });
+        });
+        this._syncFixListen();
+        if (skill === 'fix') this._drawFixCurves(revealed);
+    };
+
+    Ride.prototype._xSliderLabel = function (which, v) {
+        var out = document.getElementById('ride-x-' + which + '-v');
+        if (!out) return;
+        if (which === 'f') out.textContent = fmtHzX(v);
+        else if (which === 'g') out.textContent = fmtDbX(v);
+        else out.textContent = 'Q ' + (Math.round(v * 100) / 100);
+    };
+
+    Ride.prototype._xSlider = function (which, v) {
+        this._xSliderLabel(which, v);
+        var skill = this.stats.skill;
+        if (skill === 'shape') {
+            this._shapeFreeF = v;
+            if (this.free && this._lastFreeChoice != null && this.freeSel) this._xFreeApply(this._lastFreeChoice);
+            return;
+        }
+        if (skill === 'hunt') {
+            this._huntF = v;
+            if (this.free) {
+                this._ensureMusic();
+                var spec = { type: 'peaking', freq: v, gain: parseFloat(this._xLevel()), q: HUNT_Q };
+                if (!this.engine.problem) this.engine.setProblem({ kind: 'eq', filters: [], user: spec, userOn: true });
+                this.engine.setUser(spec, true);
+                this.freeSel = 'hunt';
+                this._updateABBadge();
+                this.setStatus('Free play: resonance at ' + fmtHzX(v) + '. ' + bandDesc(v));
+                return;
+            }
+            if (this.gameOn && this.phase === 'problem') this._applySweep();
+            return;
+        }
+        if (skill === 'fix') {
+            var u = this._fixUser();
+            if (which === 'f') u.freq = v;
+            else if (which === 'g') u.gain = v;
+            else u.q = v;
+            if (this.free) {
+                this._ensureMusic();
+                if (!this.engine.problem) this.engine.setProblem({ kind: 'eq', filters: [], user: u, userOn: true });
+                this.freeSel = 'fix';
+                this._fixListen = 'fix';
+                this._fixApply();
+            } else if (this.gameOn && (this.phase === 'problem' || this.phase === 'xreveal')) {
+                this._fixListen = 'fix';
+                this._fixApply();
+            }
+            this._drawFixCurves(this.phase === 'xreveal');
+        }
+    };
+
+    /* ---- Choices (Level, Width, Shelf) ---- */
+    Ride.prototype._xChoice = function (i) {
+        if (this.free) { this._xFree(i); return; }
+        if (!this.gameOn || this.phase !== 'problem' || !this.currentProblem) return;
+        this._xAnswer(i);
+    };
+
+    Ride.prototype._xBand = function (index) {
+        if (!this._filterCutoff()) return;
+        var band = this.bands[index];
+        if (!band) return;
+        if (!this._cutoffAllowed(band.freq)) {
+            this.setStatus(this._excluded(band.freq) ? 'Your speakers can’t reproduce that band.' : 'Not a usual cutoff for this filter, so it’s never the answer.');
+            return;
+        }
+        if (this.free) { this._xFree(index); return; }
+        if (!this.gameOn || this.phase !== 'problem' || !this.currentProblem) return;
+        this._xAnswer(index);
+    };
+
+    Ride.prototype._cutoffSpec = function (freq) {
+        var type = this._xLevel() === 'hpf' ? 'highpass' : 'lowpass';
+        return {
+            kind: 'eq',
+            filters: [{ type: type, freq: freq, q: 0.707, gain: 0 }, { type: type, freq: freq, q: 0.707, gain: 0 }]
+        };
+    };
+
+    Ride.prototype._shelfSpec = function (type, sign) {
+        var gain = sign > 0 ? 6 : -8;
+        var freq = type === 'lowshelf' ? 200 : type === 'highshelf' ? 4000 : 1000;
+        return { kind: 'eq', filters: [{ type: type, freq: freq, gain: gain, q: type === 'peaking' ? 1 : 0.707 }] };
+    };
+
+    Ride.prototype._shelfLabel = function (f) {
+        var name = f.type === 'lowshelf' ? 'Low shelf' : f.type === 'highshelf' ? 'High shelf' : 'Bell';
+        return name + ' ' + fmtDbX(f.gain) + (f.type === 'peaking' ? ' at ' : f.type === 'lowshelf' ? ' below ' : ' above ') + fmtHzX(f.freq);
+    };
+
+    Ride.prototype._levelM = function () {
+        var lv = this._xLevel();
+        return lv === 'auto' ? this._xStair('level', 'level').m : parseFloat(lv);
+    };
+
+    Ride.prototype._xFree = function (i) {
+        var key = this.stats.skill + ':' + i;
+        if (this.freeSel === key) {
+            this._clearFreeSel();
+            this._lastFreeChoice = null;
+            this.setStatus('Clean. Tap a choice to hear it.');
+            return;
+        }
+        this._ensureMusic();
+        this.freeSel = key;
+        this._lastFreeChoice = i;
+        this._xFreeApply(i);
+    };
+
+    Ride.prototype._xFreeApply = function (i) {
+        var skill = this.stats.skill;
+        var spec, label;
+        if (skill === 'level') {
+            var c = this._xChoices()[i];
+            var m = Math.round(this._levelM() * 100) / 100;
+            spec = { kind: 'level', levelDb: c.v * m };
+            label = c.v === 0 ? 'no change' : fmtDbX(c.v * m) + ' on the whole song';
+        } else if (skill === 'shape') {
+            var w = this._xChoices()[i];
+            var f = this._shapeFreeF || 1000;
+            spec = { kind: 'eq', filters: [{ type: 'peaking', freq: f, gain: 8, q: w.q }] };
+            label = w.label.toLowerCase() + ' bell (Q ' + w.q + ') +8 dB at ' + fmtHzX(f);
+        } else if (this._filterCutoff()) {
+            var band = this.bands[i];
+            spec = this._cutoffSpec(band.freq);
+            label = (this._xLevel() === 'hpf' ? 'high-pass at ' : 'low-pass at ') + fmtHzX(band.freq) + '. ' + bandDesc(band.freq);
+        } else if (skill === 'filter') {
+            var t = this._xChoices()[i];
+            var sign = this._freeSign === -1 ? -1 : 1;
+            spec = this._shelfSpec(t.type, sign);
+            label = this._shelfLabel(spec.filters[0]) + ' (boost and cut take turns on each new tap)';
+            this._freeSign = -sign; // next tap of a shape plays the opposite
+        }
+        if (!spec) return;
+        this.engine.setProblem(spec);
+        this.engine.calibrateCompensation(this.engine.problem);
+        this._clearHighlights();
+        var el = this._filterCutoff()
+            ? this.els.guess.querySelector('button[data-index="' + i + '"]')
+            : this.els.guess.querySelector('button[data-choice="' + i + '"]');
+        if (el) el.classList.add('is-lit');
+        this._updateABBadge();
+        this.setStatus('Free play: ' + label + '. Tap again for clean · hold Space to compare.');
+    };
+
+    /* ---- New problems ---- */
+    Ride.prototype._xPickBand = function (filterFn) {
+        var cands = [];
+        var i;
+        for (i = 0; i < this.bands.length; i++) {
+            var f = this.bands[i].freq;
+            if (this._excluded(f)) continue;
+            if (filterFn && !filterFn(f)) continue;
+            if (this.stats.skill === 'shape' && this.engine && !this.engine.bandHasEnergy(f)) continue;
+            cands.push(i);
+        }
+        var self = this;
+        if (cands.length > 1) cands = cands.filter(function (k) { return k !== self.lastBandIndex; });
+        if (!cands.length) {
+            for (i = 0; i < this.bands.length; i++) if (!filterFn || filterFn(this.bands[i].freq)) cands.push(i);
+        }
+        var idx = cands[Math.floor(Math.random() * cands.length)];
+        this.lastBandIndex = idx;
+        return idx;
+    };
+
+    Ride.prototype._xNew = function () {
+        var skill = this.stats.skill;
+        var lv = this._xLevel();
+        var p = null;
+        var status = '';
+        this._clearHighlights();
+        this._hideResult();
+        if (skill === 'level') {
+            var m = this._levelM();
+            var same = Math.random() < 0.2;
+            var sign = Math.random() < 0.5 ? -1 : 1;
+            var db = same ? 0 : Math.round(sign * m * 100) / 100;
+            p = { kind: 'level', levelDb: db, mag: m, answer: same ? 1 : (db > 0 ? 2 : 0) };
+            status = 'Louder, quieter or the same? Hold Space for the original.';
+        } else if (skill === 'shape') {
+            var idx = this._xPickBand();
+            var ch = this._xChoices();
+            var ans = Math.floor(Math.random() * ch.length);
+            var freq = this.bands[idx].freq;
+            p = { kind: 'eq', index: idx, freq: freq, answer: ans, filters: [{ type: 'peaking', freq: freq, gain: 8, q: ch[ans].q }] };
+            status = 'Bell at ' + fmtHzX(freq) + ': ' + (ch.length === 3 ? 'wide, medium or narrow?' : 'wide or narrow?') + ' Hold Space for clean.';
+        } else if (skill === 'filter') {
+            if (lv === 'shelf') {
+                var types = ['lowshelf', 'peaking', 'highshelf'];
+                var ti = Math.floor(Math.random() * 3);
+                var sg = Math.random() < 0.5 ? 1 : -1;
+                var fr = ti === 0 ? [100, 150, 200, 300][Math.floor(Math.random() * 4)]
+                    : ti === 2 ? [2500, 4000, 6000, 8000][Math.floor(Math.random() * 4)]
+                    : Math.round(logUniform(250, 4000));
+                p = { kind: 'eq', answer: ti, freq: fr, filters: [{ type: types[ti], freq: fr, gain: sg > 0 ? 6 : -8, q: ti === 1 ? 1 : 0.707 }] };
+                status = 'Low shelf, bell or high shelf? Hold Space for clean.';
+            } else {
+                var self = this;
+                var ci = this._xPickBand(function (f) { return self._cutoffAllowed(f); });
+                var spec = this._cutoffSpec(this.bands[ci].freq);
+                p = { kind: 'eq', index: ci, freq: this.bands[ci].freq, answer: ci, filters: spec.filters };
+                status = 'Where is the ' + (lv === 'hpf' ? 'low cut (high-pass)' : 'high cut (low-pass)') + '? Hold Space for clean.';
+            }
+        } else if (skill === 'hunt') {
+            var rg = this._freqRange(80, 10000);
+            var hf = logUniform(rg[0], rg[1]);
+            p = { kind: 'eq', answer: hf, freq: hf, filters: [{ type: 'peaking', freq: hf, gain: parseFloat(lv), q: HUNT_Q }] };
+            if (this._opt('sweep', true)) {
+                p.user = { type: 'peaking', freq: this._huntF || 1000, gain: SWEEP_GAIN, q: SWEEP_Q };
+                p.userOn = true;
+            }
+            status = 'Something is ringing. Sweep the frequency, then Lock in.';
+        } else if (skill === 'fix') {
+            var R = { easy: { g: [8, 10], q: [0.7, 1.5] }, medium: { g: [5, 8], q: [0.7, 4] }, hard: { g: [3, 6], q: [0.7, 8] } }[lv] || { g: [8, 10], q: [0.7, 1.5] };
+            var fx = this._freqRange(60, 12000);
+            var g = (R.g[0] + Math.random() * (R.g[1] - R.g[0])) * (Math.random() < 0.5 ? 1 : -1);
+            var pf = { type: 'peaking', freq: Math.round(logUniform(fx[0], fx[1])), gain: Math.round(g * 2) / 2, q: Math.round(logUniform(R.q[0], R.q[1]) * 100) / 100 };
+            this._fixReset(true);
+            p = { kind: 'eq', freq: pf.freq, filters: [pf], user: this._fixUser(), userOn: false };
+            this._fixListen = 'problem';
+            status = 'A hidden bell is on. Set your EQ until Your fix sounds like Clean, then Submit.';
+        }
+        if (!p) return;
+        this.currentProblem = p;
+        this.engine.setProblem(p);
+        this.engine.calibrateCompensation(this.currentProblem);
+        this.phase = 'problem';
+        this._renderXPanel();
+        this._updateABBadge();
+        this.setStatus(status);
+    };
+
+    /* ---- Answers ---- */
+    Ride.prototype._recordX = function (ok, bandFreq) {
+        var tot = this._xTotals(this.stats.skill);
+        tot.total += 1;
+        if (ok) { tot.correct += 1; tot.streak += 1; } else { tot.streak = 0; }
+        if (bandFreq) {
+            var key = this._statKey(bandFreq);
+            if (!this.stats.perBand[key]) this.stats.perBand[key] = { hit: 0, miss: 0 };
+            if (ok) this.stats.perBand[key].hit += 1;
+            else this.stats.perBand[key].miss += 1;
+        }
+        saveStats(this.stats);
+        this._renderStats();
+    };
+
+    Ride.prototype._markChoice = function (i, ans, ok) {
+        var sel = this._filterCutoff() ? 'button[data-index="' : 'button[data-choice="';
+        var mine = this.els.guess.querySelector(sel + i + '"]');
+        if (mine) mine.classList.add(ok ? 'is-correct' : 'is-wrong');
+        if (!ok) {
+            var right = this.els.guess.querySelector(sel + ans + '"]');
+            if (right) right.classList.add('is-target');
+        }
+    };
+
+    Ride.prototype._xAnswer = function (i) {
+        var p = this.currentProblem;
+        var skill = this.stats.skill;
+        var lv = this._xLevel();
+        var ok = i === p.answer;
+        this._clearHighlights();
+        if (skill === 'level') {
+            this._markChoice(i, p.answer, ok);
+            if (lv === 'auto' && p.levelDb !== 0) this._xStairUpdate('level', 'level', ok);
+            this._recordX(ok);
+            var tl = p.levelDb === 0 ? 'Same level' : (p.levelDb > 0 ? 'Louder' : 'Quieter') + ' by ' + Math.abs(p.levelDb) + ' dB';
+            this._xCompare(ok, ok ? 'Yes' : 'No', tl, null);
+            this._syncSkillUi();
+            return;
+        }
+        if (skill === 'shape') {
+            var ch = this._xChoices();
+            if (lv === 'auto') this._xStairUpdate('shape:auto', 'shape', ok);
+            this._recordX(ok);
+            var truth = ch[p.answer];
+            var guessSpec = { kind: 'eq', filters: [{ type: 'peaking', freq: p.freq, gain: 8, q: ch[i].q }] };
+            this._markChoice(i, p.answer, ok);
+            this._xCompare(ok, ok ? 'Yes' : 'No', truth.label + ' (Q ' + truth.q + ') at ' + fmtHzX(p.freq), guessSpec,
+                ch[i].label.toLowerCase() + ' (Q ' + ch[i].q + ')', null);
+            this._syncSkillUi(); // Auto: new Q pair shows from the next round
+            return;
+        }
+        if (this._filterCutoff()) {
+            this._markChoice(i, p.answer, ok);
+            this._recordX(ok, p.freq);
+            var name = lv === 'hpf' ? 'High-pass at ' : 'Low-pass at ';
+            var gb = this.bands[i];
+            this._xCompare(ok, ok ? 'Yes' : 'Wrong cutoff', name + fmtHzX(p.freq), this._cutoffSpec(gb.freq), name.toLowerCase() + fmtHzX(gb.freq), p.freq);
+            return;
+        }
+        if (skill === 'filter') {
+            this._markChoice(i, p.answer, ok);
+            this._recordX(ok);
+            var tf = p.filters[0];
+            var types = ['lowshelf', 'peaking', 'highshelf'];
+            var gf = { type: types[i], freq: i === 0 ? Math.min(tf.freq, 300) : i === 2 ? Math.max(tf.freq, 2500) : tf.freq, gain: tf.gain, q: i === 1 ? 1 : 0.707 };
+            this._xCompare(ok, ok ? 'Yes' : 'No', this._shelfLabel(tf), { kind: 'eq', filters: [gf] }, this._shelfLabel(gf), null);
+        }
+    };
+
+    /* ---- Resonance hunt ---- */
+    Ride.prototype._toggleSweep = function () {
+        var on = !this._opt('sweep', true);
+        this._setOpt('sweep', on);
+        var b = document.getElementById('ride-x-sweep');
+        if (b) {
+            b.classList.toggle('is-active', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+        if (this.gameOn && this.phase === 'problem') this._applySweep();
+    };
+
+    Ride.prototype._applySweep = function () {
+        if (!this.engine || !this.engine.problem) return;
+        this.engine.setUser({ type: 'peaking', freq: this._huntF || 1000, gain: SWEEP_GAIN, q: SWEEP_Q }, this._opt('sweep', true));
+    };
+
+    Ride.prototype._huntNudge = function (dir) {
+        var el = document.getElementById('ride-x-f');
+        if (!el) return;
+        var f = (this._huntF || 1000) * Math.pow(2, dir / 24);
+        f = Math.max(20, Math.min(20000, f));
+        el.value = String(hzToPos(f));
+        this._xSlider('f', f);
+    };
+
+    Ride.prototype._huntLock = function () {
+        if (this.stats.skill !== 'hunt' || !this.gameOn || this.phase !== 'problem' || !this.currentProblem) return;
+        var p = this.currentProblem;
+        var fu = this._huntF || 1000;
+        var err = Math.abs(Math.log(fu / p.answer) / Math.LN2);
+        var ok = err <= 0.25;
+        var key = this._xLevel();
+        var h = this._x().hunt;
+        if (!Array.isArray(h[key])) h[key] = [];
+        h[key].push(Math.round(err * 1000) / 1000);
+        if (h[key].length > 12) h[key] = h[key].slice(-12);
+        this._recordX(ok);
+        this.phase = 'xreveal';
+        this.engine.setUser(null, false); // the resonance alone
+        this._showResult(ok, ok ? 'Found it' : 'Not quite',
+            'Resonance at ' + fmtHzX(p.answer) + ' · you locked ' + fmtHzX(fu) + ' · off by ' + octFrac(err));
+        this._showDesc(p.answer);
+        this.setStatus('Hearing the resonance on its own. Press Next (or Enter) for another.');
+        this._renderXPanel();
+        this._drawCurves([{ db: this._curve(p.filters), color: '#c45c5c', label: 'Resonance' }],
+            [{ f: fu, color: '#c9a36e' }, { f: p.answer, color: '#c45c5c' }]);
+    };
+
+    /* ---- Fix it ---- */
+    Ride.prototype._fixUser = function () {
+        var fx = this._x().fix;
+        var u = fx.user;
+        if (!u || typeof u.freq !== 'number') u = fx.user = { type: 'peaking', freq: 1000, gain: 0, q: 1 };
+        u.type = 'peaking';
+        return u;
+    };
+
+    Ride.prototype._fixReset = function (quiet) {
+        this._x().fix.user = { type: 'peaking', freq: 1000, gain: 0, q: 1 };
+        if (quiet === true) return;
+        this._renderXPanel();
+        if (this.engine && this.engine.problem) this._fixApply();
+    };
+
+    Ride.prototype._fixListenSet = function (which) {
+        if (which === 'problem' && this.free) return;
+        if (!this.engine || !this.engine.problem) {
+            if (this.free) {
+                this._ensureMusic();
+                this.engine.setProblem({ kind: 'eq', filters: [], user: this._fixUser(), userOn: true });
+                this.freeSel = 'fix';
+            } else {
+                this.setStatus('Press Start ride first.');
+                return;
+            }
+        }
+        this._fixListen = which;
+        this._fixApply();
+    };
+
+    Ride.prototype._fixApply = function () {
+        if (!this.engine || !this.engine.problem) return;
+        var l = this._fixListen || 'problem';
+        if (l === 'clean') {
+            this.engine.setABClean(true);
+        } else {
+            if (this.engine.abClean) this.engine.setABClean(false);
+            this.engine.setUser(this._fixUser(), l === 'fix');
+        }
+        this._syncFixListen();
+        this._updateABBadge();
+    };
+
+    Ride.prototype._syncFixListen = function () {
+        var l = this._fixListen || (this.free ? 'fix' : 'problem');
+        document.querySelectorAll('#ride-x-panel [data-xlisten]').forEach(function (b) {
+            b.classList.toggle('is-active', b.dataset.xlisten === l);
+            b.setAttribute('aria-pressed', b.dataset.xlisten === l ? 'true' : 'false');
+        });
+    };
+
+    Ride.prototype._logGrid = function (n) {
+        if (this._grid && this._grid.length === n) return this._grid;
+        var g = new Float32Array(n);
+        for (var i = 0; i < n; i++) g[i] = 20 * Math.pow(1000, i / (n - 1));
+        this._grid = g;
+        return g;
+    };
+
+    Ride.prototype._curve = function (filters) {
+        this._ensureEngine();
+        return this.engine.responseDb(filters || [], this._logGrid(240));
+    };
+
+    /* Weighted RMS (dB) of a response over 20 Hz–20 kHz on a log grid;
+       40 Hz–12 kHz counts fully, the extremes count 40%. */
+    Ride.prototype._rmsDb = function (db) {
+        var grid = this._logGrid(240);
+        var s = 0, w = 0;
+        for (var i = 0; i < grid.length; i++) {
+            var wt = grid[i] >= 40 && grid[i] <= 12000 ? 1 : 0.4;
+            s += wt * db[i] * db[i];
+            w += wt;
+        }
+        return Math.sqrt(s / w);
+    };
+
+    Ride.prototype._fixScore = function () {
+        var p = this.currentProblem;
+        var hp = this._curve(p.filters);
+        var hu = this._curve([this._fixUser()]);
+        var comb = new Float32Array(hp.length);
+        for (var i = 0; i < hp.length; i++) comb[i] = hp[i] + hu[i];
+        var before = this._rmsDb(hp);
+        var after = this._rmsDb(comb);
+        return {
+            before: before,
+            after: after,
+            score: Math.round(Math.max(0, Math.min(100, 100 * (1 - after / Math.max(0.01, before)))))
+        };
+    };
+
+    Ride.prototype._fixSubmit = function () {
+        if (this.stats.skill !== 'fix' || !this.gameOn || this.phase !== 'problem' || !this.currentProblem) return;
+        var p = this.currentProblem;
+        var r = this._fixScore();
+        var ok = r.score >= 70;
+        var fx = this._x().fix;
+        var lk = this._xLevel();
+        fx.last = r.score;
+        if (!fx.best || typeof fx.best !== 'object') fx.best = {};
+        fx.best[lk] = Math.max(fx.best[lk] || 0, r.score);
+        this._recordX(ok);
+        this.phase = 'xreveal';
+        this._fixListen = 'fix';
+        this._fixApply();
+        var pf = p.filters[0];
+        this._showResult(ok, r.score + ' / 100',
+            'Hidden: ' + fmtDbX(pf.gain) + ' at ' + fmtHzX(pf.freq) + ', Q ' + pf.q + ' · left over ' + (Math.round(r.after * 10) / 10) + ' dB RMS (was ' + (Math.round(r.before * 10) / 10) + ')');
+        this._showDesc(pf.freq);
+        this.setStatus('Your fix is playing. Compare Problem / Your fix / Clean, keep tweaking if you like, then Next.');
+        this._renderXPanel();
+    };
+
+    Ride.prototype._drawFixCurves = function (reveal) {
+        if (this.stats.skill !== 'fix') return;
+        var hu = this._curve([this._fixUser()]);
+        var sets = [];
+        if (reveal && this.currentProblem && this.currentProblem.filters) {
+            var hp = this._curve(this.currentProblem.filters);
+            var comb = new Float32Array(hp.length);
+            for (var i = 0; i < hp.length; i++) comb[i] = hp[i] + hu[i];
+            sets.push({ db: comb, color: 'rgba(143,173,110,0.9)', label: 'Result', width: 4 });
+            sets.push({ db: hp, color: '#c45c5c', label: 'Problem' });
+            sets.push({ db: hu, color: '#c9a36e', label: 'Your EQ' });
+        } else {
+            sets.push({ db: hu, color: '#c9a36e', label: 'Your EQ' });
+        }
+        this._drawCurves(sets, []);
+    };
+
+    Ride.prototype._drawCurves = function (sets, marks) {
+        var cv = document.getElementById('ride-x-canvas');
+        if (!cv || cv.classList.contains('hidden') && !(marks && marks.length)) return;
+        cv.classList.remove('hidden');
+        var dpr = window.devicePixelRatio || 1;
+        var cssW = cv.clientWidth || 600;
+        var cssH = cv.clientHeight || 130;
+        cv.width = Math.round(cssW * dpr);
+        cv.height = Math.round(cssH * dpr);
+        var c = cv.getContext('2d');
+        c.setTransform(dpr, 0, 0, dpr, 0, 0);
+        c.clearRect(0, 0, cssW, cssH);
+        var w = cssW, h = cssH;
+        var xOf = function (f) { return Math.log(f / 20) / Math.log(1000) * w; };
+        var range = 15;
+        var yOf = function (db) { return h / 2 - Math.max(-range, Math.min(range, db)) / range * (h / 2 - 12); };
+        c.lineWidth = 1;
+        [50, 100, 200, 500, 1000, 2000, 5000, 10000].forEach(function (f) {
+            c.strokeStyle = 'rgba(90,81,68,0.35)';
+            c.beginPath(); c.moveTo(xOf(f), 0); c.lineTo(xOf(f), h); c.stroke();
+        });
+        [-12, -6, 0, 6, 12].forEach(function (db) {
+            c.strokeStyle = db === 0 ? 'rgba(201,163,110,0.45)' : 'rgba(90,81,68,0.25)';
+            c.beginPath(); c.moveTo(0, yOf(db)); c.lineTo(w, yOf(db)); c.stroke();
+        });
+        var grid = this._logGrid(240);
+        sets.forEach(function (s) {
+            c.strokeStyle = s.color;
+            c.lineWidth = s.width || 1.6;
+            c.beginPath();
+            for (var i = 0; i < grid.length; i++) {
+                var x = xOf(grid[i]), y = yOf(s.db[i]);
+                if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+            }
+            c.stroke();
+        });
+        (marks || []).forEach(function (m) {
+            c.strokeStyle = m.color;
+            c.lineWidth = 2;
+            c.setLineDash([4, 3]);
+            c.beginPath(); c.moveTo(xOf(m.f), 0); c.lineTo(xOf(m.f), h); c.stroke();
+            c.setLineDash([]);
+        });
+        c.font = '10px sans-serif';
+        c.fillStyle = '#8a7d6a';
+        [['100', 100], ['1k', 1000], ['10k', 10000]].forEach(function (t) { c.fillText(t[0], xOf(t[1]) + 2, h - 3); });
+        c.fillText('±15 dB', 3, 10);
+        var lx = w - 4;
+        c.textAlign = 'right';
+        sets.slice().reverse().forEach(function (s) {
+            c.fillStyle = s.color;
+            c.fillText(s.label, lx, 11);
+            lx -= c.measureText(s.label).width + 10;
+        });
+        c.textAlign = 'left';
+    };
+
+    /* ---- Stats line for the new games ---- */
+    Ride.prototype._xSummary = function () {
+        var skill = this.stats.skill;
+        var lv = this._xLevel();
+        if (skill === 'level') {
+            if (lv !== 'auto') return 'fixed ' + lv + ' dB';
+            var t = this._xStairThr('level', 'level');
+            return t != null ? 'level threshold ≈ ' + (Math.round(t * 100) / 100) + ' dB' : 'threshold: a few more rounds';
+        }
+        if (skill === 'shape') {
+            if (lv !== 'auto') return '';
+            var r = this._xStairThr('shape:auto', 'shape');
+            return r != null ? 'width threshold ≈ ' + (Math.round(r * 10) / 10) + '× Q apart' : 'threshold: a few more rounds';
+        }
+        if (skill === 'hunt') {
+            var errs = (this._x().hunt[lv] || []).slice(-8);
+            var md = median(errs);
+            return md == null ? 'typical miss: —' : 'typical miss ' + octFrac(md) + ' (last ' + errs.length + ')';
+        }
+        if (skill === 'fix') {
+            var fx = this._x().fix;
+            var best = fx.best && fx.best[lv];
+            return (fx.last != null ? 'last ' + fx.last : 'last —') + (best ? ' · best ' + best : '');
+        }
+        return '';
+    };
+
     var ride = new Ride();
 
     global.EQRide = {
@@ -2937,6 +4707,12 @@
         setSkill: function (skill) { ride._setSkill(skill); },
         getSkill: function () { return ride.stats.skill; },
         setFree: function (on) { ride._setFree(on); },
+        getBuffer: function () {
+            var e = ride.engine;
+            if (!e || e.kind !== 'buffer' || !e.buffer) return null;
+            return { name: ride.source === 'demo' ? 'Ride demo bed' : (ride.els.nowPlaying ? ride.els.nowPlaying.textContent : 'Ride track'), buffer: e.buffer };
+        },
+        isStream: function () { return !!(ride.engine && ride.engine.kind === 'stream'); },
         _ride: ride // read-only handle for automated checks
     };
 })(window);
