@@ -122,8 +122,13 @@
                         <button type="button" id="ride-skill-freq" class="ride-chip is-active" aria-pressed="true" title="One band of the song plays on its own, level-matched. Name the band.">Frequency ID</button>
                         <button type="button" id="ride-skill-band" class="ride-chip" aria-pressed="false" title="The full song with one band boosted or cut. Name the band.">Which band?</button>
                         <button type="button" id="ride-skill-amount" class="ride-chip" aria-pressed="false" title="Name the band and how much, in one tap.">Band + amount</button>
+                        <button type="button" id="ride-skill-level" class="ride-chip" aria-pressed="false" title="The whole song gets a little louder or quieter, or stays the same. Finds your level threshold.">Level</button>
+                        <button type="button" id="ride-skill-shape" class="ride-chip" aria-pressed="false" title="A bell at a shown frequency: is it wide or narrow?">Width</button>
+                        <button type="button" id="ride-skill-filter" class="ride-chip" aria-pressed="false" title="High-pass and low-pass cutoffs, and shelf vs bell.">Filters</button>
+                        <button type="button" id="ride-skill-hunt" class="ride-chip" aria-pressed="false" title="A narrow ringing peak is hidden somewhere. Boost and sweep to find it.">Resonance</button>
+                        <button type="button" id="ride-skill-fix" class="ride-chip" aria-pressed="false" title="A hidden bell on your music or live tab. Cancel it with a real parametric EQ.">Fix it</button>
                     </div>
-                    <span class="ride-kicker">Bands</span>
+                    <span class="ride-kicker" id="ride-bands-kicker">Bands</span>
                     <div class="ride-seg" id="ride-layout-row">
                         <button type="button" data-layout="starter" class="ride-chip" title="4 far-apart bands, two octaves apart">4 bands</button>
                         <button type="button" data-layout="seven" class="ride-chip is-active" title="7 named ranges">7 bands</button>
@@ -143,9 +148,36 @@
             <div id="ride-result" class="ride-result hidden" aria-live="polite">
                 <div id="ride-result-mark" class="ride-result-mark"></div>
                 <div id="ride-result-detail" class="ride-result-detail"></div>
+                <div id="ride-result-desc" class="ride-result-desc"></div>
+            </div>
+
+            <div id="ride-where-row" class="ride-where-row hidden">
+                <span class="ride-kicker">Where</span>
+                <div id="ride-where-btns" class="ride-seg"></div>
+                <span id="ride-where-note" class="ride-where-note"></span>
             </div>
 
             <div id="ride-guess-buttons" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-3 mb-4"></div>
+            <div id="ride-x-panel" class="ride-x-panel hidden"></div>
+
+            <div class="ride-hp-line">
+                <span id="ride-hp-status">Speakers not checked.</span>
+                <button type="button" id="ride-hp-btn" class="ride-hp-link">Check speakers (30 s)</button>
+                <button type="button" id="ride-hp-reset" class="ride-hp-link hidden">Use all bands</button>
+                <span class="ride-hp-tip">Tip: set one comfortable, moderate volume and leave it there. Louder always sounds fuller and brighter.</span>
+            </div>
+            <div id="ride-hp-card" class="ride-hp-card hidden" role="dialog" aria-labelledby="ride-hp-q">
+                <div class="ride-hp-head"><span class="ride-kicker">Speaker check</span><span id="ride-hp-n" class="ride-hp-n">1 / 6</span></div>
+                <p id="ride-hp-q" class="ride-hp-q"></p>
+                <p class="ride-hp-small">Keep your usual listening volume. Bands your setup can’t play are left out as answers (you can still tap them), so laptop speakers don’t make 40 Hz a guessing game.</p>
+                <div class="ride-hp-actions">
+                    <button type="button" id="ride-hp-yes" class="ride-chip is-active">I hear it</button>
+                    <button type="button" id="ride-hp-no" class="ride-chip">I can’t</button>
+                    <button type="button" id="ride-hp-again" class="ride-chip">Play again</button>
+                    <span class="ride-transport-gap"></span>
+                    <button type="button" id="ride-hp-cancel" class="ride-chip">Cancel</button>
+                </div>
+            </div>
 
             <div id="ride-tour" class="ride-tour hidden" role="dialog" aria-modal="true" aria-labelledby="ride-tour-title">
                 <div id="ride-tour-spot" class="ride-tour-spot"></div>
@@ -173,6 +205,7 @@
                     <div class="text-3xl font-semibold">Load real audio &amp; fix the problem by ear</div>
                     <div class="text-xs text-zinc-400 mt-1">One band has a hidden bell (3 or 6 dB, wide or narrow). Your EQ sits after it, like an insert in your DAW. Versions are loudness-matched.</div>
                     <div id="best-match" class="text-xs text-zinc-500"></div>
+                    <button type="button" id="corr-open-fix" class="corr-open-fix">Fix it by ear on your albums or a live browser tab → Ride › Fix it</button>
                 </div>
                 <div class="et-panel-controls">
                     <button type="button" id="corr-load-btn" class="px-5 py-3 border border-zinc-700 hover:bg-zinc-800 rounded-3xl text-sm flex items-center gap-x-2">
@@ -1088,6 +1121,10 @@
                 });
             });
             document.getElementById('corr-submit').addEventListener('click', submitCorrection);
+            document.getElementById('corr-open-fix').addEventListener('click', function () {
+                switchDrill('ride');
+                if (window.EQRide) window.EQRide.setSkill('fix');
+            });
             document.getElementById('mode-toggle').addEventListener('change', function (e) {
                 setCorrMode(e.target.checked ? 'match' : 'correct');
             });

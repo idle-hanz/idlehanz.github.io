@@ -1178,3 +1178,244 @@ body.ear-trainer-page {
     opacity: 0.8;
     line-height: 1;
 }
+
+/* ==================== New drills (Level, Width, Filters, Resonance, Fix it) ==================== */
+.ear-trainer-page #ride-panel.is-x #ride-set-progress,
+.ear-trainer-page #ride-panel.is-x #ride-set-clock,
+.ear-trainer-page #ride-panel.is-x #ride-set-new,
+.ear-trainer-page #ride-panel.is-nobands #ride-layout-row,
+.ear-trainer-page #ride-panel.is-nobands #ride-bands-kicker {
+    display: none;
+}
+
+.ear-trainer-page .ride-diff-board.is-x {
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+}
+
+.ear-trainer-page .ride-opt-row,
+.ear-trainer-page .ride-where-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem 0.55rem;
+    margin-top: 0.7rem;
+}
+
+.ear-trainer-page .ride-opt-gap {
+    margin-left: 0.6rem;
+}
+
+.ear-trainer-page .ride-where-row {
+    margin: 0 0 0.8rem;
+}
+
+.ear-trainer-page .ride-where-note {
+    font-size: 0.8rem;
+    color: var(--et-muted);
+}
+
+.ear-trainer-page .ride-where-btn {
+    min-width: 5.5rem;
+}
+
+.ear-trainer-page .ride-where-btn.is-correct {
+    border-color: var(--et-success);
+    background: rgba(80, 110, 50, 0.55);
+    color: #e8f0d8;
+}
+
+.ear-trainer-page .ride-where-btn.is-wrong {
+    border-color: var(--et-danger);
+    background: rgba(140, 50, 50, 0.5);
+    color: #f3d0d0;
+}
+
+.ear-trainer-page .ride-where-btn.is-target {
+    box-shadow: 0 0 0 2px var(--et-accent);
+}
+
+.ear-trainer-page #ride-guess-buttons.ride-x-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+    gap: 0.75rem;
+}
+
+.ear-trainer-page #ride-guess-buttons.ride-x-grid button {
+    border: 1px solid var(--et-border);
+    border-radius: 0.75rem;
+    padding: 0.9rem 0.8rem;
+    text-align: center;
+}
+
+.ear-trainer-page #ride-guess-buttons button.is-excluded,
+.ear-trainer-page #ride-guess-buttons button.is-off {
+    opacity: 0.38;
+}
+
+.ear-trainer-page .ride-result-desc {
+    margin-top: 0.3rem;
+    font-size: 0.92rem;
+    color: var(--et-muted);
+    max-width: 38rem;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.ear-trainer-page .ride-result-desc:empty {
+    display: none;
+}
+
+.ear-trainer-page .ride-x-panel {
+    border: 1px solid var(--et-border);
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    margin-bottom: 1rem;
+    background: rgba(8, 6, 4, 0.4);
+}
+
+.ear-trainer-page .ride-x-row {
+    display: grid;
+    grid-template-columns: 5.5rem minmax(0, 1fr) 4.8rem;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0.35rem 0;
+}
+
+.ear-trainer-page .ride-x-row input[type="range"] {
+    width: 100%;
+    accent-color: var(--et-accent);
+}
+
+.ear-trainer-page .ride-x-lab {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--et-muted);
+}
+
+.ear-trainer-page .ride-x-val {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    color: var(--et-accent-light);
+    font-size: 0.9rem;
+}
+
+.ear-trainer-page .ride-x-actions,
+.ear-trainer-page .ride-x-listen {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem 0.55rem;
+    margin: 0.55rem 0;
+}
+
+.ear-trainer-page .ride-x-main {
+    padding: 0.5rem 1.3rem;
+    border-radius: 1.5rem;
+    background: #fff;
+    color: #09090b;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.ear-trainer-page .ride-x-canvas {
+    display: block;
+    width: 100%;
+    height: 130px;
+    margin-top: 0.4rem;
+    border: 1px solid var(--et-border);
+    border-radius: 8px;
+    background: rgba(8, 6, 4, 0.55);
+}
+
+.ear-trainer-page .ride-x-note {
+    margin: 0.45rem 0 0;
+    font-size: 0.8rem;
+    color: var(--et-muted);
+}
+
+.ear-trainer-page .ride-hp-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.7rem;
+    font-size: 0.8rem;
+    color: var(--et-muted);
+    border-top: 1px solid rgba(90, 81, 68, 0.35);
+    padding-top: 0.7rem;
+}
+
+.ear-trainer-page .ride-hp-link {
+    color: var(--et-accent-light);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    background: none;
+    border: 0;
+    padding: 0;
+    font-size: 0.8rem;
+}
+
+.ear-trainer-page .ride-hp-tip {
+    flex-basis: 100%;
+    color: var(--et-dim);
+}
+
+.ear-trainer-page .ride-hp-card {
+    border: 1px solid var(--et-accent-dark);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    margin-top: 0.8rem;
+    background: rgba(20, 16, 10, 0.85);
+}
+
+.ear-trainer-page .ride-hp-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.ear-trainer-page .ride-hp-n {
+    font-size: 0.75rem;
+    color: var(--et-dim);
+}
+
+.ear-trainer-page .ride-hp-q {
+    margin: 0.4rem 0;
+    font-size: 1.05rem;
+    color: var(--et-text);
+}
+
+.ear-trainer-page .ride-hp-small {
+    margin: 0 0 0.6rem;
+    font-size: 0.8rem;
+    color: var(--et-muted);
+}
+
+.ear-trainer-page .ride-hp-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    align-items: center;
+}
+
+.ear-trainer-page .corr-open-fix {
+    margin-top: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--et-accent-light);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    background: none;
+    border: 0;
+    padding: 0;
+    text-align: left;
+}
+
+@media (max-width: 520px) {
+    .ear-trainer-page .ride-x-row {
+        grid-template-columns: 4.2rem minmax(0, 1fr) 4.2rem;
+        gap: 0.4rem;
+    }
+    .ear-trainer-page .ride-opt-gap {
+        margin-left: 0;
+    }
+}
