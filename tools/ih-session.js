@@ -1276,8 +1276,6 @@
       slot.visible = true;
       slot._duration = ch.duration != null ? ch.duration : 4;
       slot._roman = ch.roman || '';
-      if (Array.isArray(ch.frets)) slot.frets = ch.frets.map((f) => (f == null || f < 0 ? -1 : (f | 0)));
-      else if (Array.isArray(ch.voicing)) slot.frets = ch.voicing.map((f) => (f == null || f < 0 ? -1 : (f | 0)));
       attachTeleprompterFieldsToSlot(slot, ch);
       attachDiskStampsToSlot(slot, ch);
       return slot;
@@ -1299,7 +1297,6 @@
     if (s._tickEnd != null) out._tickEnd = +s._tickEnd;
     if (s._rest) out._rest = true;
     if (s._label) out.name = String(s._label);
-    if (Array.isArray(s.frets) && !Array.isArray(out.frets)) out.frets = s.frets.slice();
     return out;
   }
 
@@ -1383,7 +1380,6 @@
         tag: 'fretboard',
       };
       if (notes && notes.length) out.notes = notes;
-      if (Array.isArray(s.frets)) out.frets = s.frets.slice();
       return attachDiskStampsToChord(attachTeleprompterFieldsToChord(out, s), s);
     });
   }

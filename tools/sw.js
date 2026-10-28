@@ -1,21 +1,21 @@
 /* Song Builder service worker — scope /tools/ */
-const CACHE = 'song-builder-v20261028l';
+const CACHE = 'song-builder-v20261028r';
 const PRECACHE = [
   './app/',
   './app/index.html',
-  './app/app.js?v=20261028d',
-  './app/app.css?v=20261028d',
+  './app/app.js?v=20261028r',
+  './app/app.css?v=20261028r',
   './app/manifest.webmanifest',
   './app/icons/icon-192.png',
   './app/icons/icon-512.png',
   './app/icons/icon-maskable-512.png',
-  './ih-session.js?v=20261028b',
+  './ih-session.js?v=20261028r',
   './harmonic-landscape/',
   './harmonic-landscape/index.html',
   './fretboard/',
   './fretboard/index.html',
-  './fretboard/fb-mobile.css?v=20261028o',
-  './fretboard/fb-mobile.js?v=20261028o',
+  './fretboard/fb-mobile.css?v=20261028r',
+  './fretboard/fb-mobile.js?v=20261028r',
   './harmonic-landscape/css/hl-mobile.css?v=20261028b',
   './harmonic-landscape/js/hl-mobile.js?v=20261028b',
   './harmonic-landscape/js/hl-map-bridge.js?v=20261028a'

@@ -146,7 +146,9 @@
     var findBtn = $('btn-find');
     if (findBtn) {
       findBtn.addEventListener('click', function () {
-        pingFrame('fretboard', { type: 'ih-clear-neck' });
+        var on = !findBtn.classList.contains('active');
+        findBtn.classList.toggle('active', on);
+        pingFrame('fretboard', { type: 'ih-find-chord', on: on });
       });
     }
     var moreBtn = $('btn-tool-more');

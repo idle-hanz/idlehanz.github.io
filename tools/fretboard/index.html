@@ -329,7 +329,7 @@
         .fb-demo-list button span { display: block; font-size: 0.8rem; color: #c8bfa8; margin-top: 0.12rem; }
         .fb-demo-pick .fb-tour-nav { margin-top: 0.15rem; }
     </style>
-    <link rel="stylesheet" href="fb-mobile.css?v=20261028o">
+    <link rel="stylesheet" href="fb-mobile.css?v=20261028r">
 </head>
 <body class="py-4">
     <nav class="px-3 sm:px-4 py-2 text-xs flex flex-wrap items-center gap-x-3 gap-y-1 border-b mb-2" style="border-color:var(--card-border);color:var(--text-muted)">
@@ -743,7 +743,7 @@
             </div>
         </div>
     </div>
-    <script src="../ih-session.js?v=20261028b"></script>
+    <script src="../ih-session.js?v=20261028r"></script>
     <script>
     const NOTES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     const NOTES_FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
@@ -5128,16 +5128,14 @@
         }
 
         const { current, next } = getActiveChords();
-        // Find-chord mode: clean neck — only shape pins, no current/next diamonds
-        const findClean = !!findChordMode;
         // When path is set, only positions on the corridor are drawn (chords + scale)
         const pathFilter = (p) => !pathIsActive() || isInPathCorridor(p.s, p.f);
         const currentPosMap = new Map();
-        if (!findClean) current.positions.forEach(p => {
+        current.positions.forEach(p => {
             if (pathFilter(p)) currentPosMap.set(`${p.s}-${p.f}`, p);
         });
         const nextPosMap = new Map();
-        if (!findClean) next.positions.forEach(p => {
+        next.positions.forEach(p => {
             if (pathFilter(p)) nextPosMap.set(`${p.s}-${p.f}`, p);
         });
 
@@ -6446,76 +6444,20 @@
     window.getChordDetectPcs = getChordDetectPcs;
     window.analyzePitchSet = analyzePitchSet;
     window.getNoteName = getNoteName;
-    window.setFindChordMode = function (on, opts) {
-        opts = opts || {};
-        const next = !!on;
-        const was = !!findChordMode;
-        if (was === next && !opts.fresh) {
-            // No-op re-assert — keep pins and skip redraw thrash
-            return findChordMode;
-        }
-        findChordMode = next;
+    window.setFindChordMode = function (on) {
+        findChordMode = !!on;
         document.body.classList.toggle('fb-find-chord', findChordMode);
         if (findChordMode) {
             setDetectMode('chord');
-            if (!was || opts.fresh) {
-                try { clearShapePinsOnly(); } catch (_) {}
-                try { clearExtraPinsOnly(); } catch (_) {}
-                detectNotes = new Set();
-                detectNotesDirty = true;
-                shapeLinked = false;
-                detectRootPin = null;
-                try { refreshDetectUI(); } catch (_) {}
-            }
-            try { if (typeof setScaleDisplay === 'function') setScaleDisplay('off'); } catch (_) {}
             const hint = document.getElementById('detect-hint');
-            if (hint) hint.textContent = 'Tap frets (one per string). Nut = open. Mute clears a string.';
-            try { if (typeof updateFretboard === 'function') updateFretboard();
-                  else if (ctx && layout && layout.stringYs) drawFretboard(); } catch (_) {}
-        } else {
-            try { if (typeof updateFretboard === 'function') updateFretboard(); } catch (_) {}
+            if (hint) hint.textContent = 'Find chord: tap frets (one per string). Tap again to clear. Open = fret 0.';
         }
         updateShapeStatus();
         return findChordMode;
     };
     window.isFindChordMode = function () { return !!findChordMode; };
-    window.getShapePinFrets = function () {
-        const out = {};
-        shapePins.forEach((p, s) => { out[s] = p.f; });
-        return out;
-    };
-    window.muteShapeString = function (s) {
-        s = s | 0;
-        if (!shapePins.has(s)) return;
-        shapePins.delete(s);
-        syncDetectFromShapePins();
-        try { if (ctx && layout && layout.stringYs) drawFretboard(); } catch (_) {}
-    };
-    window.addNamedChord = function (root, typeIdx, by) {
-        addSlot();
-        progressionFocus = progression.length - 1;
-        const slot = currentSlot();
-        if (!slot) return null;
-        slot.mode = 'named';
-        slot.root = ((root % 12) + 12) % 12;
-        slot.typeIdx = Math.max(0, Math.min(chordTypes.length - 1, typeIdx | 0));
-        slot.bassMode = 'root';
-        slot.visible = true;
-        try {
-            if (typeof pushProgressionToSongSession === 'function') {
-                pushProgressionToSongSession(by || 'fretboard-pick');
-            }
-        } catch (_) {}
-        if (typeof renderProgressionSlots === 'function') renderProgressionSlots();
-        if (typeof updateFretboard === 'function') updateFretboard();
-        return slot;
-    };
     window.useDetectedChord = function (opts) {
         opts = opts || {};
-        if (opts.addNew) {
-            addSlot();
-            progressionFocus = progression.length - 1;
-        }
         applyBestChordDetect();
         try {
             if (typeof pushProgressionToSongSession === 'function') {
@@ -6525,82 +6467,6 @@
         if (typeof renderProgressionSlots === 'function') renderProgressionSlots();
         if (typeof updateFretboard === 'function') updateFretboard();
         return currentSlot && currentSlot();
-    };
-    /** frets: array high→low, -1 = mute. Stick named chord + voicing onto progression. */
-    window.stickVoicedChord = function (opts) {
-        opts = opts || {};
-        const root = ((opts.root % 12) + 12) % 12;
-        const typeIdx = Math.max(0, Math.min(chordTypes.length - 1, opts.typeIdx | 0));
-        let idx;
-        if (opts.updateIdx != null && progression[opts.updateIdx]) {
-            idx = opts.updateIdx | 0;
-        } else {
-            addSlot();
-            idx = progression.length - 1;
-        }
-        progressionFocus = idx;
-        const slot = progression[idx];
-        slot.mode = 'named';
-        slot.root = root;
-        slot.typeIdx = typeIdx;
-        slot.bassMode = 'root';
-        slot.visible = true;
-        if (opts.label) slot._label = String(opts.label);
-        if (Array.isArray(opts.frets)) {
-            slot.frets = opts.frets.map((f) => (f == null || f < 0 ? -1 : (f | 0)));
-        }
-        try {
-            if (typeof pushProgressionToSongSession === 'function') {
-                pushProgressionToSongSession(opts.by || 'fretboard-phone');
-            }
-        } catch (_) {}
-        if (typeof renderProgressionSlots === 'function') renderProgressionSlots();
-        if (typeof updateFretboard === 'function') updateFretboard();
-        return slot;
-    };
-    window.loadSlotVoicing = function (idx) {
-        idx = idx | 0;
-        const slot = progression[idx];
-        if (!slot) return false;
-        progressionFocus = idx;
-        try { clearShapePinsOnly(); } catch (_) {}
-        try { clearExtraPinsOnly(); } catch (_) {}
-        detectNotes = new Set();
-        detectNotesDirty = true;
-        shapeLinked = false;
-        detectRootPin = null;
-        const frets = Array.isArray(slot.frets) ? slot.frets : null;
-        if (frets && frets.length) {
-            frets.forEach((f, s) => {
-                if (f == null || f < 0) return;
-                toggleShapePin(s, f | 0);
-            });
-        }
-        try { refreshDetectUI(); } catch (_) {}
-        if (typeof updateFretboard === 'function') updateFretboard();
-        return true;
-    };
-    window.setProgressionFocus = setProgressionFocus;
-    window.removeSlot = removeSlot;
-    window.getFretTapPoint = function (s, f) {
-        if (!layout || !layout.stringYs || !canvas) return null;
-        s = s | 0; f = f | 0;
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
-        let xCanvas;
-        if (f === 0) xCanvas = layout.nutX - 10;
-        else xCanvas = getXForFret(f);
-        if (xCanvas == null || xCanvas < 0) return null;
-        const yCanvas = layout.stringYs[s];
-        if (yCanvas == null) return null;
-        return {
-            canvasX: xCanvas / scaleX,
-            canvasY: yCanvas / scaleY,
-            clientX: rect.left + xCanvas / scaleX,
-            clientY: rect.top + yCanvas / scaleY,
-            findMode: !!findChordMode
-        };
     };
     window.pushProgressionToSongSession = pushProgressionToSongSession;
     window.applyChordsFromSession = applyChordsFromSession;
@@ -7122,6 +6988,6 @@
         });
     })();
     </script>
-    <script src="fb-mobile.js?v=20261028o"></script>
+    <script src="fb-mobile.js?v=20261028r"></script>
 </body>
 </html>
