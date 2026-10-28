@@ -146,18 +146,9 @@
     var findBtn = $('btn-find');
     if (findBtn) {
       findBtn.addEventListener('click', function () {
-        // Always open the Add chord sheet (Find on neck + Quick pick)
-        findBtn.classList.add('active');
-        pingFrame('fretboard', { type: 'ih-add-chord' });
+        pingFrame('fretboard', { type: 'ih-clear-neck' });
       });
     }
-    window.addEventListener('message', function (e) {
-      if (e.origin !== location.origin) return;
-      var data = e.data || {};
-      if (data.source === 'song-builder-fb' && data.type === 'ih-find-state') {
-        if (findBtn) findBtn.classList.toggle('active', !!data.on);
-      }
-    });
     var moreBtn = $('btn-tool-more');
     if (moreBtn) {
       moreBtn.addEventListener('click', function () {

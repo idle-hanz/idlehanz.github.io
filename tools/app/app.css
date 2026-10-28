@@ -157,13 +157,10 @@ html, body {
   font-size: 0.72rem;
 }
 
-#top #btn-find.add-chord {
-  background: linear-gradient(180deg, #fbbf24, #d97706);
-  color: #1a1208;
-  border: 0;
-  font-weight: 800;
-  min-width: 5.5rem;
-}
-#top #btn-find.add-chord.active {
-  box-shadow: 0 0 0 2px rgba(251,191,36,0.55);
+#top #btn-find.clear-neck {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-weight: 700;
+  min-width: 4.2rem;
 }
