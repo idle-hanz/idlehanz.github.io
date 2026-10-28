@@ -329,7 +329,7 @@
         .fb-demo-list button span { display: block; font-size: 0.8rem; color: #c8bfa8; margin-top: 0.12rem; }
         .fb-demo-pick .fb-tour-nav { margin-top: 0.15rem; }
     </style>
-    <link rel="stylesheet" href="fb-mobile.css?v=20261028j">
+    <link rel="stylesheet" href="fb-mobile.css?v=20261028m">
 </head>
 <body class="py-4">
     <nav class="px-3 sm:px-4 py-2 text-xs flex flex-wrap items-center gap-x-3 gap-y-1 border-b mb-2" style="border-color:var(--card-border);color:var(--text-muted)">
@@ -5128,14 +5128,16 @@
         }
 
         const { current, next } = getActiveChords();
+        // Find-chord mode: clean neck — only shape pins, no current/next diamonds
+        const findClean = !!findChordMode;
         // When path is set, only positions on the corridor are drawn (chords + scale)
         const pathFilter = (p) => !pathIsActive() || isInPathCorridor(p.s, p.f);
         const currentPosMap = new Map();
-        current.positions.forEach(p => {
+        if (!findClean) current.positions.forEach(p => {
             if (pathFilter(p)) currentPosMap.set(`${p.s}-${p.f}`, p);
         });
         const nextPosMap = new Map();
-        next.positions.forEach(p => {
+        if (!findClean) next.positions.forEach(p => {
             if (pathFilter(p)) nextPosMap.set(`${p.s}-${p.f}`, p);
         });
 
@@ -6449,15 +6451,63 @@
         document.body.classList.toggle('fb-find-chord', findChordMode);
         if (findChordMode) {
             setDetectMode('chord');
+            // Fresh shape — ignore leftover detect chips / scale diamonds
+            try { clearShapePinsOnly(); } catch (_) {}
+            try { clearExtraPinsOnly(); } catch (_) {}
+            detectNotes = new Set();
+            detectNotesDirty = true;
+            shapeLinked = false;
+            detectRootPin = null;
+            try { if (typeof setScaleDisplay === 'function') setScaleDisplay('off'); } catch (_) {}
             const hint = document.getElementById('detect-hint');
-            if (hint) hint.textContent = 'Find chord: tap frets (one per string). Tap again to clear. Open = fret 0.';
+            if (hint) hint.textContent = 'Find chord: tap frets (one per string). Nut = open. Clear a string to mute.';
+            try { refreshDetectUI(); } catch (_) {}
+            try { if (typeof updateFretboard === 'function') updateFretboard();
+                  else if (ctx && layout && layout.stringYs) drawFretboard(); } catch (_) {}
+        } else {
+            try { if (typeof updateFretboard === 'function') updateFretboard(); } catch (_) {}
         }
         updateShapeStatus();
         return findChordMode;
     };
     window.isFindChordMode = function () { return !!findChordMode; };
+    window.getShapePinFrets = function () {
+        const out = {};
+        shapePins.forEach((p, s) => { out[s] = p.f; });
+        return out;
+    };
+    window.muteShapeString = function (s) {
+        s = s | 0;
+        if (!shapePins.has(s)) return;
+        shapePins.delete(s);
+        syncDetectFromShapePins();
+        try { if (ctx && layout && layout.stringYs) drawFretboard(); } catch (_) {}
+    };
+    window.addNamedChord = function (root, typeIdx, by) {
+        addSlot();
+        progressionFocus = progression.length - 1;
+        const slot = currentSlot();
+        if (!slot) return null;
+        slot.mode = 'named';
+        slot.root = ((root % 12) + 12) % 12;
+        slot.typeIdx = Math.max(0, Math.min(chordTypes.length - 1, typeIdx | 0));
+        slot.bassMode = 'root';
+        slot.visible = true;
+        try {
+            if (typeof pushProgressionToSongSession === 'function') {
+                pushProgressionToSongSession(by || 'fretboard-pick');
+            }
+        } catch (_) {}
+        if (typeof renderProgressionSlots === 'function') renderProgressionSlots();
+        if (typeof updateFretboard === 'function') updateFretboard();
+        return slot;
+    };
     window.useDetectedChord = function (opts) {
         opts = opts || {};
+        if (opts.addNew) {
+            addSlot();
+            progressionFocus = progression.length - 1;
+        }
         applyBestChordDetect();
         try {
             if (typeof pushProgressionToSongSession === 'function') {
@@ -6988,6 +7038,6 @@
         });
     })();
     </script>
-    <script src="fb-mobile.js?v=20261028j"></script>
+    <script src="fb-mobile.js?v=20261028m"></script>
 </body>
 </html>
