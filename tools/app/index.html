@@ -12,14 +12,17 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
-  <link rel="stylesheet" href="app.css?v=20261028a">
+  <link rel="stylesheet" href="app.css?v=20261028b">
 </head>
 <body>
   <div id="shell">
     <header id="top">
-      <span class="brand">Song Builder</span>
+      <span class="brand" id="top-brand">Song Builder</span>
+      <span class="tool-name" id="top-tool">Landscape</span>
       <span class="spacer"></span>
-      <button type="button" id="btn-install" class="primary" hidden>Install app</button>
+      <button type="button" id="btn-find" hidden>Find chord</button>
+      <button type="button" id="btn-tool-more" hidden>More</button>
+      <button type="button" id="btn-install" class="primary" hidden>Install</button>
     </header>
     <div id="frames">
       <iframe id="frame-landscape" title="Harmonic Landscape" allow="autoplay; midi"></iframe>
@@ -48,6 +51,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20261028a"></script>
+  <script src="app.js?v=20261028b"></script>
 </body>
 </html>

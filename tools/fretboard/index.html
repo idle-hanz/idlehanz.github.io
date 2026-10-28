@@ -329,7 +329,7 @@
         .fb-demo-list button span { display: block; font-size: 0.8rem; color: #c8bfa8; margin-top: 0.12rem; }
         .fb-demo-pick .fb-tour-nav { margin-top: 0.15rem; }
     </style>
-    <link rel="stylesheet" href="fb-mobile.css?v=20261028f">
+    <link rel="stylesheet" href="fb-mobile.css?v=20261028j">
 </head>
 <body class="py-4">
     <nav class="px-3 sm:px-4 py-2 text-xs flex flex-wrap items-center gap-x-3 gap-y-1 border-b mb-2" style="border-color:var(--card-border);color:var(--text-muted)">
@@ -1975,35 +1975,46 @@
         invalidatePathVeil();
 
         const focus = document.body.classList.contains('board-focus');
-        const rect = wrap.getBoundingClientRect();
-        // Use full available width
-        let w = Math.max(320, Math.floor(rect.width - 8));
-
-        // Height/width ≈ realistic neck face for ~12 frets + 6 strings
-        // (~0.22–0.26 keeps frets wider than string gaps, like a real fingerboard)
         const phoneUi = document.body.classList.contains('fb-mobile-ui');
-        const NECK_ASPECT = phoneUi ? 0.44 : 0.24;
-        let h = Math.round(w * NECK_ASPECT);
+        // Phone/embed: trust the viewport, not a poisoned parent width (canvas
+        // attribute width=1200 can inflate the flex column past the iframe).
+        let avail = document.documentElement.clientWidth || window.innerWidth || 320;
+        if (phoneUi) {
+            const shell = document.querySelector('.app-shell');
+            const shellPad = shell ? 16 : 8;
+            avail = Math.max(200, avail - shellPad);
+            wrap.style.width = '100%';
+            wrap.style.maxWidth = '100%';
+            wrap.style.overflow = 'hidden';
+        }
+        const rect = wrap.getBoundingClientRect();
+        let w = Math.floor((phoneUi ? avail : rect.width) - (phoneUi ? 4 : 8));
+        w = Math.max(phoneUi ? 200 : 320, w);
+        if (phoneUi) w = Math.min(w, avail);
 
-        // Soft clamps so tiny/huge windows stay usable without distorting the feel
-        h = Math.max(phoneUi ? 260 : 200, Math.min(h, focus ? 420 : (phoneUi ? 380 : 360)));
-
-        // If clamp changed height a lot on ultra-wide, optionally cap width so
-        // proportions stay neck-like (avoid a super-long ribbon with tiny frets)
-        const maxWFromH = Math.round(h / NECK_ASPECT);
-        if (w > maxWFromH * 1.02) {
-            // keep height, reduce drawing width and center via CSS width 100%
-            // actually: prefer full width frets — only raise height slightly within cap
-            h = Math.min(focus ? 420 : 360, Math.round(w * NECK_ASPECT));
+        let h;
+        if (phoneUi) {
+            const vh = window.innerHeight || document.documentElement.clientHeight || 700;
+            // Fill space above sticky chips + play dock
+            const reserved = 52 + 96 + 70 + 8;
+            h = Math.max(300, vh - reserved);
+        } else {
+            const NECK_ASPECT = 0.24;
+            h = Math.round(w * NECK_ASPECT);
+            h = Math.max(200, Math.min(h, focus ? 420 : 360));
+            const maxWFromH = Math.round(h / NECK_ASPECT);
+            if (w > maxWFromH * 1.02) {
+                h = Math.min(focus ? 420 : 360, Math.round(w * NECK_ASPECT));
+            }
         }
 
         if (canvas.width !== w || canvas.height !== h) {
             canvas.width = w;
             canvas.height = h;
         }
-        // CSS display size matches buffer so hit-testing scale ≈ 1
         canvas.style.width = w + 'px';
         canvas.style.height = h + 'px';
+        canvas.style.maxWidth = '100%';
 
         calculateLayout();
         if (ctx) drawFretboard();
@@ -2025,22 +2036,34 @@
 
     function calculateLayout() {
         if (!canvas) return;
-        const fbLeft = 58, fbTop = 18, fbBottom = canvas.height - 38, fbRight = canvas.width - 18;
+        const phoneUi = document.body.classList.contains('fb-mobile-ui');
+        const fbLeft = phoneUi ? 36 : 58;
+        const fbTop = phoneUi ? 22 : 18;
+        const fbBottom = canvas.height - (phoneUi ? 44 : 38);
+        const fbRight = canvas.width - (phoneUi ? 12 : 18);
         const nStr = Math.max(1, numStrings());
         const stringSpacing = nStr > 1 ? (fbBottom - fbTop) / (nStr - 1) : 0;
-        const nutX = fbLeft, nutThickness = 5;
+        const nutX = fbLeft, nutThickness = phoneUi ? 6 : 5;
         const frettedLeft = nutX + nutThickness + 4, frettedRight = fbRight - 8;
         const span = frettedRight - frettedLeft;
         const firstFretted = startFret === 0 ? 1 : startFret;
         const lastFretted = Math.max(firstFretted, endFret);
         const frettedCount = Math.max(1, lastFretted - firstFretted + 1);
         const leftBoundFret = startFret === 0 ? 0 : firstFretted - 1;
-        const dLeft = nutToFretFraction(leftBoundFret), dRight = nutToFretFraction(lastFretted);
-        const dRange = Math.max(1e-9, dRight - dLeft);
         const wireXMap = {};
-        for (let f = leftBoundFret; f <= lastFretted; f++)
-            wireXMap[f] = frettedLeft + ((nutToFretFraction(f) - dLeft) / dRange) * span;
-        if (startFret > 0) wireXMap[leftBoundFret] = frettedLeft;
+        if (phoneUi) {
+            // Even fret cells so the visible window matches the scrubber label
+            const n = Math.max(1, lastFretted - leftBoundFret);
+            for (let f = leftBoundFret; f <= lastFretted; f++) {
+                wireXMap[f] = frettedLeft + ((f - leftBoundFret) / n) * span;
+            }
+        } else {
+            const dLeft = nutToFretFraction(leftBoundFret), dRight = nutToFretFraction(lastFretted);
+            const dRange = Math.max(1e-9, dRight - dLeft);
+            for (let f = leftBoundFret; f <= lastFretted; f++)
+                wireXMap[f] = frettedLeft + ((nutToFretFraction(f) - dLeft) / dRange) * span;
+            if (startFret > 0) wireXMap[leftBoundFret] = frettedLeft;
+        }
         layout = {
             fbLeft, fbTop, fbBottom, fbRight, stringSpacing, nutX, nutThickness,
             frettedLeft, frettedRight, fretSpacing: span / frettedCount,
@@ -2132,10 +2155,20 @@
             strokeMarkerShape(c, x, y, inScale, size + (hybridPair ? 6 : 3), COLOR_ROOT_RING, 2.5);
         }
         c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle';
-        const fs = (leftLabel.length > 2 || rightLabel.length > 2) ? 8 : 9;
-        c.font = `700 ${fs}px Inter,system-ui,sans-serif`;
-        c.fillText(leftLabel, x - half * 0.42, y + 0.5);
-        c.fillText(rightLabel, x + half * 0.42, y + 0.5);
+        const same = String(leftLabel || '') === String(rightLabel || '');
+        const phone = document.body.classList.contains('fb-mobile-ui');
+        if (same) {
+            const fs = phone ? (leftLabel.length > 2 ? 11 : 13) : (leftLabel.length > 2 ? 9 : 11);
+            c.font = `700 ${fs}px Inter,system-ui,sans-serif`;
+            c.fillText(leftLabel, x, y + 0.5);
+        } else {
+            const fs = phone
+                ? ((leftLabel.length > 2 || rightLabel.length > 2) ? 9 : 11)
+                : ((leftLabel.length > 2 || rightLabel.length > 2) ? 8 : 9);
+            c.font = `700 ${fs}px Inter,system-ui,sans-serif`;
+            c.fillText(leftLabel, x - half * 0.42, y + 0.5);
+            c.fillText(rightLabel, x + half * 0.42, y + 0.5);
+        }
         c.restore();
     }
 
@@ -4921,7 +4954,7 @@
         const markerFrets = [3,5,7,9,12,15,17,19,21,24];
         const nStr = stringYs.length;
         const centerY = (fbTop + fbBottom) / 2;
-        const inlayR = 7;
+        const inlayR = document.body.classList.contains('fb-mobile-ui') ? 4.5 : 7;
         // Keep double-dots fully inside the wood, between string gaps for any string count
         function midGap(i) {
             // midpoint between string i and i+1 (clamped)
@@ -4963,16 +4996,19 @@
             ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
             ctx.strokeStyle = isDark ? '#e2e8f0' : '#475569'; ctx.lineWidth = 1.5; ctx.stroke();
         }
-        markerFrets.forEach(f => {
-            if (f < layout.firstFretted || f > layout.lastFretted) return;
-            const x = getXForFret(f); if (x < 0) return;
-            if (f % 12 === 0 && f) {
-                drawInlay(x, yUp, inlayR);
-                drawInlay(x, yDn, inlayR);
-            } else if (f >= 3) {
-                drawInlay(x, centerY, 6.5);
-            }
-        });
+        // Phone: hide inlays — they read as stray note dots on a short window
+        if (!document.body.classList.contains('fb-mobile-ui')) {
+            markerFrets.forEach(f => {
+                if (f < layout.firstFretted || f > layout.lastFretted) return;
+                const x = getXForFret(f); if (x < 0) return;
+                if (f % 12 === 0 && f) {
+                    drawInlay(x, yUp, inlayR);
+                    drawInlay(x, yDn, inlayR);
+                } else if (f >= 3) {
+                    drawInlay(x, centerY, 6.5);
+                }
+            });
+        }
 
         // String colours reflect whether the OPEN pitch is in current / next / scale
         // (so when zoomed high on the neck you still know which opens are live)
@@ -5076,16 +5112,20 @@
         }
 
         // Fret numbers — drag strip for pan (see setupNeckZoomListeners)
+        const phoneUiDraw = document.body.classList.contains('fb-mobile-ui');
         ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
-        ctx.font = '600 10px Inter,system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.font = phoneUiDraw ? '700 13px Inter,system-ui,sans-serif' : '600 10px Inter,system-ui,sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         for (let f = layout.firstFretted; f <= layout.lastFretted; f++) {
-            const x = getXForFret(f); if (x > 0) ctx.fillText(String(f), x, fbBottom + 16);
+            const x = getXForFret(f); if (x > 0) ctx.fillText(String(f), x, fbBottom + (phoneUiDraw ? 20 : 16));
         }
-        // Subtle pan affordance under numbers
-        ctx.fillStyle = isDark ? 'rgba(148,163,184,0.35)' : 'rgba(100,116,139,0.35)';
-        ctx.font = '500 8px Inter,system-ui,sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText('⟷ drag', fbLeft, canvas.height - 6);
+        // Subtle pan affordance under numbers (desktop only)
+        if (!document.body.classList.contains('fb-mobile-ui')) {
+            ctx.fillStyle = isDark ? 'rgba(148,163,184,0.35)' : 'rgba(100,116,139,0.35)';
+            ctx.font = '500 8px Inter,system-ui,sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText('⟷ drag', fbLeft, canvas.height - 6);
+        }
 
         const { current, next } = getActiveChords();
         // When path is set, only positions on the corridor are drawn (chords + scale)
@@ -5229,7 +5269,8 @@
                 } else { lc = COLOR_CURRENT; rc = COLOR_NEXT; }
                 const emph = rootEmphasis && (p.label === 'R' || other.label === 'R');
                 ctx.shadowColor = 'rgba(0,0,0,0.28)'; ctx.shadowBlur = 4;
-                drawSplitMarker(ctx, x, y, inScale, 14, lc, rc, p.label, other.label, emph, !!useInt);
+                const mk = document.body.classList.contains('fb-mobile-ui') ? 17 : 14;
+                drawSplitMarker(ctx, x, y, inScale, mk, lc, rc, p.label, other.label, emph, !!useInt);
                 ctx.shadowBlur = 0;
             } else {
                 const baseCol = mono ? monoC.excl : color;
@@ -5237,7 +5278,8 @@
                 // Mono: keep root ring so roots don't vanish into grey
                 const emphR = (rootEmphasis && p.label === 'R') || (mono && p.label === 'R');
                 const emphB = bassEmphasis && p.isBass && p.label !== 'R';
-                drawSolidMarker(ctx, x, y, inScale, emphR ? 15 : 13, col, p.label, emphR, emphB,
+                const base = document.body.classList.contains('fb-mobile-ui') ? (emphR ? 18 : 16) : (emphR ? 15 : 13);
+                drawSolidMarker(ctx, x, y, inScale, base, col, p.label, emphR, emphB,
                     useInt ? color : null);
             }
             ctx.restore();
@@ -5288,9 +5330,11 @@
         drawPathArpOrderNumbers(ctx, isDark);
         drawPathHandles(ctx, isDark);
 
-        ctx.fillStyle = isDark ? 'rgba(226,232,240,0.45)' : 'rgba(15,23,42,0.5)';
-        ctx.font = '500 9px Inter,system-ui,sans-serif'; ctx.textAlign = 'left';
-        ctx.fillText('Guitar Fretboard Visualizer', 8, 12);
+        if (!document.body.classList.contains('fb-mobile-ui')) {
+            ctx.fillStyle = isDark ? 'rgba(226,232,240,0.45)' : 'rgba(15,23,42,0.5)';
+            ctx.font = '500 9px Inter,system-ui,sans-serif'; ctx.textAlign = 'left';
+            ctx.fillText('Guitar Fretboard Visualizer', 8, 12);
+        }
     }
 
     function updateFretboard() {
@@ -6944,6 +6988,6 @@
         });
     })();
     </script>
-    <script src="fb-mobile.js?v=20261028f"></script>
+    <script src="fb-mobile.js?v=20261028j"></script>
 </body>
 </html>

@@ -45,8 +45,30 @@
     } catch (_) {
       landscape = window.innerWidth > window.innerHeight;
     }
-    if (landscape) setFretRange(0, 12);
-    else setFretRange(0, 6);
+    // Portrait: exactly 5 frets; landscape: 8 (end inclusive)
+    if (landscape) setFretRange(0, 8);
+    else setFretRange(0, 5);
+    // Force a correct resize after range change (viewport-based width)
+    setTimeout(function () {
+      if (typeof resizeCanvas === 'function') resizeCanvas();
+      syncScrubLabel();
+    }, 30);
+  }
+
+  function syncScrubLabel() {
+    var lab = document.getElementById('fb-neck-lab');
+    var scrub = document.getElementById('fb-neck-pos');
+    if (!lab || typeof startFret === 'undefined') return;
+    var a = startFret | 0;
+    var b = (typeof endFret !== 'undefined' ? endFret : a + 5) | 0;
+    lab.textContent = 'Frets ' + a + '–' + b;
+    if (scrub) {
+      var n = Math.max(1, b - (a === 0 ? 0 : a) - (a === 0 ? 0 : -1));
+      // max start so window still fits n frets
+      var nFrets = a === 0 ? b : (b - a + 1);
+      scrub.max = String(Math.max(0, 24 - nFrets + 1));
+      scrub.value = String(a);
+    }
   }
 
   function syncPlay() {
@@ -157,9 +179,18 @@
       var data = e.data || {};
       if (data.source !== 'song-builder') return;
       if (data.type === 'ih-show') {
-        // Tab became visible — refresh from session
         applyRemoteSong({ type: 'song-updated', by: 'landscape', updatedAt: 'show-' + Date.now() });
+        setTimeout(function () {
+          if (typeof resizeCanvas === 'function') resizeCanvas();
+          neckWindowForOrientation();
+        }, 80);
       }
+      if (data.type === 'ih-find-chord') {
+        var on = data.on != null ? !!data.on : !(window.isFindChordMode && window.isFindChordMode());
+        setFind(on);
+      }
+      if (data.type === 'ih-more') openMore(true);
+      if (data.type === 'ih-more-close') openMore(false);
     });
   }
 
@@ -271,9 +302,21 @@
     }
 
     neckWindowForOrientation();
+    try {
+      if (typeof setScaleDisplay === 'function') setScaleDisplay('chords');
+      var cos = document.getElementById('colour-open-strings');
+      if (cos) { cos.checked = false; cos.dispatchEvent(new Event('change', { bubbles: true })); }
+      var sn = document.getElementById('show-notes');
+      if (sn) { sn.checked = false; sn.dispatchEvent(new Event('change', { bubbles: true })); }
+    } catch (_) {}
     setTimeout(function () {
       if (typeof resizeCanvas === 'function') resizeCanvas();
+      syncScrubLabel();
+      if (typeof updateFretboard === 'function') updateFretboard();
     }, 100);
+    setTimeout(function () {
+      if (typeof resizeCanvas === 'function') resizeCanvas();
+    }, 400);
   }
 
   function wire() {
@@ -313,12 +356,16 @@
     if (scrub) {
       scrub.addEventListener('input', function () {
         var start = +scrub.value || 0;
-        var span = 6;
+        var nFrets = 5;
         try {
-          if (window.matchMedia('(orientation: landscape)').matches) span = 12;
+          if (window.matchMedia('(orientation: landscape)').matches) nFrets = 8;
         } catch (_) {}
-        if (typeof setFretRange === 'function') setFretRange(start, Math.min(24, start + span));
-        if (lab) lab.textContent = 'Frets ' + start + '–' + Math.min(24, start + span);
+        // end inclusive: 0..5 = 5 frets; 5..9 = 5 frets
+        var end = start === 0 ? nFrets : Math.min(24, start + nFrets - 1);
+        if (start > 0 && end - start + 1 < nFrets) start = Math.max(0, end - nFrets + 1);
+        if (typeof setFretRange === 'function') setFretRange(start, end);
+        if (lab) lab.textContent = 'Frets ' + start + '–' + end;
+        if (typeof resizeCanvas === 'function') resizeCanvas();
       });
     }
 

@@ -36,6 +36,13 @@
     document.querySelectorAll('#tabs button').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-tab') === tab);
     });
+    var tool = $('top-tool');
+    if (tool) tool.textContent = tab === 'fretboard' ? 'Fretboard' : 'Landscape';
+    var find = $('btn-find');
+    var more = $('btn-tool-more');
+    if (find) find.hidden = tab !== 'fretboard';
+    if (more) more.hidden = tab !== 'fretboard';
+    if (find) find.classList.remove('active');
     // Tell visible tool to refresh from shared session
     pingFrame(tab, { type: 'ih-show', tab: tab });
   }
@@ -136,6 +143,20 @@
         showTab(b.getAttribute('data-tab'));
       });
     });
+    var findBtn = $('btn-find');
+    if (findBtn) {
+      findBtn.addEventListener('click', function () {
+        var on = !findBtn.classList.contains('active');
+        findBtn.classList.toggle('active', on);
+        pingFrame('fretboard', { type: 'ih-find-chord', on: on });
+      });
+    }
+    var moreBtn = $('btn-tool-more');
+    if (moreBtn) {
+      moreBtn.addEventListener('click', function () {
+        pingFrame('fretboard', { type: 'ih-more' });
+      });
+    }
     showTab('landscape');
 
     // Hash deep-link: #fretboard / #landscape

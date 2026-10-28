@@ -10,7 +10,7 @@
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
-  --tab-h: 3.5rem;
+  --tab-h: 3.25rem;
 }
 * { box-sizing: border-box; }
 html, body {
@@ -131,4 +131,28 @@ html, body {
   gap: 0.4rem;
   margin-top: 0.55rem;
   flex-wrap: wrap;
+}
+
+#top .tool-name {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-left: 0.25rem;
+}
+#top #btn-find.active {
+  border-color: #fbbf24;
+  color: #fde68a;
+  background: rgba(251,191,36,0.18);
+}
+#top .brand { font-size: 0.82rem; }
+#top {
+  min-height: 2.5rem;
+  padding: 0.25rem 0.5rem;
+  gap: 0.3rem;
+}
+#top button {
+  min-height: 40px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.72rem;
 }
