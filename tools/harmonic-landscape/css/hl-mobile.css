@@ -1,0 +1,350 @@
+/* Phone / coarse-pointer layout for Harmonic Landscape.
+   Desktop layout unchanged outside these queries. */
+
+.hl-mbar,
+.hl-mdock,
+.hl-mtabs,
+.hl-msheet,
+.hl-msheet-backdrop,
+.hl-rotate-hint {
+  display: none !important;
+}
+
+@media (max-width: 760px), ((max-width: 980px) and (pointer: coarse)) {
+  :root {
+    --hl-safe-top: env(safe-area-inset-top, 0px);
+    --hl-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --hl-safe-left: env(safe-area-inset-left, 0px);
+    --hl-safe-right: env(safe-area-inset-right, 0px);
+    --hl-dock-h: 3.6rem;
+    --hl-tabs-h: 3rem;
+    --hl-mbar-h: 3.1rem;
+  }
+
+  html, body {
+    height: 100%;
+    height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .app {
+    height: 100%;
+    height: 100dvh;
+    padding-top: var(--hl-safe-top);
+    padding-left: var(--hl-safe-left);
+    padding-right: var(--hl-safe-right);
+  }
+
+  /* Compact mobile top bar */
+  .hl-mbar {
+    display: flex !important;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 0 0 auto;
+    min-height: var(--hl-mbar-h);
+    padding: 0.35rem 0.55rem;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #14110e, #0b0a09);
+    z-index: 20;
+  }
+  .hl-mbar .brand-mini {
+    font-family: var(--display);
+    font-size: 0.78rem;
+    color: var(--gold2);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    margin-right: 0.15rem;
+  }
+  .hl-mbar .btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.78rem;
+  }
+  .hl-mbar .btn.grow { flex: 1 1 auto; }
+  .hl-mbar-spacer { flex: 1 1 auto; }
+
+  /* Hide heavy desktop chrome */
+  .app > header,
+  .app > #coach,
+  .app > #gesture-legend {
+    display: none !important;
+  }
+
+  main {
+    display: flex !important;
+    flex-direction: column !important;
+    grid-template-columns: none !important;
+    overflow: hidden !important;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-bottom: calc(var(--hl-dock-h) + var(--hl-tabs-h) + var(--hl-safe-bottom));
+  }
+  main.horizon-collapsed {
+    grid-template-columns: none !important;
+  }
+
+  /* Default: show map only; sheets reveal Path / From here */
+  main > .col-seq,
+  main > .col-horizon {
+    display: none !important;
+  }
+  body.hl-sheet-path main > .col-seq,
+  body.hl-sheet-from main > .col-horizon {
+    display: block !important;
+    position: fixed;
+    left: var(--hl-safe-left);
+    right: var(--hl-safe-right);
+    bottom: calc(var(--hl-dock-h) + var(--hl-tabs-h) + var(--hl-safe-bottom));
+    top: calc(var(--hl-mbar-h) + var(--hl-safe-top) + 2.5rem);
+    z-index: 40;
+    border-radius: 14px 14px 0 0;
+    border: 1px solid var(--line);
+    border-bottom: 0;
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.45);
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    max-height: none;
+    padding-bottom: 1rem;
+  }
+  body.hl-sheet-from main > .col-horizon {
+    display: flex !important;
+    flex-direction: column;
+  }
+  body.hl-sheet-from main.horizon-collapsed .horizon-body,
+  body.hl-sheet-from main.horizon-collapsed .col-horizon-head h2,
+  body.hl-sheet-from main.horizon-collapsed .col-horizon .foot {
+    display: block !important;
+  }
+  body.hl-sheet-from main.horizon-collapsed .btn-sidebar-toggle {
+    writing-mode: horizontal-tb;
+    width: auto;
+    min-height: 44px;
+    height: auto;
+  }
+
+  .map-wrap {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    height: auto !important;
+    display: flex;
+    flex-direction: column;
+    border-right: 0 !important;
+  }
+
+  .map-chrome {
+    flex: 0 0 auto;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .map-toolbar {
+    flex-wrap: nowrap;
+    gap: 0.3rem;
+    padding: 0.35rem 0.4rem;
+  }
+  .map-toolbar .style-bar,
+  .map-toolbar #function-opts,
+  .map-toolbar .map-sep,
+  .map-toolbar .map-view-switch,
+  .map-legend-line,
+  .strip-teach,
+  .map-footer .foot,
+  .traj-caption {
+    display: none !important;
+  }
+  .map-tools {
+    flex-wrap: nowrap;
+    gap: 0.25rem;
+  }
+  .map-tools .btn,
+  .map-gesture-modes .btn {
+    min-height: 40px;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.72rem;
+  }
+
+  #map {
+    flex: 1 1 auto;
+    width: 100% !important;
+    min-height: 42vh;
+    touch-action: none;
+    -ms-touch-action: none;
+  }
+
+  .map-footer {
+    flex: 0 0 auto;
+    padding-bottom: 0.2rem;
+  }
+  .time-strip-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .time-strip .ts-slot,
+  .time-strip button {
+    min-height: 44px;
+  }
+
+  /* Bottom tab bar */
+  .hl-mtabs {
+    display: flex !important;
+    position: fixed;
+    left: var(--hl-safe-left);
+    right: var(--hl-safe-right);
+    bottom: calc(var(--hl-dock-h) + var(--hl-safe-bottom));
+    z-index: 50;
+    height: var(--hl-tabs-h);
+    background: #12100e;
+    border-top: 1px solid var(--line);
+  }
+  .hl-mtabs button {
+    flex: 1;
+    min-height: 44px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+  }
+  .hl-mtabs button.active {
+    color: var(--gold2);
+    box-shadow: inset 0 2px 0 var(--gold);
+  }
+
+  /* Sticky transport / Add dock */
+  .hl-mdock {
+    display: flex !important;
+    position: fixed;
+    left: var(--hl-safe-left);
+    right: var(--hl-safe-right);
+    bottom: var(--hl-safe-bottom);
+    z-index: 55;
+    height: var(--hl-dock-h);
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.55rem;
+    background: #0e0c0a;
+    border-top: 1px solid rgba(196,165,116,0.35);
+    box-shadow: 0 -6px 24px rgba(0,0,0,0.4);
+  }
+  .hl-mdock .btn {
+    min-height: 48px;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+  }
+  .hl-mdock .btn-add-big {
+    flex: 1.4 1 auto;
+    background: linear-gradient(180deg, #c4a574, #a8874f);
+    color: #1a1208;
+    border: 0;
+    border-radius: 10px;
+  }
+  .hl-mdock .btn-add-big:disabled {
+    opacity: 0.45;
+  }
+  .hl-mdock .pending-lab {
+    display: none;
+    position: absolute;
+    left: 0.7rem;
+    right: 0.7rem;
+    bottom: calc(var(--hl-dock-h) + var(--hl-tabs-h) + var(--hl-safe-bottom) + 0.25rem);
+    font-size: 0.7rem;
+    color: var(--gold2);
+    text-align: center;
+    pointer-events: none;
+  }
+
+  /* More sheet */
+  .hl-msheet-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(0,0,0,0.55);
+  }
+  body.hl-more-open .hl-msheet-backdrop {
+    display: block !important;
+  }
+  .hl-msheet {
+    display: none;
+    position: fixed;
+    left: var(--hl-safe-left);
+    right: var(--hl-safe-right);
+    bottom: 0;
+    z-index: 70;
+    max-height: min(78vh, 36rem);
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    background: var(--panel);
+    border-radius: 16px 16px 0 0;
+    border: 1px solid var(--line);
+    border-bottom: 0;
+    padding: 0.75rem 0.85rem calc(1rem + var(--hl-safe-bottom));
+    box-shadow: 0 -12px 40px rgba(0,0,0,0.5);
+  }
+  body.hl-more-open .hl-msheet {
+    display: block !important;
+  }
+  .hl-msheet h3 {
+    margin: 0 0 0.55rem;
+    font-family: var(--display);
+    font-size: 0.85rem;
+    color: var(--gold2);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .hl-msheet .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.65rem;
+  }
+  .hl-msheet .btn {
+    min-height: 44px;
+    padding: 0.5rem 0.75rem;
+  }
+  .hl-msheet label.ctl {
+    min-height: 44px;
+    font-size: 0.75rem;
+    text-transform: none;
+  }
+  .hl-msheet .hint {
+    font-size: 0.8rem;
+    margin: 0 0 0.5rem;
+  }
+  .hl-msheet .share-out {
+    width: 100%;
+    min-height: 4.5rem;
+    font-size: 0.7rem;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.45rem;
+  }
+
+  .btn, .pack, .ver-chip, .slot, .hl-ctx-item {
+    min-height: 44px;
+  }
+
+  .hl-rotate-hint {
+    display: none;
+  }
+}
+
+/* Landscape orientation on phone: give map more height */
+@media ((max-width: 980px) and (pointer: coarse) and (orientation: landscape)) {
+  :root {
+    --hl-mbar-h: 2.6rem;
+    --hl-tabs-h: 2.6rem;
+    --hl-dock-h: 3.2rem;
+  }
+  .map-footer .map-status { font-size: 0.65rem; }
+}
