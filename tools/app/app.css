@@ -1,0 +1,134 @@
+:root {
+  --bg: #080706;
+  --panel: #12100e;
+  --line: #2c261e;
+  --text: #ebe4d8;
+  --muted: #95897a;
+  --gold: #c4a574;
+  --gold2: #e8c98a;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --tab-h: 3.5rem;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  height: 100%;
+  height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  overflow: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+#shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-top: var(--safe-t);
+  padding-left: var(--safe-l);
+  padding-right: var(--safe-r);
+}
+#top {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.75rem;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #14110e, #0b0a09);
+}
+#top .brand {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--gold2);
+  font-size: 0.9rem;
+}
+#top .spacer { flex: 1; }
+#top button, #ios-hint button {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.4rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+#top button.primary {
+  background: linear-gradient(180deg, #c4a574, #a8874f);
+  color: #1a1208;
+  border: 0;
+}
+#frames {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  background: #000;
+}
+#frames iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--bg);
+}
+#frames iframe[hidden] {
+  display: none !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+#tabs {
+  flex: 0 0 auto;
+  display: flex;
+  height: calc(var(--tab-h) + var(--safe-b));
+  padding-bottom: var(--safe-b);
+  border-top: 1px solid rgba(196,165,116,0.35);
+  background: #0e0c0a;
+}
+#tabs button {
+  flex: 1;
+  min-height: 48px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+#tabs button.active {
+  color: var(--gold2);
+  box-shadow: inset 0 2px 0 var(--gold);
+}
+#ios-hint, #install-banner {
+  display: none;
+  position: fixed;
+  left: var(--safe-l);
+  right: var(--safe-r);
+  bottom: calc(var(--tab-h) + var(--safe-b) + 0.5rem);
+  z-index: 40;
+  background: rgba(18,16,14,0.97);
+  border: 1px solid var(--gold);
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+#ios-hint.show, #install-banner.show { display: block; }
+#ios-hint .row, #install-banner .row {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+  flex-wrap: wrap;
+}

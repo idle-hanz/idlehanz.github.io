@@ -348,3 +348,14 @@
   }
   .map-footer .map-status { font-size: 0.65rem; }
 }
+
+/* Embed inside Song Builder app */
+html.hl-embed .nav a[href*="arrangement"],
+html.hl-embed #btn-arrange,
+html.hl-embed #btn-fret,
+html.hl-embed .hl-mbar #hl-m-fret,
+body.hl-embed #btn-arrange,
+body.hl-embed #btn-fret {
+  display: none !important;
+}
+html.hl-embed .brand p { display: none; }

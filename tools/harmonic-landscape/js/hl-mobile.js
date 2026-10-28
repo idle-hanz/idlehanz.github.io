@@ -508,4 +508,87 @@
     setTimeout(wrapPreview, 300);
     setTimeout(wrapPreview, 1200);
   }
+
+
+  // ── Embed + live session sync (Song Builder app) ─────────
+  (function wireEmbedSync() {
+    var params = new URLSearchParams(location.search || '');
+    var embed = params.get('embed') === '1';
+    if (embed) {
+      document.documentElement.classList.add('hl-embed');
+      document.body.classList.add('hl-embed');
+    }
+    var lastApplied = null;
+    var applying = false;
+    var selfToken = 'landscape-' + Math.random().toString(36).slice(2, 8);
+
+    function applyRemote(msg) {
+      if (applying) return;
+      var H = window.HLApp;
+      if (!H || !H.S || !H.S()) return;
+      var by = (msg && msg.by) || '';
+      if (/^landscape/i.test(by)) return; // own writes
+      if (msg && msg.updatedAt && msg.updatedAt === lastApplied) return;
+      // Fretboard long rows: only take up to FRETBOARD_MAX_CHORDS
+      applying = true;
+      H._skipSessionPush = true;
+      try {
+        if (H.S().reloadSongFromDisk) H.S().reloadSongFromDisk();
+        var song = H.S().loadSong();
+        var cell = song && H.S().getFocusedCell && H.S().getFocusedCell(song);
+        if (!cell || !cell.chords || !cell.chords.length) return;
+        var max = (H.S().FRETBOARD_MAX_CHORDS) || 8;
+        var chords = cell.chords;
+        if (chords.length > max) chords = chords.slice(0, max);
+        if (H.applySessionChords) {
+          H.applySessionChords(chords, {
+            title: cell.name || (song && song.title),
+            cellId: cell.id,
+            packId: cell.packId,
+            tonic: song.key && song.key.tonic,
+            mode: song.key && song.key.mode,
+            bpm: song.bpm,
+            focusIndex: song.focus && song.focus.chordIndex,
+            liveSwap: true,
+          });
+        }
+        if (H.refreshAll) H.refreshAll();
+        else {
+          if (H.refreshSequence) H.refreshSequence();
+          if (H.refreshMap) H.refreshMap();
+        }
+        lastApplied = msg && msg.updatedAt;
+        if (H.setSyncStatus) H.setSyncStatus('Synced from Fretboard · ' + (cell.name || 'cell'));
+      } catch (e) {
+        console.warn('landscape remote sync', e);
+      } finally {
+        setTimeout(function () {
+          H._skipSessionPush = false;
+          applying = false;
+        }, 350);
+      }
+    }
+
+    function bootSync() {
+      var H = window.HLApp;
+      if (!H || !H.S || !H.S() || !H.S().subscribeSongChanges) {
+        setTimeout(bootSync, 200);
+        return;
+      }
+      H.S().subscribeSongChanges(function (msg) {
+        if (!msg || msg.type !== 'song-updated') return;
+        applyRemote(msg);
+      });
+      window.addEventListener('message', function (e) {
+        if (e.origin !== location.origin) return;
+        var data = e.data || {};
+        if (data.source !== 'song-builder') return;
+        if (data.type === 'ih-show') {
+          applyRemote({ type: 'song-updated', by: 'fretboard', updatedAt: 'show-' + Date.now() });
+        }
+      });
+    }
+    setTimeout(bootSync, 400);
+  })();
+
 })();

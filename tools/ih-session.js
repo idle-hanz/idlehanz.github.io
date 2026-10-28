@@ -938,6 +938,76 @@
     // type === 'smooth' → no extra chords; play engine can VL across boundary
   }
 
+  const BC_NAME = 'idlehanz-song';
+  let _songBc = null;
+  function getSongBc() {
+    if (_songBc) return _songBc;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') _songBc = new BroadcastChannel(BC_NAME);
+    } catch (_) {}
+    return _songBc;
+  }
+
+  function reloadSongFromDisk() {
+    _memSong = null;
+    return loadSong();
+  }
+
+  /**
+   * Notify other same-origin frames/tabs after a session write.
+   * Skip echo with opts.silentNotify.
+   */
+  function notifySongUpdated(song, by, opts) {
+    opts = opts || {};
+    if (opts.silentNotify) return;
+    const msg = {
+      type: 'song-updated',
+      by: by || (song && song.updatedBy) || 'unknown',
+      updatedAt: song && song.updatedAt,
+      cellId: song && song.focus && song.focus.cellId,
+    };
+    try {
+      const bc = getSongBc();
+      if (bc) bc.postMessage(msg);
+    } catch (_) {}
+    try {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ih-song-updated', { detail: msg }));
+      }
+    } catch (_) {}
+  }
+
+  /**
+   * Subscribe to session changes from other frames/tabs.
+   * Returns an unsubscribe function.
+   */
+  function subscribeSongChanges(handler) {
+    if (typeof handler !== 'function') return function () {};
+    const onBc = function (e) {
+      try { handler(e.data || {}); } catch (_) {}
+    };
+    const onStor = function (e) {
+      if (!e || e.key !== SESSION_KEY) return;
+      try { handler({ type: 'song-updated', by: 'storage', source: 'storage' }); } catch (_) {}
+    };
+    const onCustom = function (e) {
+      try { handler((e && e.detail) || {}); } catch (_) {}
+    };
+    const bc = getSongBc();
+    if (bc) bc.addEventListener('message', onBc);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', onStor);
+      window.addEventListener('ih-song-updated', onCustom);
+    }
+    return function () {
+      if (bc) bc.removeEventListener('message', onBc);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('storage', onStor);
+        window.removeEventListener('ih-song-updated', onCustom);
+      }
+    };
+  }
+
   // In-page working copy. Re-parsing localStorage on every load can drop
   // siblings if a later write fails or ensureSongShape throws.
   let _memSong = null;
@@ -976,6 +1046,7 @@
     _memSong = song;
     try {
       localStorage.setItem(SESSION_KEY, JSON.stringify(song));
+      notifySongUpdated(song, by);
       return true;
     } catch (_) {
       return false;
@@ -2339,6 +2410,9 @@
     loadSong,
     readSongFromDisk,
     saveSong,
+    reloadSongFromDisk,
+    subscribeSongChanges,
+    notifySongUpdated,
     ensureCell,
     newCellId,
     newFamilyId,

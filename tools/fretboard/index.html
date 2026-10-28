@@ -329,7 +329,7 @@
         .fb-demo-list button span { display: block; font-size: 0.8rem; color: #c8bfa8; margin-top: 0.12rem; }
         .fb-demo-pick .fb-tour-nav { margin-top: 0.15rem; }
     </style>
-    <link rel="stylesheet" href="fb-mobile.css?v=20261028d">
+    <link rel="stylesheet" href="fb-mobile.css?v=20261028f">
 </head>
 <body class="py-4">
     <nav class="px-3 sm:px-4 py-2 text-xs flex flex-wrap items-center gap-x-3 gap-y-1 border-b mb-2" style="border-color:var(--card-border);color:var(--text-muted)">
@@ -685,6 +685,7 @@
                         <button type="button" id="detect-mode-chord" class="flex-1 text-[10px] px-2 py-1.5 rounded-xl border font-semibold" onclick="setDetectMode('chord')">Chord</button>
                         <button type="button" id="detect-mode-scale" class="flex-1 text-[10px] px-2 py-1.5 rounded-xl border font-semibold" onclick="setDetectMode('scale')">Scale</button>
                     </div>
+                    <button type="button" id="btn-find-chord" class="w-full chip text-xs py-2 rounded-xl font-semibold mb-2" onclick="window.setFindChordMode && window.setFindChordMode(!window.isFindChordMode())" title="Tap frets to build a shape — no Shift needed">Find chord</button>
                     <div class="text-[10px] mb-1.5" style="color:var(--text-muted)" id="detect-hint">Shift+click = chord shape (1/string) · Shift+right-click = scale extras</div>
                     <div class="flex flex-wrap gap-1 mb-2">
                         <button type="button" class="chip text-[9px] px-2 py-1 rounded-lg font-medium" onclick="seedDetectFromPair()" title="Notes from current + next chords (clears shape + extras)">From pair</button>
@@ -742,7 +743,7 @@
             </div>
         </div>
     </div>
-    <script src="../ih-session.js?v=20260816q"></script>
+    <script src="../ih-session.js?v=20261028a"></script>
     <script>
     const NOTES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     const NOTES_FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
@@ -1065,6 +1066,8 @@
     }
     let scaleNotes = new Set([0,2,4,5,7,9,11]);
     let detectNotes = new Set();
+    /** When true, plain taps place shape pins (Find chord) — no Shift needed. */
+    let findChordMode = false;
     let detectMode = 'chord'; // 'chord' | 'scale'
     let detectNotesDirty = false; // true after manual chip edits (unlinked from shape)
     let detectRootPin = null; // null = auto, or 0–11 to force that mode root
@@ -1978,11 +1981,12 @@
 
         // Height/width ≈ realistic neck face for ~12 frets + 6 strings
         // (~0.22–0.26 keeps frets wider than string gaps, like a real fingerboard)
-        const NECK_ASPECT = 0.24;
+        const phoneUi = document.body.classList.contains('fb-mobile-ui');
+        const NECK_ASPECT = phoneUi ? 0.44 : 0.24;
         let h = Math.round(w * NECK_ASPECT);
 
         // Soft clamps so tiny/huge windows stay usable without distorting the feel
-        h = Math.max(200, Math.min(h, focus ? 420 : 360));
+        h = Math.max(phoneUi ? 260 : 200, Math.min(h, focus ? 420 : (phoneUi ? 380 : 360)));
 
         // If clamp changed height a lot on ultra-wide, optionally cap width so
         // proportions stay neck-like (avoid a super-long ribbon with tiny frets)
@@ -5954,7 +5958,7 @@
                 return;
             }
             if (hit) {
-                if (e.shiftKey) {
+                if (e.shiftKey || findChordMode) {
                     // Shape capture: pin fretted place (does not PC-toggle off other frets of same note)
                     toggleShapePin(hit.s, hit.f);
                     playFret(hit.s, hit.f);
@@ -6393,6 +6397,39 @@
     window.toggleExtraPin = toggleExtraPin;
     window.applyBestDetect = applyBestDetect;
     window.applyBestChordDetect = applyBestChordDetect;
+    window.getChordDetectPcs = getChordDetectPcs;
+    window.analyzePitchSet = analyzePitchSet;
+    window.getNoteName = getNoteName;
+    window.setFindChordMode = function (on) {
+        findChordMode = !!on;
+        document.body.classList.toggle('fb-find-chord', findChordMode);
+        if (findChordMode) {
+            setDetectMode('chord');
+            const hint = document.getElementById('detect-hint');
+            if (hint) hint.textContent = 'Find chord: tap frets (one per string). Tap again to clear. Open = fret 0.';
+        }
+        updateShapeStatus();
+        return findChordMode;
+    };
+    window.isFindChordMode = function () { return !!findChordMode; };
+    window.useDetectedChord = function (opts) {
+        opts = opts || {};
+        applyBestChordDetect();
+        try {
+            if (typeof pushProgressionToSongSession === 'function') {
+                pushProgressionToSongSession(opts.by || 'fretboard-detect');
+            }
+        } catch (_) {}
+        if (typeof renderProgressionSlots === 'function') renderProgressionSlots();
+        if (typeof updateFretboard === 'function') updateFretboard();
+        return currentSlot && currentSlot();
+    };
+    window.pushProgressionToSongSession = pushProgressionToSongSession;
+    window.applyChordsFromSession = applyChordsFromSession;
+    window.tryLoadFocusedSongCell = tryLoadFocusedSongCell;
+    window.getProgression = function () { return progression; };
+    Object.defineProperty(window, "progressionLen", { get: function () { return progression.length; } });
+    window.pullFromLandscapeSession = pullFromLandscapeSession;
     window.applyBestScaleDetect = applyBestScaleDetect;
     window.onDetectRootPinChange = onDetectRootPinChange;
     window.saveInstance = saveInstance;
@@ -6907,6 +6944,6 @@
         });
     })();
     </script>
-    <script src="fb-mobile.js?v=20261028c"></script>
+    <script src="fb-mobile.js?v=20261028f"></script>
 </body>
 </html>

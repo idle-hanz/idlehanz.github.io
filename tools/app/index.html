@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <meta name="theme-color" content="#0e0c0a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Song Builder">
+  <meta name="description" content="Write chords in Landscape, play them on the Fretboard — installable Song Builder by Idle Hanz.">
+  <title>Song Builder · Idle Hanz</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="stylesheet" href="app.css?v=20261028a">
+</head>
+<body>
+  <div id="shell">
+    <header id="top">
+      <span class="brand">Song Builder</span>
+      <span class="spacer"></span>
+      <button type="button" id="btn-install" class="primary" hidden>Install app</button>
+    </header>
+    <div id="frames">
+      <iframe id="frame-landscape" title="Harmonic Landscape" allow="autoplay; midi"></iframe>
+      <iframe id="frame-fretboard" title="Guitar Fretboard" hidden allow="autoplay; midi"></iframe>
+    </div>
+    <nav id="tabs" aria-label="Tools">
+      <button type="button" data-tab="landscape" class="active">Landscape</button>
+      <button type="button" data-tab="fretboard">Fretboard</button>
+    </nav>
+  </div>
+
+  <div id="install-banner" role="dialog" aria-label="Install">
+    <strong>Install Song Builder</strong>
+    <div>Keep Landscape and Fretboard together on your home screen — works offline after the first visit.</div>
+    <div class="row">
+      <button type="button" id="banner-install" class="primary">Install</button>
+      <button type="button" id="banner-dismiss">Not now</button>
+    </div>
+  </div>
+
+  <div id="ios-hint" role="dialog" aria-label="Add to Home Screen">
+    <strong>Add to Home Screen</strong>
+    <div>On iPhone: tap the Share button, then <em>Add to Home Screen</em>. Open Song Builder from your home screen for the full app.</div>
+    <div class="row">
+      <button type="button" id="ios-dismiss">Got it</button>
+    </div>
+  </div>
+
+  <script src="app.js?v=20261028a"></script>
+</body>
+</html>

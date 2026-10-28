@@ -1,11 +1,20 @@
-/* Phone / coarse-pointer layout for Guitar Fretboard */
+/* Song Builder phone Fretboard — designed for touch, not a squeezed desktop */
 
 .fb-mbar,
 .fb-mdock,
 .fb-msheet,
 .fb-msheet-backdrop,
-.fb-rotate-hint {
+.fb-rotate-hint,
+.fb-neck-scrub,
+.fb-find-bar,
+.fb-chip-row {
   display: none !important;
+}
+
+body.fb-find-chord #btn-find-chord,
+body.fb-find-chord #fb-m-find {
+  outline: 2px solid #fbbf24;
+  background: rgba(251, 191, 36, 0.2) !important;
 }
 
 @media (max-width: 760px), ((max-width: 980px) and (pointer: coarse)) {
@@ -14,141 +23,251 @@
     --fb-safe-bottom: env(safe-area-inset-bottom, 0px);
     --fb-safe-left: env(safe-area-inset-left, 0px);
     --fb-safe-right: env(safe-area-inset-right, 0px);
-    --fb-dock-h: 4.1rem;
+    --fb-dock-h: 4.25rem;
+    --fb-bar-h: 3rem;
   }
 
   html, body {
-    overflow-x: hidden;
-    overscroll-behavior-x: none;
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+    overscroll-behavior: none;
     -webkit-text-size-adjust: 100%;
-    max-width: 100vw;
+    background: #080706 !important;
   }
-  body {
-    padding-top: var(--fb-safe-top) !important;
-    padding-left: var(--fb-safe-left) !important;
-    padding-right: var(--fb-safe-right) !important;
-    padding-bottom: calc(var(--fb-dock-h) + var(--fb-safe-bottom) + 0.5rem) !important;
+  body.fb-mobile-ui {
+    padding: var(--fb-safe-top) var(--fb-safe-left) calc(var(--fb-dock-h) + var(--fb-safe-bottom) + 0.35rem) var(--fb-safe-right) !important;
+    margin: 0 !important;
   }
 
-  /* Compact top bar */
+  /* ── Top bar ── */
   .fb-mbar {
     display: flex !important;
     position: sticky;
     top: 0;
     z-index: 40;
     align-items: center;
-    gap: 0.35rem;
-    min-height: 3rem;
-    padding: 0.4rem 0.55rem;
-    margin: -0.25rem -0.25rem 0.5rem;
-    background: rgba(15, 12, 10, 0.94);
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-    backdrop-filter: blur(8px);
+    gap: 0.4rem;
+    min-height: var(--fb-bar-h);
+    padding: 0.35rem 0.55rem;
+    margin: 0 0 0.4rem;
+    background: rgba(12, 10, 8, 0.96);
+    border-bottom: 1px solid rgba(196,165,116,0.25);
   }
   .fb-mbar .brand {
     font-weight: 700;
-    font-size: 0.85rem;
-    white-space: nowrap;
+    font-size: 0.88rem;
+    color: #e8c98a;
+    letter-spacing: 0.03em;
   }
-  .fb-mbar button,
-  .fb-mdock button {
+  .fb-mbar button {
     min-height: 44px;
-    min-width: 44px;
-    padding: 0.45rem 0.7rem;
+    padding: 0.4rem 0.7rem;
     border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.1);
     background: rgba(255,255,255,0.06);
-    color: inherit;
+    color: #ebe4d8;
     font: inherit;
     font-size: 0.78rem;
-    font-weight: 600;
-    cursor: pointer;
+    font-weight: 650;
   }
   .fb-mbar .grow { margin-left: auto; }
+  .fb-mbar #fb-m-find.active,
+  body.fb-find-chord .fb-mbar #fb-m-find {
+    background: rgba(251,191,36,0.22);
+    border-color: #fbbf24;
+    color: #fde68a;
+  }
 
-  /* Hide verbose site nav / header chrome */
+  /* Hide desktop chrome */
   body > nav,
-  .app-header .tagline,
+  .app-header,
   .app-footer,
   .side-panel,
-  #fb-tour:not(.hidden) {
-    /* tour ok */
-  }
-  body > nav {
+  #help-panel,
+  .help-panel,
+  #coach-bar,
+  .coach-bar,
+  #board-legend,
+  .board-legend,
+  #fb-tour {
     display: none !important;
   }
-  .app-header h1 {
-    font-size: 1.15rem !important;
-  }
-  .app-header .w-11 {
-    width: 2.25rem !important;
-    height: 2.25rem !important;
-  }
+
   .app-shell {
-    padding: 0.4rem 0.55rem 0.75rem !important;
+    padding: 0 0.5rem 0.5rem !important;
+    max-width: 100% !important;
   }
-
-  /* Hide desktop side column; progression stays; collapse dense chip rows into More */
-  .side-panel {
-    display: none !important;
-  }
-
-  /* Grid becomes single column */
   .app-shell > .grid,
-  .app-shell .lg\:grid-cols-12,
   .grid.lg\:grid-cols-12 {
     display: flex !important;
     flex-direction: column !important;
-    gap: 0.65rem !important;
+    gap: 0.45rem !important;
   }
 
-  /* Neck: allow horizontal scroll if needed */
-  .board-panel,
-  #fretboard-wrap,
-  .fretboard-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+  /* ── Neck hero ── */
+  .fretboard-container {
+    order: -1;
+    width: 100%;
     max-width: 100%;
+    overflow: hidden;
+    border-radius: 16px;
+    border: 1px solid rgba(196,165,116,0.22);
+    background: #0c0a08;
+    padding: 0.35rem 0.15rem 0.2rem;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.35);
   }
   #fretboard {
-    min-width: 640px;
-    touch-action: pan-x pan-y;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: auto !important;
+    touch-action: manipulation;
+    display: block;
+  }
+  /* parent card of board */
+  .card-panel:has(.fretboard-container),
+  .card-panel:has(#fretboard) {
+    order: -1;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    padding: 0 !important;
+  }
+  .card-panel:has(.fretboard-container) > :not(.fretboard-container):not(.fb-neck-scrub):not(.fb-find-bar) {
+    display: none !important;
   }
 
-  /* Card / progression row */
+  .fb-rotate-hint {
+    display: block !important;
+    text-align: center;
+    font-size: 0.7rem;
+    color: #95897a;
+    margin: 0.15rem 0 0.35rem;
+  }
+
+  .fb-neck-scrub {
+    display: flex !important;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.35rem 0.25rem 0.15rem;
+  }
+  .fb-neck-scrub label {
+    font-size: 0.68rem;
+    color: #95897a;
+    white-space: nowrap;
+    min-width: 3.2rem;
+  }
+  .fb-neck-scrub input[type=range] {
+    flex: 1;
+    min-height: 44px;
+    accent-color: #c4a574;
+  }
+
+  /* Find chord live bar */
+  .fb-find-bar {
+    display: none;
+    padding: 0.45rem 0.5rem;
+    margin: 0.25rem 0 0.15rem;
+    border-radius: 12px;
+    background: rgba(251,191,36,0.08);
+    border: 1px solid rgba(251,191,36,0.35);
+  }
+  body.fb-find-chord .fb-find-bar {
+    display: block !important;
+  }
+  .fb-find-bar .guess {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #fde68a;
+    margin-bottom: 0.25rem;
+  }
+  .fb-find-bar .alts {
+    font-size: 0.72rem;
+    color: #c4b5a0;
+    margin-bottom: 0.4rem;
+    min-height: 1em;
+  }
+  .fb-find-bar .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .fb-find-bar button {
+    min-height: 44px;
+    padding: 0.45rem 0.75rem;
+    border-radius: 11px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.07);
+    color: #ebe4d8;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 650;
+  }
+  .fb-find-bar button.primary {
+    background: linear-gradient(180deg, #fbbf24, #d97706);
+    color: #1a1208;
+    border: 0;
+    flex: 1;
+  }
+
+  /* ── Progression as chip strip ── */
   .progression-panel {
     order: 2;
+    background: #12100e !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 14px !important;
+    padding: 0.55rem 0.5rem !important;
+    box-shadow: none !important;
   }
-  .tp-row,
-  #progression-slots {
+  .progression-panel > .flex.flex-wrap.items-center.justify-between,
+  .progression-panel .tele-row,
+  .progression-panel label:has(#tele-bar-offset),
+  .progression-panel #tele-resume-btn,
+  .progression-panel [title*="MTC"],
+  .progression-panel input#tele-bar-offset,
+  .progression-panel .section-header + div .chip,
+  .progression-panel label.inline-flex {
+    /* keep Follow/Click compact — hide DAW stuff via JS too */
+  }
+  .progression-panel .section-header {
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+  }
+  /* Hide dense teleprompter chrome; JS may also strip */
+  body.fb-mobile-ui .progression-panel .flex.flex-wrap.gap-1,
+  body.fb-mobile-ui .progression-panel label:has(input#tele-bar-offset),
+  body.fb-mobile-ui #tele-loop-lab {
+    display: none !important;
+  }
+
+  #progression-slots,
+  .tp-row {
     display: flex !important;
     flex-wrap: nowrap !important;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    gap: 0.4rem;
-    padding-bottom: 0.35rem;
+    gap: 0.45rem;
+    padding: 0.35rem 0.1rem 0.45rem;
+    scrollbar-width: thin;
   }
-  #progression-slots > *,
-  .tp-row > * {
-    flex: 0 0 auto;
-    min-width: 4.5rem;
-    min-height: 44px;
+  /* Compact chord chips */
+  #progression-slots > * {
+    flex: 0 0 auto !important;
+    min-width: 5.6rem !important;
+    max-width: 7.2rem;
+    min-height: 4.2rem;
+    border-radius: 14px !important;
+    padding: 0.45rem 0.5rem !important;
   }
-
-  /* Rotate hint */
-  .fb-rotate-hint {
-    display: block !important;
-    font-size: 0.72rem;
-    opacity: 0.75;
-    text-align: center;
-    margin: 0.25rem 0 0.5rem;
-  }
-  @media (orientation: landscape) {
-    .fb-rotate-hint { display: none !important; }
-    #fretboard { min-width: 0; width: 100%; }
+  /* Soften nested editors inside chips on phone */
+  #progression-slots select,
+  #progression-slots input {
+    font-size: 0.68rem !important;
+    min-height: 28px;
+    padding: 0.15rem 0.25rem !important;
   }
 
-  /* Sticky bottom transport */
+  /* Sticky transport */
   .fb-mdock {
     display: flex !important;
     position: fixed;
@@ -157,24 +276,30 @@
     bottom: var(--fb-safe-bottom);
     z-index: 50;
     align-items: center;
-    justify-content: space-between;
     gap: 0.4rem;
     min-height: var(--fb-dock-h);
-    padding: 0.45rem 0.6rem calc(0.45rem);
-    background: rgba(12, 10, 8, 0.96);
+    padding: 0.45rem 0.6rem;
+    background: rgba(10, 8, 6, 0.97);
     border-top: 1px solid rgba(248, 113, 113, 0.35);
-    box-shadow: 0 -8px 28px rgba(0,0,0,0.45);
+    box-shadow: 0 -10px 32px rgba(0,0,0,0.5);
   }
-  .fb-mdock .play-big {
-    flex: 1.3;
+  .fb-mdock button {
     min-height: 52px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.07);
+    color: #ebe4d8;
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+  .fb-mdock .step-btn { flex: 0.75; }
+  .fb-mdock .play-big {
+    flex: 1.4;
     background: linear-gradient(180deg, #f87171, #dc2626);
     color: #fff;
     border: 0;
-    font-size: 0.95rem;
-  }
-  .fb-mdock .step-btn {
-    flex: 0.7;
+    font-size: 1rem;
   }
 
   /* More sheet */
@@ -185,9 +310,7 @@
     z-index: 60;
     background: rgba(0,0,0,0.55);
   }
-  body.fb-more-open .fb-msheet-backdrop {
-    display: block !important;
-  }
+  body.fb-more-open .fb-msheet-backdrop { display: block !important; }
   .fb-msheet {
     display: none;
     position: fixed;
@@ -199,26 +322,15 @@
     overflow: auto;
     -webkit-overflow-scrolling: touch;
     background: #1a1612;
-    color: inherit;
     border-radius: 16px 16px 0 0;
     border: 1px solid rgba(255,255,255,0.1);
     border-bottom: 0;
     padding: 0.85rem 0.9rem calc(1.1rem + var(--fb-safe-bottom));
   }
-  body.fb-more-open .fb-msheet {
-    display: block !important;
-  }
-  .fb-msheet h3 {
-    margin: 0 0 0.5rem;
-    font-size: 0.9rem;
-    font-weight: 700;
-  }
-  .fb-msheet .row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    margin-bottom: 0.65rem;
-  }
+  body.fb-more-open .fb-msheet { display: block !important; }
+  .fb-msheet h3 { margin: 0 0 0.5rem; font-size: 0.9rem; font-weight: 700; color: #e8c98a; }
+  .fb-msheet .hint { font-size: 0.78rem; opacity: 0.75; margin: 0 0 0.55rem; }
+  .fb-msheet .row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.65rem; }
   .fb-msheet button {
     min-height: 44px;
     padding: 0.5rem 0.75rem;
@@ -240,88 +352,48 @@
     color: inherit;
     border: 1px solid rgba(255,255,255,0.12);
   }
-  .fb-msheet .hint {
-    font-size: 0.78rem;
-    opacity: 0.75;
-    margin: 0 0 0.55rem;
-  }
 
-  /* Shrink dense header chip clusters; keep handoff */
-  .app-header .chip {
-    min-height: 36px;
+  /* Embed in Song Builder app: hide cross-nav */
+  html.fb-embed .fb-mbar a[href*="harmonic-landscape"],
+  html.fb-embed #ih-handoff-bar,
+  body.fb-embed #ih-handoff-bar {
+    display: none !important;
   }
 }
 
+/* Landscape phone: wider neck window, hide rotate tip */
 @media ((max-width: 980px) and (pointer: coarse) and (orientation: landscape)) {
-  :root { --fb-dock-h: 3.5rem; }
-  .app-header { margin-bottom: 0.35rem !important; }
-}
-
-
-@media (max-width: 760px), ((max-width: 980px) and (pointer: coarse)) {
-  .app-header { display: none !important; }
-  html, body {
-    overflow-x: hidden !important;
-    max-width: 100vw !important;
-  }
-  /* Wrap fretboard parent scroll */
-  #fretboard {
-    max-width: none;
-  }
-  .card-panel.rounded-3xl:has(#fretboard),
-  .card-panel:has(canvas#fretboard) {
-    overflow-x: auto !important;
-    -webkit-overflow-scrolling: touch;
-  }
-  /* Hide verbose morph/interval chrome row excess */
-  #interval-legend span:nth-child(n+8) { display: none; }
+  :root { --fb-dock-h: 3.4rem; --fb-bar-h: 2.6rem; }
+  .fb-rotate-hint { display: none !important; }
+  .fretboard-container { padding: 0.15rem; }
+  .progression-panel { padding: 0.35rem !important; }
 }
 
 @media (max-width: 760px), ((max-width: 980px) and (pointer: coarse)) {
-  .fretboard-container {
-    overflow-x: auto !important;
-    -webkit-overflow-scrolling: touch;
-    max-width: 100%;
-    width: 100%;
-  }
-  #fretboard {
-    min-width: 620px;
-    width: 620px !important;
-    max-width: none;
-  }
-  #board-legend {
-    max-height: 3.2rem;
-    overflow: hidden;
-  }
-  #help-panel,
-  #coach-bar,
-  .help-panel,
-  .coach-bar {
+  #path-controls,
+  .path-controls,
+  .focus-transport,
+  #board-legend,
+  .board-legend,
+  #neck-view-bar,
+  .neck-view-bar {
     display: none !important;
   }
-  /* Keep progression cards swipeable */
-  .progression-panel {
-    overflow: hidden;
-  }
-  body {
-    overflow-x: hidden !important;
-  }
-}
-
-@media (max-width: 760px), ((max-width: 980px) and (pointer: coarse)) {
-  /* DAW chase / MTC is desktop-oriented — tuck it away on phone */
-  .progression-panel label:has(#tele-bar-offset),
+  /* Progression: keep header + slots, drop DAW/MIDI chase clutter */
+  .progression-panel .flex.flex-wrap.gap-1,
+  .progression-panel #daw-port,
+  .progression-panel button[onclick*="toggleDawChase"],
   .progression-panel #tele-resume-btn,
-  .progression-panel [title*="MTC"],
-  .progression-panel input#tele-bar-offset {
+  .progression-panel label:has(#audio-click),
+  body.fb-mobile-ui .progression-panel .flex.flex-wrap.items-center.justify-between .flex.flex-wrap.gap-1 {
     display: none !important;
   }
-  /* Bigger chord cards */
-  #progression-slots > * {
-    min-width: 11rem !important;
+  /* Compact progression header row */
+  .progression-panel > .flex.flex-wrap.items-center.justify-between {
+    margin-bottom: 0.25rem !important;
   }
-  .progression-panel .section-header + div,
-  .progression-panel .flex.flex-wrap.gap-1 {
-    gap: 0.35rem;
+  /* Soften Follow/Click if still visible — keep only Follow near slots via JS optional */
+  .progression-panel label.flex.items-center.gap-x-2 {
+    font-size: 0.7rem;
   }
 }

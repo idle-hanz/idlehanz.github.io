@@ -1511,10 +1511,11 @@ H.chordFromChaseSeat = function (seat, key) {
         m._keepCameraOnce = false;
       }, 0);
     }
-    if (H.S() && H.state.chords.length) {
+    if (H.S() && H.state.chords.length && !H._skipSessionPush) {
       if (H._sessionPushTimer) clearTimeout(H._sessionPushTimer);
       H._sessionPushTimer = setTimeout(function () {
         H._sessionPushTimer = null;
+        if (H._skipSessionPush) return;
         try {
           H.pushToSharedSession('landscape');
         } catch (_) {}
