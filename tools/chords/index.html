@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#0e0c0a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Chord Finder" />
+  <title>Chord Finder</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="app.css?v=20261029a" />
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="top">
+      <div class="key-block">
+        <div class="key-readout" id="key-readout">Key: —</div>
+        <div class="clash-line" id="clash-line" hidden></div>
+        <div class="candidates" id="candidates"></div>
+      </div>
+      <button type="button" class="gear" id="btn-settings" aria-label="Tuning settings">⚙</button>
+    </header>
+
+    <section class="guess-block">
+      <div class="chord-name" id="chord-name">Tap frets</div>
+      <div class="alt-chips" id="alt-chips"></div>
+    </section>
+
+    <section class="neck-section" aria-label="Guitar neck">
+      <div class="string-toggles" id="string-toggles"></div>
+      <div class="neck-wrap">
+        <div class="neck" id="neck"></div>
+      </div>
+      <div class="neck-scrub">
+        <label id="fret-lab">Frets 0–5</label>
+        <input type="range" id="fret-pos" min="0" max="7" value="0" step="1" aria-label="Neck position" />
+      </div>
+    </section>
+
+    <section class="actions">
+      <button type="button" class="btn" id="btn-clear">Clear</button>
+      <button type="button" class="btn primary" id="btn-add" disabled>Add</button>
+    </section>
+
+    <section class="quick" aria-label="Quick pick">
+      <div class="quick-label">Quick pick</div>
+      <div class="roots" id="quick-roots"></div>
+      <div class="qualities" id="quick-qualities"></div>
+    </section>
+
+    <section class="strip-wrap" aria-label="Added chords">
+      <div class="strip" id="strip"></div>
+    </section>
+  </div>
+
+  <div class="sheet-backdrop" id="settings-backdrop" hidden></div>
+  <aside class="sheet" id="settings-sheet" hidden aria-label="Tuning">
+    <div class="sheet-head">
+      <h2>Tuning</h2>
+      <button type="button" class="btn" id="btn-settings-close">Done</button>
+    </div>
+    <p class="sheet-hint">Chord names use this tuning. Presets reset per-string offsets.</p>
+    <div class="presets" id="tuning-presets"></div>
+    <div class="per-string" id="per-string"></div>
+  </aside>
+
+  <script src="app.js?v=20261029a"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(function () {});
+    }
+  </script>
+</body>
+</html>
