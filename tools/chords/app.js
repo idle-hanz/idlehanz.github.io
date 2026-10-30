@@ -228,6 +228,20 @@
     return true;
   }
 
+  // Sounded pcs must match the formula exactly. The perfect 5th (interval 7)
+  // may be omitted; no other formula tones may be missing, and sounded notes
+  // may not include anything outside the formula (no "added" 7ths etc.).
+  function formulaFitsSounded(pcs, root, intervals) {
+    var expected = intervals.map(function (iv) { return (root + iv) % 12; });
+    if (!subset(pcs, expected)) return false;
+    for (var i = 0; i < intervals.length; i++) {
+      var iv = intervals[i];
+      if (iv === 7) continue; // optional 5th only
+      if (pcs.indexOf((root + iv) % 12) < 0) return false;
+    }
+    return true;
+  }
+
   function formulas() {
     var list = [];
     QUALITIES.forEach(function (q, i) {
@@ -246,8 +260,8 @@
     for (var root = 0; root < 12; root++) {
       for (var fi = 0; fi < forms.length; fi++) {
         var f = forms[fi];
+        if (!formulaFitsSounded(pcs, root, f.intervals)) continue;
         var expected = f.intervals.map(function (iv) { return (root + iv) % 12; });
-        if (!subset(pcs, expected)) continue;
         var hasRoot = pcs.indexOf(root) >= 0;
         if (!hasRoot && pcs.length < 3) continue;
         var missing = expected.filter(function (p) { return pcs.indexOf(p) < 0; }).length;
