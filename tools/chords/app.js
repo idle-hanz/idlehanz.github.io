@@ -84,7 +84,9 @@
     quickQuality: 'maj',
     selectedScale: null, // { root, scaleId } for notes view / neck highlight
     _fits: [],
-    _near: []
+    _near: [],
+    noExactFit: false,
+    closestMsg: ''
   };
 
   function $(id) { return document.getElementById(id); }
@@ -553,6 +555,8 @@
       state._fits = [];
       state._near = [];
       state.selectedScale = null;
+      state.noExactFit = false;
+      state.closestMsg = '';
       clearClashLine();
       renderKey();
       renderStrip();
@@ -599,12 +603,14 @@
       }
     }
 
+    state.noExactFit = perfect.length === 0;
     state.topKey = {
       root: newTop.root,
       scaleId: newTop.scale.id,
       name: keyLabelLong(newTop),
       short: keyLabel(newTop),
-      notes: spellScaleNotes(newTop.root, newTop.scale)
+      notes: spellScaleNotes(newTop.root, newTop.scale),
+      isNear: state.noExactFit
     };
 
     var topScale = SCALES.find(function (s) { return s.id === state.topKey.scaleId; });
@@ -614,8 +620,23 @@
 
     state._fits = perfect.map(candRef);
     state._near = near.slice(0, 24).map(candRef);
-    // legacy alias used nowhere critical
     state._perfect = state._fits;
+
+    if (state.noExactFit) {
+      var borrowBit = describeClosestBorrow(newTop, list);
+      state.closestMsg = 'No scale fits all; closest: ' + state.topKey.short +
+        (borrowBit ? ' (' + borrowBit + ')' : '');
+      // Persist clash callout on the outside chord(s)
+      var clashChord = null;
+      for (var ci = state.chords.length - 1; ci >= 0; ci--) {
+        if (state.chords[ci].clash) { clashChord = state.chords[ci]; break; }
+      }
+      if (clashChord) showClash(clashChord, newTop, { persist: true });
+    } else {
+      state.closestMsg = '';
+      // Don't leave a stale persistent clash line when we have exact fits
+      if (!opts.addedChord) clearClashLine();
+    }
 
     ensureSelectedScale(state._fits.length ? state._fits : state._near);
 
@@ -625,36 +646,66 @@
   }
 
   function findBorrowSource(chord, fromKey) {
-    // Look for a related key that contains this chord: parallel minor/major, etc.
+    // Prefer same-root alternate mode that contains this chord (e.g. A harm. minor for E in Am).
     var ranked = allCandidates([chord]);
+    var sameRoot = [];
+    var other = [];
     for (var i = 0; i < ranked.length; i++) {
       var c = ranked[i];
-      if (chordFitsKey(chord, c.root, c.scale)) {
-        // Prefer same root different mode, or relative
-        if (c.root === fromKey.root && c.scale.id !== fromKey.scaleId) {
-          return keyLabelLong(c);
-        }
-      }
+      if (!chordFitsKey(chord, c.root, c.scale)) continue;
+      if (fromKey && c.root === fromKey.root && c.scale.id !== fromKey.scaleId) sameRoot.push(c);
+      else other.push(c);
     }
-    for (var j = 0; j < ranked.length; j++) {
-      if (chordFitsKey(chord, ranked[j].root, ranked[j].scale)) {
-        return keyLabelLong(ranked[j]);
-      }
-    }
+    // Prefer harmonic/melodic when borrowing a major V into minor
+    sameRoot.sort(function (a, b) {
+      var order = { harmonic: 0, melodic: 1, major: 2, minor: 3 };
+      var ao = order[a.scale.id] != null ? order[a.scale.id] : 9;
+      var bo = order[b.scale.id] != null ? order[b.scale.id] : 9;
+      if (ao !== bo) return ao - bo;
+      return (b.scale.common || 0) - (a.scale.common || 0);
+    });
+    if (sameRoot.length) return sameRoot[0];
+    if (other.length) return other[0];
     return null;
   }
 
-  function showClash(chord, topKeyLike) {
-    var rootName = noteName(chord.root);
+  function borrowLabel(borrowCand, fromKey) {
+    if (!borrowCand) return null;
+    // Same tonic → "harmonic minor"; otherwise full "C major"
+    if (fromKey && borrowCand.root === fromKey.root) {
+      return borrowCand.scale.short || borrowCand.scale.name;
+    }
+    return keyLabel(borrowCand);
+  }
+
+  function describeClosestBorrow(topCand, chordList) {
+    var clash = [];
+    for (var i = 0; i < chordList.length; i++) {
+      if (!chordFitsKey(chordList[i], topCand.root, topCand.scale)) clash.push(chordList[i]);
+    }
+    if (!clash.length) return '';
+    // Prefer the last clashing chord (often the borrowed V)
+    var ch = clash[clash.length - 1];
+    var borrow = findBorrowSource(ch, { root: topCand.root, scaleId: topCand.scale.id });
+    var chordName = ch.display || ch.name || noteName(ch.root);
+    var bl = borrowLabel(borrow, { root: topCand.root });
+    if (bl) return chordName + ' borrowed from ' + bl;
+    return chordName + ' outside';
+  }
+
+  function showClash(chord, topKeyLike, opts) {
+    opts = opts || {};
+    var chordName = (chord && (chord.display || chord.name)) || noteName(chord.root);
     var keyName = topKeyLike.scale
-      ? keyLabelLong(topKeyLike)
-      : (state.topKey && state.topKey.name) || 'current key';
+      ? keyLabel(topKeyLike)
+      : (state.topKey && state.topKey.short) || 'current key';
     var borrow = findBorrowSource(chord, {
       root: topKeyLike.root,
       scaleId: topKeyLike.scale ? topKeyLike.scale.id : (state.topKey && state.topKey.scaleId)
     });
-    var msg = rootName + ' is outside ' + keyName;
-    if (borrow) msg += ' — borrowed from ' + borrow;
+    var msg = chordName + ' is outside ' + keyName;
+    var bl = borrowLabel(borrow, { root: topKeyLike.root });
+    if (bl) msg += ' — borrowed from ' + bl;
     state.clashMsg = msg;
     var el = $('clash-line');
     if (el) {
@@ -662,9 +713,13 @@
       el.textContent = msg;
     }
     if (state.clashTimer) clearTimeout(state.clashTimer);
-    state.clashTimer = setTimeout(function () {
-      clearClashLine(true);
-    }, 4000);
+    if (!opts.persist) {
+      state.clashTimer = setTimeout(function () {
+        clearClashLine(true);
+      }, 4000);
+    } else {
+      state.clashTimer = null;
+    }
   }
 
   function clearClashLine(keepMsg) {
@@ -1269,7 +1324,13 @@
     }
 
     var info = selectedScaleInfo();
-    if (el) el.textContent = 'Key: ' + (state.topKey ? state.topKey.short : '—');
+    if (el) {
+      if (state.noExactFit && state.closestMsg) {
+        el.textContent = state.closestMsg;
+      } else {
+        el.textContent = 'Key: ' + (state.topKey ? state.topKey.short : '—');
+      }
+    }
     if (notesEl) {
       var nlist = [];
       if (info) nlist = info.notes;
@@ -1300,7 +1361,7 @@
       if (!fits.length) {
         var none = document.createElement('span');
         none.className = 'cand-count';
-        none.textContent = 'No exact scale fit';
+        none.textContent = 'No scale fits all';
         cand.appendChild(none);
       } else {
         var count = document.createElement('span');
@@ -1312,6 +1373,8 @@
 
     if (nearHost && nearSec) {
       nearHost.innerHTML = '';
+      var nearLab = $('near-label');
+      if (nearLab) nearLab.textContent = state.noExactFit ? 'Closest (near)' : 'Near';
       if (near.length) {
         nearSec.hidden = false;
         near.slice(0, 6).forEach(function (c) {
@@ -1547,6 +1610,8 @@
       state._fits = [];
       state._near = [];
       state.selectedScale = null;
+      state.noExactFit = false;
+      state.closestMsg = '';
       clearClashLine();
       save();
       renderKey();
