@@ -671,9 +671,12 @@
 
   function borrowLabel(borrowCand, fromKey) {
     if (!borrowCand) return null;
-    // Same tonic → "harmonic minor"; otherwise full "C major"
+    // Same tonic → readable mode name; otherwise full "C major"
     if (fromKey && borrowCand.root === fromKey.root) {
-      return borrowCand.scale.short || borrowCand.scale.name;
+      if (borrowCand.scale.id === 'harmonic') return 'harmonic minor';
+      if (borrowCand.scale.id === 'melodic') return 'melodic minor';
+      if (borrowCand.scale.id === 'minor') return 'natural minor';
+      return borrowCand.scale.name;
     }
     return keyLabel(borrowCand);
   }
