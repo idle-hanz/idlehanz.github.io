@@ -52,11 +52,18 @@
   ];
 
   var SCALES = [
-    { id: 'major', name: 'major', intervals: [0, 2, 4, 5, 7, 9, 11], weight: 1.0 },
-    { id: 'minor', name: 'natural minor', short: 'minor', intervals: [0, 2, 3, 5, 7, 8, 10], weight: 1.0 },
-    { id: 'harmonic', name: 'harmonic minor', short: 'harm. minor', intervals: [0, 2, 3, 5, 7, 8, 11], weight: 0.72 },
-    { id: 'dorian', name: 'dorian', short: 'dorian', intervals: [0, 2, 3, 5, 7, 9, 10], weight: 0.7 },
-    { id: 'mixolydian', name: 'mixolydian', short: 'mixolydian', intervals: [0, 2, 4, 5, 7, 9, 10], weight: 0.7 }
+    { id: 'major', name: 'major', short: 'major', mode: 'major', intervals: [0, 2, 4, 5, 7, 9, 11], common: 100 },
+    { id: 'dorian', name: 'dorian', short: 'dorian', mode: 'minor', intervals: [0, 2, 3, 5, 7, 9, 10], common: 78 },
+    { id: 'phrygian', name: 'phrygian', short: 'phrygian', mode: 'minor', intervals: [0, 1, 3, 5, 7, 8, 10], common: 45 },
+    { id: 'lydian', name: 'lydian', short: 'lydian', mode: 'major', intervals: [0, 2, 4, 6, 7, 9, 11], common: 68 },
+    { id: 'mixolydian', name: 'mixolydian', short: 'mixolydian', mode: 'major', intervals: [0, 2, 4, 5, 7, 9, 10], common: 82 },
+    { id: 'minor', name: 'natural minor', short: 'minor', mode: 'minor', intervals: [0, 2, 3, 5, 7, 8, 10], common: 96 },
+    { id: 'locrian', name: 'locrian', short: 'locrian', mode: 'minor', intervals: [0, 1, 3, 5, 6, 8, 10], common: 28 },
+    { id: 'harmonic', name: 'harmonic minor', short: 'harm. minor', mode: 'minor', intervals: [0, 2, 3, 5, 7, 8, 11], common: 72 },
+    { id: 'melodic', name: 'melodic minor', short: 'mel. minor', mode: 'minor', intervals: [0, 2, 3, 5, 7, 9, 11], common: 62 },
+    { id: 'majpent', name: 'major pentatonic', short: 'maj pent', mode: 'major', intervals: [0, 2, 4, 7, 9], common: 70 },
+    { id: 'minpent', name: 'minor pentatonic', short: 'min pent', mode: 'minor', intervals: [0, 3, 5, 7, 10], common: 70 },
+    { id: 'blues', name: 'blues', short: 'blues', mode: 'minor', intervals: [0, 3, 5, 6, 7, 10], common: 58 }
   ];
 
   var state = {
@@ -73,7 +80,10 @@
     clashTimer: null,
     selectedTile: null,
     quickRoot: 0,
-    quickQuality: 'maj'
+    quickQuality: 'maj',
+    selectedScale: null, // { root, scaleId } for notes view / neck highlight
+    _fits: [],
+    _near: []
   };
 
   function $(id) { return document.getElementById(id); }
@@ -334,47 +344,99 @@
   }
 
   /* ---------- Key / scale guess ---------- */
-  function scoreKey(root, scale, chordList) {
-    var tones = scale.intervals.map(function (iv) { return (root + iv) % 12; });
-    var fit = 0;
-    var total = 0;
-    for (var i = 0; i < chordList.length; i++) {
-      var pcs = chordList[i].pcs || [];
-      var ok = true;
-      for (var j = 0; j < pcs.length; j++) {
-        total++;
-        if (tones.indexOf(pcs[j]) < 0) ok = false;
-        else fit++;
-      }
-      // also count whole-chord diatonic
-      if (ok) fit += 2;
-    }
-    var score = fit * scale.weight;
-    // slight preference: if many chord roots are diatonic degrees
-    return { root: root, scale: scale, score: score, fitNotes: fit, total: total, tones: tones };
+  function scaleTones(root, scale) {
+    return scale.intervals.map(function (iv) { return (root + iv) % 12; });
   }
 
-  function chordsFitKey(chordList, root, scale) {
-    var tones = scale.intervals.map(function (iv) { return (root + iv) % 12; });
-    var n = 0;
-    for (var i = 0; i < chordList.length; i++) {
-      var pcs = chordList[i].pcs || [];
-      var ok = true;
-      for (var j = 0; j < pcs.length; j++) {
-        if (tones.indexOf(pcs[j]) < 0) { ok = false; break; }
-      }
-      if (ok) n++;
-    }
-    return n;
+  function preferFlatForScale(root, scale) {
+    if (scale.mode === 'minor') return true;
+    // Flat-key majors: F, Bb, Eb, Ab, Db, Gb
+    return [5, 10, 3, 8, 1, 6].indexOf(root) >= 0;
+  }
+
+  function spellScaleNotes(root, scale) {
+    var preferFlat = preferFlatForScale(root, scale);
+    var q = scale.mode === 'minor' ? 'm' : '';
+    if (scale.id === 'lydian' || scale.id === 'major' || scale.id === 'mixolydian' || scale.id === 'majpent') q = '';
+    if (scale.id === 'harmonic' || scale.id === 'melodic') q = 'm';
+    return scale.intervals.map(function (iv) {
+      var pc = (root + iv) % 12;
+      // Prefer letter-based spelling from tonic
+      return spellPcFromRoot(pc, root, q || (scale.mode === 'major' ? '' : 'm'));
+    });
+  }
+
+  function spellChordPcs(root, qualityName, pcs) {
+    var q = qualityName || '';
+    // Map quality id-ish names
+    if (q === 'maj' || q === '') q = '';
+    else if (q === 'min') q = 'm';
+    return (pcs || []).map(function (pc) { return spellPcFromRoot(pc, root, q); });
   }
 
   function chordFitsKey(chord, root, scale) {
-    var tones = scale.intervals.map(function (iv) { return (root + iv) % 12; });
+    var tones = scaleTones(root, scale);
     var pcs = chord.pcs || [];
     for (var j = 0; j < pcs.length; j++) {
       if (tones.indexOf(pcs[j]) < 0) return false;
     }
     return true;
+  }
+
+  function chordsFitKey(chordList, root, scale) {
+    var n = 0;
+    for (var i = 0; i < chordList.length; i++) {
+      if (chordFitsKey(chordList[i], root, scale)) n++;
+    }
+    return n;
+  }
+
+  function isMajorishQuality(q) {
+    q = q || 'maj';
+    return q === 'maj' || q === '7' || q === 'maj7' || q === 'sus2' || q === 'sus4';
+  }
+
+  function isMinorishQuality(q) {
+    q = q || '';
+    return q === 'min' || q === 'm7' || q === 'dim';
+  }
+
+  function tonicEvidence(root, scale, chordList) {
+    if (!chordList.length) return 0;
+    var score = 0;
+    var first = chordList[0];
+    var last = chordList[chordList.length - 1];
+    if (first && first.root === root) score += 12;
+    if (last && last.root === root) score += 16;
+    // Chord built on tonic matching mode
+    for (var i = 0; i < chordList.length; i++) {
+      var c = chordList[i];
+      if (c.root !== root) continue;
+      if (scale.mode === 'major' && isMajorishQuality(c.quality)) score += 20;
+      if (scale.mode === 'minor' && isMinorishQuality(c.quality)) score += 20;
+      if (scale.mode === 'major' && isMinorishQuality(c.quality)) score -= 6;
+      if (scale.mode === 'minor' && isMajorishQuality(c.quality)) score -= 6;
+    }
+    return score;
+  }
+
+  function scoreKey(root, scale, chordList) {
+    var fitCount = chordsFitKey(chordList, root, scale);
+    var outside = chordList.length - fitCount;
+    var evidence = tonicEvidence(root, scale, chordList);
+    var score = fitCount * 100 + evidence + (scale.common || 0);
+    if (outside === 0) score += 50;
+    else if (outside === 1) score -= 10;
+    else score -= outside * 40;
+    return {
+      root: root,
+      scale: scale,
+      score: score,
+      fitCount: fitCount,
+      outside: outside,
+      tones: scaleTones(root, scale),
+      evidence: evidence
+    };
   }
 
   function allCandidates(chordList) {
@@ -386,9 +448,8 @@
     }
     ranked.sort(function (a, b) {
       if (b.score !== a.score) return b.score - a.score;
-      // prefer major / natural minor on ties
-      var aw = a.scale.weight, bw = b.scale.weight;
-      if (bw !== aw) return bw - aw;
+      if (b.evidence !== a.evidence) return b.evidence - a.evidence;
+      if ((b.scale.common || 0) !== (a.scale.common || 0)) return (b.scale.common || 0) - (a.scale.common || 0);
       return a.root - b.root;
     });
     return ranked;
@@ -396,11 +457,38 @@
 
   function keyLabel(c) {
     var short = c.scale.short || c.scale.name;
-    return noteName(c.root) + ' ' + short;
+    return noteName(c.root, preferFlatForScale(c.root, c.scale)) + ' ' + short;
   }
 
   function keyLabelLong(c) {
-    return noteName(c.root) + ' ' + c.scale.name;
+    return noteName(c.root, preferFlatForScale(c.root, c.scale)) + ' ' + c.scale.name;
+  }
+
+  function candRef(c) {
+    return {
+      root: c.root,
+      scaleId: c.scale.id,
+      label: keyLabel(c),
+      notes: spellScaleNotes(c.root, c.scale),
+      outside: c.outside,
+      fitCount: c.fitCount
+    };
+  }
+
+  function ensureSelectedScale(fits) {
+    if (state.selectedScale) {
+      var ok = fits.some(function (f) {
+        return f.root === state.selectedScale.root && f.scaleId === state.selectedScale.scaleId;
+      });
+      if (ok) return;
+    }
+    if (fits.length) {
+      state.selectedScale = { root: fits[0].root, scaleId: fits[0].scaleId };
+    } else if (state.topKey) {
+      state.selectedScale = { root: state.topKey.root, scaleId: state.topKey.scaleId };
+    } else {
+      state.selectedScale = null;
+    }
   }
 
   function recomputeKeys(opts) {
@@ -408,30 +496,30 @@
     var list = state.chords;
     if (!list.length) {
       state.topKey = null;
-      state.chords.forEach(function (c) { c.clash = false; });
+      state._fits = [];
+      state._near = [];
+      state.selectedScale = null;
+      clearClashLine();
       renderKey();
       renderStrip();
+      renderNeck();
       return;
     }
 
     var ranked = allCandidates(list);
-    var best = ranked[0];
-    var prev = state.topKey;
+    var perfect = ranked.filter(function (c) { return c.outside === 0; });
+    var near = ranked.filter(function (c) { return c.outside === 1; });
 
-    // Candidates that contain ALL chords so far
-    var perfect = ranked.filter(function (c) {
-      return chordsFitKey(list, c.root, c.scale) === list.length;
+    // Rank perfect: tonic evidence then commonness (already in score)
+    perfect.sort(function (a, b) {
+      if (b.evidence !== a.evidence) return b.evidence - a.evidence;
+      if ((b.scale.common || 0) !== (a.scale.common || 0)) return (b.scale.common || 0) - (a.scale.common || 0);
+      return b.score - a.score;
     });
 
-    var newTop = null;
-    if (perfect.length) {
-      newTop = perfect[0];
-    } else {
-      newTop = best;
-    }
+    var prev = state.topKey;
+    var newTop = perfect.length ? perfect[0] : (near[0] || ranked[0]);
 
-    // Clash rule: if previous top still exists and new chord doesn't fit it,
-    // only switch if a new key fits STRICTLY more chords than the old one.
     if (prev && opts.addedChord) {
       var oldScale = SCALES.find(function (s) { return s.id === prev.scaleId; });
       if (oldScale) {
@@ -439,12 +527,18 @@
         var newFit = chordsFitKey(list, newTop.root, newTop.scale);
         var addedFitsOld = chordFitsKey(opts.addedChord, prev.root, oldScale);
         if (!addedFitsOld && newFit <= oldFit) {
-          // Keep old key; mark clash on the new chord
-          newTop = { root: prev.root, scale: oldScale, score: 0, tones: oldScale.intervals.map(function (iv) { return (prev.root + iv) % 12; }) };
+          newTop = {
+            root: prev.root,
+            scale: oldScale,
+            score: 0,
+            tones: scaleTones(prev.root, oldScale),
+            outside: list.length - oldFit,
+            fitCount: oldFit,
+            evidence: 0
+          };
           opts.addedChord.clash = true;
           showClash(opts.addedChord, newTop);
         } else if (!addedFitsOld && newFit > oldFit) {
-          // Switch — clear clashes and recompute
           clearClashLine();
         }
       }
@@ -454,28 +548,25 @@
       root: newTop.root,
       scaleId: newTop.scale.id,
       name: keyLabelLong(newTop),
-      short: keyLabel(newTop)
+      short: keyLabel(newTop),
+      notes: spellScaleNotes(newTop.root, newTop.scale)
     };
 
-    // Recompute clash flags vs current top
     var topScale = SCALES.find(function (s) { return s.id === state.topKey.scaleId; });
     state.chords.forEach(function (c) {
       c.clash = !chordFitsKey(c, state.topKey.root, topScale);
     });
 
-    // Remaining candidates that contain all chords
-    state._perfect = perfect.map(function (c) {
-      return { root: c.root, scaleId: c.scale.id, label: keyLabel(c) };
-    });
-    // If none perfect, show top few by score as "near"
-    if (!state._perfect.length) {
-      state._perfect = ranked.slice(0, 4).map(function (c) {
-        return { root: c.root, scaleId: c.scale.id, label: keyLabel(c), partial: true };
-      });
-    }
+    state._fits = perfect.map(candRef);
+    state._near = near.slice(0, 24).map(candRef);
+    // legacy alias used nowhere critical
+    state._perfect = state._fits;
+
+    ensureSelectedScale(state._fits.length ? state._fits : state._near);
 
     renderKey();
     renderStrip();
+    renderNeck();
   }
 
   function findBorrowSource(chord, fromKey) {
@@ -561,7 +652,8 @@
             quality: c.quality,
             pcs: c.pcs.slice(),
             clash: !!c.clash,
-            source: c.source || ''
+            source: c.source || '',
+            noteNames: c.noteNames || null
           };
         })
       };
@@ -586,7 +678,9 @@
             quality: c.quality || 'maj',
             pcs: (c.pcs || []).slice(),
             clash: !!c.clash,
-            source: c.source || ''
+            source: c.source || '',
+            noteNames: c.noteNames || null,
+            display: c.name
           };
         });
       }
@@ -755,6 +849,12 @@
       nutBtn.setAttribute('data-str', String(s));
       nutBtn.setAttribute('data-fret', '0');
       nutBtn.setAttribute('aria-label', 'Open string ' + (s + 1));
+      (function () {
+        var info = selectedScaleInfo();
+        if (!info) return;
+        var tun = tuningPcs();
+        if (info.tones.indexOf(tun[s]) >= 0) nutBtn.classList.add('scale-tone');
+      })();
       if (state.frets[s] === null) {
         nutBtn.classList.add('muted-mark');
         nutBtn.textContent = '×';
@@ -775,6 +875,13 @@
         btn.setAttribute('data-str', String(s));
         btn.setAttribute('data-fret', String(fret));
         btn.setAttribute('aria-label', 'String ' + (s + 1) + ' fret ' + fret);
+        (function () {
+          var info = selectedScaleInfo();
+          if (!info) return;
+          var tun = tuningPcs();
+          var pc = (tun[s] + fret) % 12;
+          if (info.tones.indexOf(pc) >= 0) btn.classList.add('scale-tone');
+        })();
         if (state.frets[s] === fret) {
           var dd = document.createElement('span');
           dd.className = 'dot';
@@ -857,18 +964,25 @@
     var el = $('chord-name');
     var alts = $('alt-chips');
     var sounded = soundingPcs();
+    var notesEl = $('chord-notes');
     if (sounded.pcs.length < 2) {
       if (el) el.textContent = sounded.pcs.length ? 'Need more notes…' : 'Tap frets';
+      if (notesEl) notesEl.textContent = '';
       if (alts) alts.innerHTML = '';
       return;
     }
     if (!state.names.length) {
       if (el) el.textContent = 'No match';
+      if (notesEl) notesEl.textContent = '';
       if (alts) alts.innerHTML = '';
       return;
     }
     var top = state.names[state.selectedNameIndex] || state.names[0];
     if (el) el.textContent = top.display;
+    if (notesEl) {
+      var sp = spellChordPcs(top.root, top.name, sounded.pcs);
+      notesEl.textContent = sp.join(' ');
+    }
     if (alts) {
       alts.innerHTML = '';
       state.names.slice(0, 3).forEach(function (n, i) {
@@ -919,13 +1033,12 @@
       name: hit.baseDisplay || hit.display.replace(/\/.*$/, ''),
       root: hit.root,
       quality: hit.qid || guessQualityId(hit),
-      pcs: (hit.pcs && hit.pcs.length ? hit.pcs : soundingPcs().pcs).slice(),
+      pcs: soundingPcs().pcs.slice(),
       clash: false,
       source: 'neck',
       display: hit.display
     };
-    // Prefer actual sounded pcs for key fitting
-    chord.pcs = soundingPcs().pcs.slice();
+    chord.noteNames = spellChordPcs(chord.root, hit.name || '', chord.pcs);
     if (!chord.name) chord.name = hit.display;
     state.chords.push(chord);
     recomputeKeys({ addedChord: chord });
@@ -960,7 +1073,8 @@
       pcs: pcs.slice(),
       clash: false,
       source: 'quick',
-      display: name
+      display: name,
+      noteNames: spellChordPcs(root, qid === 'min' ? 'm' : (qid === 'maj' ? '' : qid), pcs)
     };
     state.chords.push(chord);
     recomputeKeys({ addedChord: chord });
@@ -988,12 +1102,14 @@
       name.className = 't-name';
       name.textContent = c.display || c.name;
       tile.appendChild(name);
-      if (c.source === 'quick') {
-        var sub = document.createElement('div');
-        sub.className = 't-sub';
-        sub.textContent = 'quick';
-        tile.appendChild(sub);
+      var notes = document.createElement('div');
+      notes.className = 't-notes';
+      var nn = c.noteNames;
+      if (!nn || !nn.length) {
+        nn = spellChordPcs(c.root, c.quality === 'min' ? 'm' : '', c.pcs || []);
       }
+      notes.textContent = nn.join(' ');
+      tile.appendChild(notes);
       if (c.clash) {
         var dot = document.createElement('button');
         dot.type = 'button';
@@ -1028,32 +1144,166 @@
     });
   }
 
+  function selectedScaleInfo() {
+    if (!state.selectedScale) return null;
+    var scale = SCALES.find(function (s) { return s.id === state.selectedScale.scaleId; });
+    if (!scale) return null;
+    return {
+      root: state.selectedScale.root,
+      scale: scale,
+      label: keyLabel({ root: state.selectedScale.root, scale: scale }),
+      notes: spellScaleNotes(state.selectedScale.root, scale),
+      tones: scaleTones(state.selectedScale.root, scale)
+    };
+  }
+
+  function selectScale(root, scaleId) {
+    state.selectedScale = { root: root, scaleId: scaleId };
+    // If this scale is an exact fit, also promote topKey readout when it fits all
+    var scale = SCALES.find(function (s) { return s.id === scaleId; });
+    if (scale && state.chords.length && chordsFitKey(state.chords, root, scale) === state.chords.length) {
+      state.topKey = {
+        root: root,
+        scaleId: scaleId,
+        name: keyLabelLong({ root: root, scale: scale }),
+        short: keyLabel({ root: root, scale: scale }),
+        notes: spellScaleNotes(root, scale)
+      };
+      state.chords.forEach(function (c) {
+        c.clash = !chordFitsKey(c, root, scale);
+      });
+    }
+    renderKey();
+    renderStrip();
+    renderNeck();
+  }
+
+  function makeCandChip(c, opts) {
+    opts = opts || {};
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cand' + (opts.top ? ' top' : '') + (opts.near ? ' near' : '') + (opts.more ? ' more' : '');
+    var sel = state.selectedScale;
+    if (sel && c.root === sel.root && c.scaleId === sel.scaleId) b.classList.add('selected');
+    b.textContent = opts.more ? opts.label : c.label;
+    if (opts.more) {
+      b.addEventListener('click', function () { openScalesSheet(true); });
+    } else {
+      b.title = (c.notes || []).join(' ');
+      b.addEventListener('click', function () { selectScale(c.root, c.scaleId); });
+    }
+    return b;
+  }
+
   function renderKey() {
     var el = $('key-readout');
+    var notesEl = $('key-notes');
     var cand = $('candidates');
+    var nearHost = $('near-candidates');
+    var nearSec = $('near-section');
+    var fitsLab = $('fits-label');
+
     if (!state.chords.length) {
-      if (el) el.textContent = 'Key: —';
+      if (el) el.textContent = 'Add chords to guess the key';
+      if (notesEl) notesEl.textContent = '';
       if (cand) cand.innerHTML = '';
+      if (nearHost) nearHost.innerHTML = '';
+      if (nearSec) nearSec.hidden = true;
+      if (fitsLab) fitsLab.hidden = true;
       return;
     }
+
+    var info = selectedScaleInfo();
     if (el) el.textContent = 'Key: ' + (state.topKey ? state.topKey.short : '—');
+    if (notesEl) {
+      var nlist = info ? info.notes : (state.topKey && state.topKey.notes) || [];
+      notesEl.textContent = nlist.length ? nlist.join(' ') : '';
+    }
+
+    var fits = state._fits || [];
+    var near = state._near || [];
+    if (fitsLab) fitsLab.hidden = !fits.length;
+
     if (cand) {
       cand.innerHTML = '';
-      var list = state._perfect || [];
-      var show = list.slice(0, 6);
+      var TOP_N = 5;
+      var show = fits.slice(0, TOP_N);
       show.forEach(function (c, i) {
-        var s = document.createElement('span');
-        s.className = 'cand' + (i === 0 ? ' top' : '');
-        s.textContent = c.label + (c.partial ? '?' : '');
-        cand.appendChild(s);
+        cand.appendChild(makeCandChip(c, { top: i === 0 }));
       });
-      var count = document.createElement('span');
-      count.className = 'cand-count';
-      var perfectCount = list.filter(function (x) { return !x.partial; }).length;
-      if (perfectCount) count.textContent = perfectCount + ' fit';
-      else count.textContent = list.length + ' near';
-      cand.appendChild(count);
+      if (fits.length > TOP_N) {
+        cand.appendChild(makeCandChip({}, {
+          more: true,
+          label: '+' + (fits.length - TOP_N) + ' more'
+        }));
+      }
+      if (!fits.length) {
+        var none = document.createElement('span');
+        none.className = 'cand-count';
+        none.textContent = 'No exact scale fit';
+        cand.appendChild(none);
+      } else {
+        var count = document.createElement('span');
+        count.className = 'cand-count';
+        count.textContent = fits.length + ' fit';
+        cand.appendChild(count);
+      }
     }
+
+    if (nearHost && nearSec) {
+      nearHost.innerHTML = '';
+      if (near.length) {
+        nearSec.hidden = false;
+        near.slice(0, 6).forEach(function (c) {
+          nearHost.appendChild(makeCandChip(c, { near: true }));
+        });
+        if (near.length > 6) {
+          var moreN = document.createElement('span');
+          moreN.className = 'cand-count';
+          moreN.textContent = '+' + (near.length - 6) + ' near';
+          nearHost.appendChild(moreN);
+        }
+      } else {
+        nearSec.hidden = true;
+      }
+    }
+
+    renderScalesSheetList();
+  }
+
+  function openScalesSheet(on) {
+    var sheet = $('scales-sheet');
+    var bd = $('scales-backdrop');
+    if (!sheet || !bd) return;
+    sheet.hidden = !on;
+    bd.hidden = !on;
+    if (on) renderScalesSheetList();
+  }
+
+  function renderScalesSheetList() {
+    var host = $('scales-list');
+    var hint = $('scales-sheet-hint');
+    if (!host) return;
+    host.innerHTML = '';
+    var fits = state._fits || [];
+    if (hint) {
+      hint.textContent = fits.length
+        ? fits.length + ' scales contain every chord tone. Tap one to see its notes.'
+        : 'No scale contains every chord tone yet.';
+    }
+    fits.forEach(function (c) {
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'scale-row';
+      var sel = state.selectedScale;
+      if (sel && sel.root === c.root && sel.scaleId === c.scaleId) row.classList.add('active');
+      row.innerHTML = '<span class="sn">' + c.label + '</span><span class="snotes">' + (c.notes || []).join(' ') + '</span>';
+      row.addEventListener('click', function () {
+        selectScale(c.root, c.scaleId);
+        openScalesSheet(false);
+      });
+      host.appendChild(row);
+    });
   }
 
   /* ---------- Quick pick ---------- */
@@ -1197,6 +1447,8 @@
     $('btn-settings') && $('btn-settings').addEventListener('click', function () { openSettings(true); });
     $('btn-settings-close') && $('btn-settings-close').addEventListener('click', function () { openSettings(false); });
     $('settings-backdrop') && $('settings-backdrop').addEventListener('click', function () { openSettings(false); });
+    $('btn-scales-close') && $('btn-scales-close').addEventListener('click', function () { openScalesSheet(false); });
+    $('scales-backdrop') && $('scales-backdrop').addEventListener('click', function () { openScalesSheet(false); });
     wireScrub();
   }
 
@@ -1205,6 +1457,12 @@
     state: state,
     getStringLabelsTopToBottom: getStringLabelsTopToBottom,
     stringPitch: stringPitch,
+    getFits: function () { return (state._fits || []).map(function (f) { return f.label; }); },
+    getNear: function () { return (state._near || []).map(function (f) { return f.label; }); },
+    selectedScaleNotes: function () {
+      var info = selectedScaleInfo();
+      return info ? info.notes : [];
+    },
     setShape: function (shape) {
       // shape like "x32010" or "022000" low-E→high-e (bass→treble)
       var s = String(shape).toLowerCase();
@@ -1226,10 +1484,14 @@
     clearChords: function () {
       state.chords = [];
       state.topKey = null;
+      state._fits = [];
+      state._near = [];
+      state.selectedScale = null;
       clearClashLine();
       save();
       renderKey();
       renderStrip();
+      renderNeck();
     },
     noteName: noteName,
     analyze: analyzePitchSet

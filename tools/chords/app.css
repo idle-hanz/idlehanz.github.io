@@ -85,6 +85,85 @@ button, input { font: inherit; color: inherit; }
   align-self: center;
   margin-left: 0.15rem;
 }
+.key-notes, .chord-notes {
+  margin-top: 0.2rem;
+  font-size: 0.82rem;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  min-height: 1.1em;
+}
+.chord-notes {
+  text-align: center;
+  color: var(--muted);
+  font-weight: 550;
+}
+.cand-section { margin-top: 0.3rem; }
+.cand-label {
+  font-size: 0.65rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.2rem;
+}
+.candidates.near .cand,
+.cand.near {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.cand.more {
+  color: var(--accent);
+  border-color: rgba(232, 196, 138, 0.45);
+  font-weight: 700;
+}
+.cand.selected {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(232, 196, 138, 0.12);
+}
+.tile .t-notes {
+  font-size: 0.62rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+}
+.scale-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 55dvh;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.scale-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  min-height: 48px;
+}
+.scale-row.active {
+  border-color: rgba(232, 196, 138, 0.55);
+}
+.scale-row .sn {
+  font-weight: 700;
+}
+.scale-row .snotes {
+  font-size: 0.75rem;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+}
+.cell.scale-tone::before {
+  box-shadow: 0 0 0 2px rgba(232, 196, 138, 0.22);
+}
+.cell.scale-tone.fret-space {
+  background: rgba(232, 196, 138, 0.07);
+}
 .gear {
   width: var(--tap);
   height: var(--tap);

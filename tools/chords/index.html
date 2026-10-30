@@ -11,21 +11,30 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="app.css?v=20261030c" />
+  <link rel="stylesheet" href="app.css?v=20261030d" />
 </head>
 <body>
   <div class="app" id="app">
     <header class="top">
       <div class="key-block">
         <div class="key-readout" id="key-readout">Key: —</div>
+        <div class="key-notes" id="key-notes"></div>
         <div class="clash-line" id="clash-line" hidden></div>
-        <div class="candidates" id="candidates"></div>
+        <div class="cand-section">
+          <div class="cand-label" id="fits-label" hidden>Fits all chords</div>
+          <div class="candidates" id="candidates"></div>
+        </div>
+        <div class="cand-section near-sec" id="near-section" hidden>
+          <div class="cand-label">Near</div>
+          <div class="candidates near" id="near-candidates"></div>
+        </div>
       </div>
       <button type="button" class="gear" id="btn-settings" aria-label="Tuning settings">⚙</button>
     </header>
 
     <section class="guess-block">
       <div class="chord-name" id="chord-name">Tap frets</div>
+      <div class="chord-notes" id="chord-notes"></div>
       <div class="alt-chips" id="alt-chips"></div>
     </section>
 
@@ -55,6 +64,16 @@
     </section>
   </div>
 
+  <div class="sheet-backdrop" id="scales-backdrop" hidden></div>
+  <aside class="sheet" id="scales-sheet" hidden aria-label="All matching scales">
+    <div class="sheet-head">
+      <h2>Matching scales</h2>
+      <button type="button" class="btn" id="btn-scales-close">Done</button>
+    </div>
+    <p class="sheet-hint" id="scales-sheet-hint">Scales that contain every chord tone.</p>
+    <div class="scale-list" id="scales-list"></div>
+  </aside>
+
   <div class="sheet-backdrop" id="settings-backdrop" hidden></div>
   <aside class="sheet" id="settings-sheet" hidden aria-label="Tuning">
     <div class="sheet-head">
@@ -66,7 +85,7 @@
     <div class="per-string" id="per-string"></div>
   </aside>
 
-  <script src="app.js?v=20261030c"></script>
+  <script src="app.js?v=20261030d"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(function () {});

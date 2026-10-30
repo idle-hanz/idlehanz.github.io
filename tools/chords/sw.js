@@ -1,10 +1,10 @@
 /* Chord Finder service worker — scope /tools/chords/ */
-const CACHE = 'chord-finder-v20261030c';
+const CACHE = 'chord-finder-v20261030d';
 const PRECACHE = [
   './',
   './index.html',
-  './app.css?v=20261030c',
-  './app.js?v=20261030c',
+  './app.css?v=20261030d',
+  './app.js?v=20261030d',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
