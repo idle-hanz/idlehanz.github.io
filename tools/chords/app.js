@@ -133,9 +133,10 @@
     var rootIdx = LETTERS.indexOf(rootL);
     var iv = (pc - root + 12) % 12;
     // Map interval class to scale degree letter offset
+    // Semitone → diatonic letter steps from tonic
     var degMap = {
-      0: 0, 1: 0, 2: 1, 3: 1, 4: 2, 5: 3,
-      6: 3, 7: 4, 8: 4, 9: 5, 10: 5, 11: 6
+      0: 0, 1: 1, 2: 1, 3: 2, 4: 2, 5: 3,
+      6: 4, 7: 4, 8: 5, 9: 5, 10: 6, 11: 6
     };
     // For aug: #5 should be letter of 5th raised
     if (q === 'aug' && iv === 8) degMap = { 0: 0, 4: 2, 8: 4 };
