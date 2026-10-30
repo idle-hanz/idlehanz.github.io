@@ -84,6 +84,105 @@
     return (preferFlat ? NOTE_NAMES_FLAT : NOTE_NAMES_SHARP)[pc];
   }
 
+  function noteNameDual(pc) {
+    pc = ((pc % 12) + 12) % 12;
+    var sh = NOTE_NAMES_SHARP[pc];
+    var fl = NOTE_NAMES_FLAT[pc];
+    if (sh === fl) return sh;
+    return sh + '/' + fl;
+  }
+
+  // Spell chord tones from root using interval letters (aug 5th = #5, etc.)
+  var LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  var LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+  function rootLetterPrefer(pc, preferFlat) {
+    var n = noteName(pc, preferFlat);
+    return n.charAt(0);
+  }
+
+  function spellPcFromRoot(pc, root, qualityName) {
+    pc = ((pc % 12) + 12) % 12;
+    root = ((root % 12) + 12) % 12;
+    // Prefer sharp spelling for aug/# qualities; flat for dim/b/min-ish
+    var preferFlat = true;
+    var q = qualityName || '';
+    if (/aug|maj|#|sus2/.test(q) && !/dim|m7b5|b5/.test(q)) preferFlat = false;
+    if (q === '' || q === 'maj7' || q === '6' || q === '7' || q === '9' || q === 'add9') preferFlat = !!PREFER_FLAT[root] ? false : false;
+    // Natural roots usually sharp-side for maj; flats for F Bb Eb Ab
+    if (!q || q === '' || q.indexOf('m') !== 0) {
+      preferFlat = (root === 5 || root === 10 || root === 3 || root === 8); // F Bb Eb Ab
+    }
+    if (/^m/.test(q) || q === 'dim' || q === 'm7' || q === 'm6' || q === 'm9' || q === 'm7b5') {
+      preferFlat = true;
+    }
+    if (q === 'aug') preferFlat = false;
+
+    var rootName = noteName(root, preferFlat);
+    var rootL = rootName.charAt(0);
+    var rootIdx = LETTERS.indexOf(rootL);
+    var iv = (pc - root + 12) % 12;
+    // Map interval class to scale degree letter offset
+    var degMap = {
+      0: 0, 1: 0, 2: 1, 3: 1, 4: 2, 5: 3,
+      6: 3, 7: 4, 8: 4, 9: 5, 10: 5, 11: 6
+    };
+    // For aug: #5 should be letter of 5th raised
+    if (q === 'aug' && iv === 8) degMap = { 0: 0, 4: 2, 8: 4 };
+    if (q === 'dim' && iv === 6) { /* b5 */ }
+
+    var deg = degMap[iv];
+    if (deg == null) deg = 0;
+    var letter = LETTERS[(rootIdx + deg) % 7];
+    var natural = LETTER_PC[letter];
+    // Accidental relative to natural letter near root octave
+    // Find which accidental makes natural+acc = pc, allowing wrap
+    var best = null;
+    for (var acc = -2; acc <= 2; acc++) {
+      if (((natural + acc) % 12 + 12) % 12 === pc) {
+        best = acc;
+        break;
+      }
+    }
+    if (best == null) return noteName(pc, preferFlat);
+    if (best === 0) return letter;
+    if (best === 1) return letter + '#';
+    if (best === 2) return letter + '##';
+    if (best === -1) return letter + 'b';
+    if (best === -2) return letter + 'bb';
+    return noteName(pc, preferFlat);
+  }
+
+  function spellChordDisplay(root, qualityName, bass) {
+    var q = qualityName || '';
+    var rootSp = spellPcFromRoot(root, root, q);
+    var disp;
+    if (!q) disp = rootSp;
+    else if (q === 'm' || q.indexOf('m') === 0 || q.indexOf('dim') === 0 || q.indexOf('aug') === 0 || q.indexOf('sus') === 0)
+      disp = rootSp + q;
+    else disp = rootSp + q;
+    if (bass != null && bass !== root) {
+      disp += '/' + spellPcFromRoot(bass, root, q);
+    }
+    return disp;
+  }
+
+  function accidentalCount(name) {
+    var n = 0;
+    for (var i = 0; i < name.length; i++) {
+      var c = name.charAt(i);
+      if (c === '#' || c === 'b') n++;
+    }
+    return n;
+  }
+
+  function stringPitch(s) {
+    var tun = tuningPcs();
+    var f = state.frets[s];
+    if (f === null || f === undefined) return null;
+    return (tun[s] + (f | 0)) % 12;
+  }
+
   function tuningPcs() {
     var base = PRESETS.find(function (p) { return p.id === state.presetId; }) || PRESETS[0];
     return base.pcs.map(function (pc, i) {
@@ -148,44 +247,51 @@
       for (var fi = 0; fi < forms.length; fi++) {
         var f = forms[fi];
         var expected = f.intervals.map(function (iv) { return (root + iv) % 12; });
-        // All sounded notes must be in the chord formula (allow missing chord tones)
         if (!subset(pcs, expected)) continue;
-        // Prefer when chord has at least root + one more characteristic tone
         var hasRoot = pcs.indexOf(root) >= 0;
         if (!hasRoot && pcs.length < 3) continue;
         var missing = expected.filter(function (p) { return pcs.indexOf(p) < 0; }).length;
-        var extraPenalty = 0;
-        // Exact match bonus
         var exact = setEq(pcs, uniq(expected));
-        var score = 100 - f.rank * 3 - missing * 8 - (hasRoot ? 0 : 15) + (exact ? 20 : 0) + extraPenalty;
-        // Prefer common triad when pcs are exactly the triad
+        var score = 100 - f.rank * 3 - missing * 8 - (hasRoot ? 0 : 15) + (exact ? 20 : 0);
         if (exact && f.intervals.length === 3) score += 10;
-        var disp = noteName(root) + (f.name ? (f.name.match(/^(m|dim|aug|sus)/) ? f.name : f.name) : '');
-        // Format: "C", "Cm", "C7", "Cmaj7"
-        if (!f.name) disp = noteName(root);
-        else if (f.name === 'm' || f.name === 'dim' || f.name === 'aug' || f.name.indexOf('sus') === 0 || f.name.indexOf('m') === 0)
-          disp = noteName(root) + f.name;
-        else
-          disp = noteName(root) + f.name;
+        // Prefer bass as root (no slash) — then fewest accidentals
+        if (bass != null && bass === root) score += 28;
+        else if (bass != null && bass !== root) score -= 4;
 
-        var slash = '';
-        if (bass != null && bass !== root) {
-          slash = '/' + noteName(bass);
-        }
+        var disp = spellChordDisplay(root, f.name, null);
+        var full = spellChordDisplay(root, f.name, bass);
+        score -= accidentalCount(full) * 6;
+        // Prefer spellings without double accidentals on sounded notes
+        var spellPenalty = 0;
+        var smap = {};
+        expected.forEach(function (p) {
+          var sp = spellPcFromRoot(p, root, f.name);
+          smap[p] = sp;
+          if (sp.indexOf('##') >= 0 || sp.indexOf('bb') >= 0) spellPenalty += 40;
+          else spellPenalty += accidentalCount(sp) * 2;
+        });
+        score -= spellPenalty;
+
         hits.push({
           root: root,
           name: f.name,
-          display: disp + slash,
+          display: full,
           baseDisplay: disp,
           score: score,
           qid: f.qid,
           pcs: uniq(expected),
-          bass: bass
+          bass: bass,
+          spellMap: (function () {
+            if (bass != null) smap[bass] = spellPcFromRoot(bass, root, f.name);
+            return smap;
+          })()
         });
       }
     }
-    hits.sort(function (a, b) { return b.score - a.score; });
-    // Dedupe by display
+    hits.sort(function (a, b) {
+      if (b.score !== a.score) return b.score - a.score;
+      return accidentalCount(a.display) - accidentalCount(b.display);
+    });
     var seen = {};
     var out = [];
     for (var i = 0; i < hits.length; i++) {
@@ -506,63 +612,132 @@
     return list;
   }
 
-  function renderStringToggles() {
-    var host = $('string-toggles');
-    if (!host) return;
-    var tun = tuningPcs();
-    // Display high E → low E (string 5 → 0)
-    var html = '';
-    for (var row = 0; row < STRING_COUNT; row++) {
-      var s = STRING_COUNT - 1 - row;
-      var f = state.frets[s];
-      var cls = 'str-tog';
-      var lab = noteName(tun[s]);
-      if (f === null) { cls += ' muted'; lab = '× ' + lab; }
-      else if (f === 0) { cls += ' open'; lab = 'O ' + lab; }
-      else { lab = lab; }
-      html += '<button type="button" class="' + cls + '" data-str="' + s + '" aria-label="String ' + (s + 1) + '">' + lab + '</button>';
-    }
-    host.innerHTML = html;
-    host.querySelectorAll('.str-tog').forEach(function (btn) {
-      btn.addEventListener('pointerup', function (e) {
-        e.preventDefault();
-        var s = +btn.getAttribute('data-str');
-        cycleString(s);
-      });
-    });
-  }
+  // Display order: row 0 = high e (string 5) at TOP; row 5 = low E (string 0) at BOTTOM.
+  // Internal index 0 = low E (bass), 5 = high e. Pitch math always uses that index.
 
   function cycleString(s) {
     var f = state.frets[s];
-    // open → muted → (if fretted) clear to open… : cycle open / muted when at nut state
     if (f === null) {
       state.frets[s] = 0; // muted → open
     } else if (f === 0) {
       state.frets[s] = null; // open → muted
     } else {
-      // fretted → muted
-      state.frets[s] = null;
+      state.frets[s] = null; // fretted → muted
     }
     afterNeckChange();
   }
 
+  function selectedSpellMap() {
+    var hit = state.names[state.selectedNameIndex] || state.names[0];
+    return hit && hit.spellMap ? hit.spellMap : null;
+  }
+
+  function labelForString(s) {
+    var tun = tuningPcs();
+    var tunName = noteName(tun[s], false); // open-string letter (E A D G B E style)
+    // Prefer natural open names without flats for standard opens
+    if (tun[s] === 4) tunName = 'E';
+    else if (tun[s] === 9) tunName = 'A';
+    else if (tun[s] === 2) tunName = 'D';
+    else if (tun[s] === 7) tunName = 'G';
+    else if (tun[s] === 11) tunName = 'B';
+    else tunName = noteName(tun[s]);
+
+    var f = state.frets[s];
+    if (f === null || f === undefined) {
+      return { sound: '×', tun: tunName, cls: 'muted', pc: null };
+    }
+    var pc = (tun[s] + (f | 0)) % 12;
+    var map = selectedSpellMap();
+    var sound;
+    if (map && map[pc] && map[pc].indexOf('##') < 0 && map[pc].indexOf('bb') < 0) sound = map[pc];
+    else if (pc === 1 || pc === 3 || pc === 6 || pc === 8 || pc === 10) sound = noteNameDual(pc);
+    else sound = noteName(pc, false);
+    return {
+      sound: sound,
+      tun: tunName,
+      cls: f === 0 ? 'open' : 'fretted',
+      pc: pc
+    };
+  }
+
   function renderNeck() {
-    renderStringToggles();
-    var neck = $('neck');
-    if (!neck) return;
+    var wrap = document.querySelector('.neck-wrap');
+    if (!wrap) return;
     var frets = fretsInWindow();
     var n = frets.length;
-    neck.style.setProperty('--nfrets', String(n));
-    neck.className = 'neck neck-grid';
-    neck.innerHTML = '';
 
-    // Build cells: for each display row (high→low), nut + frets
+    // Rebuild outer structure: labels | wood fretboard
+    var board = wrap.querySelector('.neck-board');
+    if (!board) {
+      board = document.createElement('div');
+      board.className = 'neck-board';
+      var oldNeck = $('neck');
+      if (oldNeck && oldNeck.parentElement === wrap) wrap.insertBefore(board, oldNeck);
+      else wrap.insertBefore(board, wrap.firstChild);
+    }
+    board.innerHTML = '';
+    board.style.setProperty('--nfrets', String(n));
+
+    var labels = document.createElement('div');
+    labels.className = 'neck-labels';
+
+    var wood = document.createElement('div');
+    wood.className = 'fretboard';
+
+    var neck = document.createElement('div');
+    neck.className = 'neck neck-grid';
+    neck.id = 'neck';
+    neck.style.setProperty('--nfrets', String(n));
+
+    var inlays = document.createElement('div');
+    inlays.className = 'neck-inlays';
+    inlays.style.setProperty('--nfrets', String(n));
+    inlays.setAttribute('aria-hidden', 'true');
+    // nut spacer + one slot per fret space
+    inlays.appendChild(document.createElement('div')); // nut col
+    for (var fi = 0; fi < frets.length; fi++) {
+      var slot = document.createElement('div');
+      slot.className = 'slot';
+      var fretNum = frets[fi];
+      if (fretNum === 3 || fretNum === 5 || fretNum === 7 || fretNum === 9) {
+        var d = document.createElement('span');
+        d.className = 'inlay';
+        slot.appendChild(d);
+      } else if (fretNum === 12) {
+        var a = document.createElement('span');
+        a.className = 'inlay double-a';
+        var b = document.createElement('span');
+        b.className = 'inlay double-b';
+        slot.appendChild(a);
+        slot.appendChild(b);
+      }
+      inlays.appendChild(slot);
+    }
+
+    // Top → bottom: high e (5) … low E (0)
     for (var row = 0; row < STRING_COUNT; row++) {
       var s = STRING_COUNT - 1 - row;
-      // Nut cell
+      var thick = 1.4 + (STRING_COUNT - 1 - s) * 0.65; // thin high e → thick low E
+      var labInfo = labelForString(s);
+
+      var labBtn = document.createElement('button');
+      labBtn.type = 'button';
+      labBtn.className = 'str-label ' + labInfo.cls;
+      labBtn.setAttribute('data-str', String(s));
+      labBtn.setAttribute('aria-label', 'String ' + (s + 1) + ' ' + labInfo.sound + ', tuning ' + labInfo.tun + '. Tap to mute or open.');
+      labBtn.innerHTML = '<span class="sound">' + labInfo.sound + '</span><span class="tun">' + labInfo.tun + '</span>';
+      labBtn.addEventListener('pointerup', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        cycleString(+e.currentTarget.getAttribute('data-str'));
+      });
+      labels.appendChild(labBtn);
+
       var nutBtn = document.createElement('button');
       nutBtn.type = 'button';
-      nutBtn.className = 'cell';
+      nutBtn.className = 'cell nut-cell';
+      nutBtn.style.setProperty('--sw', thick + 'px');
       nutBtn.setAttribute('data-str', String(s));
       nutBtn.setAttribute('data-fret', '0');
       nutBtn.setAttribute('aria-label', 'Open string ' + (s + 1));
@@ -581,38 +756,59 @@
         var fret = frets[i];
         var btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'cell';
+        btn.className = 'cell fret-space';
+        btn.style.setProperty('--sw', thick + 'px');
         btn.setAttribute('data-str', String(s));
         btn.setAttribute('data-fret', String(fret));
         btn.setAttribute('aria-label', 'String ' + (s + 1) + ' fret ' + fret);
         if (state.frets[s] === fret) {
-          var d = document.createElement('span');
-          d.className = 'dot';
-          btn.appendChild(d);
+          var dd = document.createElement('span');
+          dd.className = 'dot';
+          btn.appendChild(dd);
         }
         neck.appendChild(btn);
       }
     }
 
-    // Fret numbers row via separate element
+    wood.appendChild(inlays);
+    wood.appendChild(neck);
+    board.appendChild(labels);
+    board.appendChild(wood);
+
+    // Remove leftover direct #neck from first paint
+    var leftover = wrap.querySelector(':scope > #neck');
+    if (leftover) leftover.remove();
+
     var scrubLab = $('fret-lab');
     var a = state.startFret | 0;
     var b = windowEnd();
     if (scrubLab) scrubLab.textContent = 'Frets ' + a + '–' + b;
 
-    // Numbers under neck
-    var existing = neck.parentElement.querySelector('.neck-nums');
+    var existing = wrap.querySelector('.neck-nums');
     if (existing) existing.remove();
     var nums = document.createElement('div');
     nums.className = 'neck-nums';
     nums.style.setProperty('--nfrets', String(n));
-    nums.innerHTML = '<span>0</span>' + frets.map(function (f) { return '<span>' + f + '</span>'; }).join('');
-    neck.parentElement.appendChild(nums);
+    // label spacer | nut spacer | numbers centred in each fret SPACE
+    var html = '<span></span><span></span>';
+    for (var j = 0; j < frets.length; j++) {
+      html += '<span class="num">' + frets[j] + '</span>';
+    }
+    nums.innerHTML = html;
+    wrap.appendChild(nums);
 
-    // Real pointer events on cells — nothing overlays the neck
     neck.querySelectorAll('.cell').forEach(function (cell) {
       cell.addEventListener('pointerup', onCellPointer, { passive: false });
     });
+  }
+
+  function getStringLabelsTopToBottom() {
+    var out = [];
+    for (var row = 0; row < STRING_COUNT; row++) {
+      var s = STRING_COUNT - 1 - row;
+      out.push(labelForString(s));
+    }
+    return out;
   }
 
   function onCellPointer(e) {
@@ -685,6 +881,7 @@
           b.addEventListener('click', function () {
             state.selectedNameIndex = i;
             renderGuess();
+            renderNeck();
           });
           alts.appendChild(b);
         });
@@ -966,7 +1163,6 @@
 
   function afterTuningChange() {
     afterNeckChange();
-    renderStringToggles();
   }
 
   /* ---------- Scrub ---------- */
@@ -993,14 +1189,16 @@
   // Expose for tests
   window.ChordFinder = {
     state: state,
+    getStringLabelsTopToBottom: getStringLabelsTopToBottom,
+    stringPitch: stringPitch,
     setShape: function (shape) {
-      // shape like "x32010" or "022000" bass→treble
+      // shape like "x32010" or "022000" low-E→high-e (bass→treble)
       var s = String(shape).toLowerCase();
       if (s.length !== 6) throw new Error('shape length');
       for (var i = 0; i < 6; i++) {
         var ch = s.charAt(i);
         if (ch === 'x') state.frets[i] = null;
-        else state.frets[i] = parseInt(ch, 16); // allows a-c for 10-12 if needed; digits 0-9
+        else state.frets[i] = parseInt(ch, 10);
       }
       afterNeckChange();
       return state.names.map(function (n) { return n.display; });

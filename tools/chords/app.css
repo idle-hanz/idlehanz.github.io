@@ -133,57 +133,78 @@ button, input { font: inherit; color: inherit; }
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 0.45rem 0.4rem 0.55rem;
-  /* Never covered by overlays when settings closed */
   position: relative;
   z-index: 1;
 }
-.string-toggles {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 0.25rem;
-  margin-bottom: 0.35rem;
-}
-.str-tog {
-  min-height: 40px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--panel2);
-  font-size: 0.78rem;
-  font-weight: 650;
-}
-.str-tog.muted {
-  color: var(--danger);
-  border-color: rgba(201, 107, 107, 0.5);
-}
-.str-tog.open {
-  color: var(--ok);
-}
-
 .neck-wrap {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x;
+  border-radius: 10px;
+}
+.neck-board {
+  position: relative;
+  display: grid;
+  grid-template-columns: 56px minmax(240px, 1fr);
+  align-items: stretch;
+  min-width: 100%;
+}
+.neck-labels {
+  display: grid;
+  grid-template-rows: repeat(6, 1fr);
+  background: var(--panel);
+  z-index: 3;
+}
+.str-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.05rem;
+  min-height: 44px;
+  padding: 0.15rem 0.35rem 0.15rem 0.1rem;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.str-label .sound {
+  font-size: 0.92rem;
+  font-weight: 750;
+  line-height: 1.1;
+  color: var(--text);
+}
+.str-label.muted .sound { color: var(--danger); }
+.str-label.open .sound { color: var(--ok); }
+.str-label.fretted .sound { color: var(--accent); }
+.str-label .tun {
+  font-size: 0.62rem;
+  font-weight: 500;
+  color: var(--muted);
+  opacity: 0.75;
+  line-height: 1;
+}
+.fretboard {
+  position: relative;
+  border-radius: 0 8px 8px 0;
+  background:
+    linear-gradient(90deg, rgba(0,0,0,0.35) 0 8px, transparent 26px),
+    linear-gradient(180deg, #5c3d24 0%, #7a4e2a 12%, #9a6436 45%, #7d512c 78%, #5a3a22 100%);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.4);
+  overflow: hidden;
 }
 .neck {
   display: grid;
-  /* nut + frets in window */
   gap: 0;
   user-select: none;
+  align-items: stretch;
+  position: relative;
+  z-index: 2;
 }
-.fret-col {
+.neck-grid {
   display: grid;
-  grid-template-rows: repeat(6, 1fr);
-  min-width: 0;
-}
-.fret-col.nut {
-  min-width: 42px;
-}
-.fret-col:not(.nut) {
-  flex: 1;
-  min-width: 52px;
-}
-.neck-row {
-  display: contents;
+  grid-template-columns: 34px repeat(var(--nfrets, 5), minmax(52px, 1fr));
+  width: 100%;
 }
 .cell {
   position: relative;
@@ -196,43 +217,56 @@ button, input { font: inherit; color: inherit; }
   justify-content: center;
   cursor: pointer;
 }
+/* String wire (horizontal) — thicker toward low E (data-str 0) */
 .cell::before {
   content: "";
   position: absolute;
   left: 0;
   right: 0;
-  height: 2px;
-  background: #6a6258;
+  height: var(--sw, 2px);
+  background: #d8cfc0;
   top: 50%;
   transform: translateY(-50%);
+  border-radius: 1px;
   pointer-events: none;
+  opacity: 0.92;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.25);
 }
-.fret-col.nut .cell::before {
-  left: 55%;
-  right: 0;
-}
-.fret-col.nut .cell::after {
+.cell[data-str="5"]::before { background: #c4bbb0; }
+.cell[data-str="0"]::before { background: #efe6d6; }
+/* Metal fret wire on the RIGHT edge of each fret SPACE (finger lands in the space) */
+.cell.fret-space::after {
   content: "";
   position: absolute;
-  right: 0;
-  top: 8%;
-  bottom: 8%;
-  width: 4px;
-  background: #d8c9b0;
-  border-radius: 2px;
+  top: 0;
+  bottom: 0;
+  right: -1px;
+  width: 3px;
+  background: linear-gradient(90deg, #9a9a9a, #e8e8e8 40%, #6e6e6e);
+  border-radius: 1px;
   pointer-events: none;
+  z-index: 1;
+  box-shadow: 1px 0 2px rgba(0,0,0,0.35);
 }
-.fret-col:not(.nut) .cell {
-  border-right: 1px solid #3a342e;
+.cell.nut-cell {
+  background: linear-gradient(90deg, #cfc3a8, #f0e6d0 55%, #b7aa8e);
+  box-shadow: inset -2px 0 0 rgba(0,0,0,0.25);
+  z-index: 2;
+}
+.cell.nut-cell::before {
+  left: 40%;
+}
+.cell.nut-cell::after {
+  display: none;
 }
 .dot {
   width: 22px;
   height: 22px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 2px rgba(0,0,0,0.35);
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.35);
   position: relative;
-  z-index: 2;
+  z-index: 3;
   pointer-events: none;
 }
 .cell.nut-hit .dot {
@@ -241,32 +275,56 @@ button, input { font: inherit; color: inherit; }
   background: var(--ok);
 }
 .cell.muted-mark {
-  color: var(--danger);
+  color: #5a2018;
   font-weight: 800;
   font-size: 0.95rem;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.25);
 }
 .cell.muted-mark::before { opacity: 0.35; }
-.fret-num {
-  text-align: center;
-  font-size: 0.65rem;
-  color: var(--muted);
-  padding: 0.15rem 0 0;
-  grid-column: 1 / -1;
-}
-.neck-grid {
+.neck-inlays {
+  position: absolute;
+  inset: 0;
   display: grid;
-  grid-template-columns: 42px repeat(var(--nfrets, 5), minmax(52px, 1fr));
-  width: 100%;
+  grid-template-columns: 34px repeat(var(--nfrets, 5), minmax(52px, 1fr));
+  pointer-events: none;
+  z-index: 1;
+}
+.neck-inlays .slot {
+  position: relative;
+}
+.neck-inlays .inlay {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f2ead8, #c2b79a 60%, #8a7f68);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25);
+  opacity: 0.85;
+}
+.neck-inlays .inlay.double-a {
+  top: 38%;
+}
+.neck-inlays .inlay.double-b {
+  top: 62%;
+  margin-top: -5px;
 }
 .neck-nums {
   display: grid;
-  grid-template-columns: 42px repeat(var(--nfrets, 5), minmax(52px, 1fr));
-  margin-top: 0.15rem;
+  grid-template-columns: 56px 34px repeat(var(--nfrets, 5), minmax(52px, 1fr));
+  margin-top: 0.2rem;
+  align-items: center;
 }
 .neck-nums span {
   text-align: center;
-  font-size: 0.65rem;
+  font-size: 0.68rem;
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.neck-nums .num {
+  /* centred in the fret SPACE under the wood */
 }
 
 .neck-scrub {
