@@ -52,18 +52,19 @@
   ];
 
   var SCALES = [
-    { id: 'major', name: 'major', short: 'major', mode: 'major', intervals: [0, 2, 4, 5, 7, 9, 11], common: 100 },
-    { id: 'dorian', name: 'dorian', short: 'dorian', mode: 'minor', intervals: [0, 2, 3, 5, 7, 9, 10], common: 78 },
-    { id: 'phrygian', name: 'phrygian', short: 'phrygian', mode: 'minor', intervals: [0, 1, 3, 5, 7, 8, 10], common: 45 },
-    { id: 'lydian', name: 'lydian', short: 'lydian', mode: 'major', intervals: [0, 2, 4, 6, 7, 9, 11], common: 68 },
-    { id: 'mixolydian', name: 'mixolydian', short: 'mixolydian', mode: 'major', intervals: [0, 2, 4, 5, 7, 9, 10], common: 82 },
-    { id: 'minor', name: 'natural minor', short: 'minor', mode: 'minor', intervals: [0, 2, 3, 5, 7, 8, 10], common: 96 },
-    { id: 'locrian', name: 'locrian', short: 'locrian', mode: 'minor', intervals: [0, 1, 3, 5, 6, 8, 10], common: 28 },
-    { id: 'harmonic', name: 'harmonic minor', short: 'harm. minor', mode: 'minor', intervals: [0, 2, 3, 5, 7, 8, 11], common: 72 },
-    { id: 'melodic', name: 'melodic minor', short: 'mel. minor', mode: 'minor', intervals: [0, 2, 3, 5, 7, 9, 11], common: 62 },
-    { id: 'majpent', name: 'major pentatonic', short: 'maj pent', mode: 'major', intervals: [0, 2, 4, 7, 9], common: 70 },
-    { id: 'minpent', name: 'minor pentatonic', short: 'min pent', mode: 'minor', intervals: [0, 3, 5, 7, 10], common: 70 },
-    { id: 'blues', name: 'blues', short: 'blues', mode: 'minor', intervals: [0, 3, 5, 6, 7, 10], common: 58 }
+    // common: ionian/aeolian >> dorian/mixo >> others; rare modes stay low
+    { id: 'major', name: 'major', short: 'major', mode: 'major', intervals: [0, 2, 4, 5, 7, 9, 11], common: 120 },
+    { id: 'minor', name: 'natural minor', short: 'minor', mode: 'minor', intervals: [0, 2, 3, 5, 7, 8, 10], common: 115 },
+    { id: 'dorian', name: 'dorian', short: 'dorian', mode: 'minor', intervals: [0, 2, 3, 5, 7, 9, 10], common: 70 },
+    { id: 'mixolydian', name: 'mixolydian', short: 'mixolydian', mode: 'major', intervals: [0, 2, 4, 5, 7, 9, 10], common: 70 },
+    { id: 'harmonic', name: 'harmonic minor', short: 'harm. minor', mode: 'minor', intervals: [0, 2, 3, 5, 7, 8, 11], common: 55 },
+    { id: 'melodic', name: 'melodic minor', short: 'mel. minor', mode: 'minor', intervals: [0, 2, 3, 5, 7, 9, 11], common: 48 },
+    { id: 'majpent', name: 'major pentatonic', short: 'maj pent', mode: 'major', intervals: [0, 2, 4, 7, 9], common: 42 },
+    { id: 'minpent', name: 'minor pentatonic', short: 'min pent', mode: 'minor', intervals: [0, 3, 5, 7, 10], common: 42 },
+    { id: 'blues', name: 'blues', short: 'blues', mode: 'minor', intervals: [0, 3, 5, 6, 7, 10], common: 35 },
+    { id: 'lydian', name: 'lydian', short: 'lydian', mode: 'major', intervals: [0, 2, 4, 6, 7, 9, 11], common: 18 },
+    { id: 'phrygian', name: 'phrygian', short: 'phrygian', mode: 'minor', intervals: [0, 1, 3, 5, 7, 8, 10], common: 14 },
+    { id: 'locrian', name: 'locrian', short: 'locrian', mode: 'minor', intervals: [0, 1, 3, 5, 6, 8, 10], common: 8 }
   ];
 
   var state = {
@@ -356,14 +357,45 @@
   }
 
   function spellScaleNotes(root, scale) {
+    // Always list ascending from the scale's own tonic.
+    var letters = LETTERS;
+    var letterPc = LETTER_PC;
     var preferFlat = preferFlatForScale(root, scale);
-    var q = scale.mode === 'minor' ? 'm' : '';
-    if (scale.id === 'lydian' || scale.id === 'major' || scale.id === 'mixolydian' || scale.id === 'majpent') q = '';
-    if (scale.id === 'harmonic' || scale.id === 'melodic') q = 'm';
-    return scale.intervals.map(function (iv) {
+    var rootName = noteName(root, preferFlat);
+    var rootLetter = rootName.charAt(0);
+    var rootIdx = letters.indexOf(rootLetter);
+    if (rootIdx < 0) rootIdx = 0;
+
+    // For heptatonic scales, intervals line up with degrees 1..7.
+    // For pent/blues, map each interval to the nearest diatonic degree letter.
+    var heptatonic = scale.intervals.length >= 7;
+    return scale.intervals.map(function (iv, i) {
       var pc = (root + iv) % 12;
-      // Prefer letter-based spelling from tonic
-      return spellPcFromRoot(pc, root, q || (scale.mode === 'major' ? '' : 'm'));
+      var deg;
+      if (heptatonic) {
+        deg = i;
+      } else {
+        // pentatonic / blues degree guesses
+        var degMap = { 0: 0, 1: 1, 2: 1, 3: 2, 4: 2, 5: 3, 6: 3, 7: 4, 8: 5, 9: 5, 10: 6, 11: 6 };
+        if (iv === 6 && (scale.id === 'lydian' || scale.id === 'blues')) {
+          deg = scale.id === 'lydian' ? 3 : 3; // #4 / b5 between 4 and 5
+        } else {
+          deg = degMap[iv];
+        }
+        if (deg == null) deg = i;
+      }
+      var letter = letters[(rootIdx + deg) % 7];
+      var natural = letterPc[letter];
+      var best = 0;
+      for (var acc = -2; acc <= 2; acc++) {
+        if ((((natural + acc) % 12) + 12) % 12 === pc) { best = acc; break; }
+      }
+      if (best === 0) return letter;
+      if (best === 1) return letter + '#';
+      if (best === 2) return letter + '##';
+      if (best === -1) return letter + 'b';
+      if (best === -2) return letter + 'bb';
+      return noteName(pc, preferFlat);
     });
   }
 
@@ -402,21 +434,41 @@
     return q === 'min' || q === 'm7' || q === 'dim';
   }
 
+  function qualityMatchesMode(quality, scale) {
+    if (scale.mode === 'major') return isMajorishQuality(quality);
+    return isMinorishQuality(quality);
+  }
+
   function tonicEvidence(root, scale, chordList) {
     if (!chordList.length) return 0;
     var score = 0;
     var first = chordList[0];
     var last = chordList[chordList.length - 1];
-    if (first && first.root === root) score += 12;
-    if (last && last.root === root) score += 16;
-    // Chord built on tonic matching mode
+    var rare = (scale.id === 'lydian' || scale.id === 'phrygian' || scale.id === 'locrian');
+
+    // Strong weight: first chord root as tonic (I–V–vi–IV → I)
+    if (first && first.root === root) {
+      score += 100;
+      if (qualityMatchesMode(first.quality, scale)) score += 50;
+    }
+    // Strong weight: last chord root as tonic
+    if (last && last.root === root) {
+      score += 70;
+      if (qualityMatchesMode(last.quality, scale)) score += 30;
+    }
+    // Other chords on this tonic (weaker)
     for (var i = 0; i < chordList.length; i++) {
       var c = chordList[i];
       if (c.root !== root) continue;
-      if (scale.mode === 'major' && isMajorishQuality(c.quality)) score += 20;
-      if (scale.mode === 'minor' && isMinorishQuality(c.quality)) score += 20;
-      if (scale.mode === 'major' && isMinorishQuality(c.quality)) score -= 6;
-      if (scale.mode === 'minor' && isMajorishQuality(c.quality)) score -= 6;
+      if (i === 0 || i === chordList.length - 1) continue;
+      if (qualityMatchesMode(c.quality, scale)) score += 12;
+      else score -= 4;
+    }
+
+    // Rare modes need end-tonic evidence to compete for the top slot
+    if (rare) {
+      var endTonic = (first && first.root === root) || (last && last.root === root);
+      if (!endTonic) score -= 80;
     }
     return score;
   }
@@ -425,10 +477,11 @@
     var fitCount = chordsFitKey(chordList, root, scale);
     var outside = chordList.length - fitCount;
     var evidence = tonicEvidence(root, scale, chordList);
-    var score = fitCount * 100 + evidence + (scale.common || 0);
-    if (outside === 0) score += 50;
-    else if (outside === 1) score -= 10;
-    else score -= outside * 40;
+    // Exact fits dominate; then tonic evidence; then mode commonness
+    var score = fitCount * 1000 + evidence + (scale.common || 0);
+    if (outside === 0) score += 100;
+    else if (outside === 1) score -= 20;
+    else score -= outside * 80;
     return {
       root: root,
       scale: scale,
@@ -511,11 +564,12 @@
     var perfect = ranked.filter(function (c) { return c.outside === 0; });
     var near = ranked.filter(function (c) { return c.outside === 1; });
 
-    // Rank perfect: tonic evidence then commonness (already in score)
+    // Same ranking as allCandidates: score already blends fit, tonic evidence, commonness
     perfect.sort(function (a, b) {
+      if (b.score !== a.score) return b.score - a.score;
       if (b.evidence !== a.evidence) return b.evidence - a.evidence;
       if ((b.scale.common || 0) !== (a.scale.common || 0)) return (b.scale.common || 0) - (a.scale.common || 0);
-      return b.score - a.score;
+      return a.root - b.root;
     });
 
     var prev = state.topKey;
@@ -1217,7 +1271,12 @@
     var info = selectedScaleInfo();
     if (el) el.textContent = 'Key: ' + (state.topKey ? state.topKey.short : '—');
     if (notesEl) {
-      var nlist = info ? info.notes : (state.topKey && state.topKey.notes) || [];
+      var nlist = [];
+      if (info) nlist = info.notes;
+      else if (state.topKey) {
+        var sc = SCALES.find(function (s) { return s.id === state.topKey.scaleId; });
+        if (sc) nlist = spellScaleNotes(state.topKey.root, sc);
+      }
       notesEl.textContent = nlist.length ? nlist.join(' ') : '';
     }
 
